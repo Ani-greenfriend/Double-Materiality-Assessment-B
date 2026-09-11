@@ -4,7 +4,7 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 1
+**Session:** 2
 **Last updated:** 2026-09-11 — by Claude Code
 **Live URL:** none yet — not deployed to Netlify
 
@@ -14,6 +14,14 @@ at the repo root (previously only `reference-prototype/` existed). Per the
 builder's explicit instruction, **the database is out of scope for this pass** —
 the app uses in-memory React state exactly like the reference prototype, with no
 Supabase client, no auth, and no environment variables. `npm run build` succeeds.
+
+The app now opens pre-seeded with a sample engagement ("Acme Manufacturing") —
+4 IROs across all four `iroType` values, two assessors on two of them (one
+triggering the severity override, one triggering a discrepancy flag), one
+calibrated result, and two assessment records (one quantitative, one completed
+qualitative) — instead of the empty first-run state, per the builder's request
+to see the tool actually working rather than a blank shell. See `DEMO_IROS` /
+`DEMO_CALIBRATIONS` / `DEMO_ASSESSMENTS` at the top of `src/App.jsx`.
 
 The full workflow was verified in a real browser this session: Dashboard →
 Assessment Overview → New Assessment (both Quantitative and Qualitative paths) →
@@ -25,6 +33,12 @@ updating with real data (rating progress, topics tracked, material topics,
 assessments run, recent activity feed).
 
 ## Last session
+Session 2: added the seeded sample engagement described above directly into
+`src/App.jsx` (as `DEMO_IROS`/`DEMO_CALIBRATIONS`/`DEMO_ASSESSMENTS`, wired
+through `useState(() => DEMO_X)`), after first proving it out in a throwaway
+copy of the app used to publish a demo Artifact. Verified `npm run build` and a
+real browser render of the seeded Dashboard match the Artifact exactly.
+
 Session 1: scaffolded the real app from `reference-prototype/` (package.json,
 vite/tailwind/postcss config, index.html, public/favicon.svg + _redirects).
 Copied every component and lib file verbatim (`App.jsx`, all of
@@ -66,6 +80,10 @@ no runtime errors and correct calculations.
   variable. Add both when the Supabase pass starts (mirroring Tool A's).
 - Package name changed from the prototype's `apus-mvp` to
   `apus-dma-consultant-console`; page `<title>` updated to match.
+- Seeded demo data lives inline in `App.jsx` behind three `DEMO_*` constants,
+  not a separate file or flag, so it's trivially deletable in one diff once the
+  database pass starts feeding `iros`/`calibrations`/`assessments` for real —
+  see the comment directly above `DEMO_IROS`.
 
 ## Known issues
 - None found this session — full workflow verified end-to-end with no console

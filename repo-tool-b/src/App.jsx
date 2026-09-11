@@ -27,13 +27,79 @@ const TABS = [
 
 const PERSPECTIVE_LABEL = { full: 'Full', impact: 'Impact perspective', financial: 'Financial perspective' };
 
+// Sample engagement so the console opens showing what it does instead of an
+// empty shell. In-memory only, like every other piece of state here — reload
+// the page and you're back to this same starting point. Remove this block (and
+// the three useState(() => DEMO_*) calls below it) once the database pass
+// starts and this tool loads a consultant's real assessments instead.
+const DEMO_IROS = [
+  {
+    id: 'iro-1', topic: 'E1', subtopicRaw: 'Climate Change Mitigation', name: 'Stationary combustion GHG', iroType: 'neg_impact', actual: true,
+    description: 'Direct Scope 1 GHG emissions from stationary combustion in factory furnaces.',
+    impactThreshold: 3.0, financialThreshold: 3.0,
+    assessments: [
+      { assessor: 'Facilities lead', scale: 5, scope: 3, irreversibility: 3, likelihood: 4, magnitude: null, financialLikelihood: null },
+      { assessor: 'Sustainability team', scale: 3, scope: 3, irreversibility: 2, likelihood: 3, magnitude: null, financialLikelihood: null },
+    ],
+  },
+  {
+    id: 'iro-2', topic: 'E4', subtopicRaw: 'Biodiversity and Ecosystems', name: 'Local biodiversity restoration programme', iroType: 'pos_impact', actual: true,
+    description: 'Habitat restoration around quarry sites.',
+    impactThreshold: 3.0, financialThreshold: 3.0,
+    assessments: [
+      { assessor: 'Site manager', scale: 4, scope: 3, irreversibility: null, likelihood: 4, magnitude: null, financialLikelihood: null },
+    ],
+  },
+  {
+    id: 'iro-3', topic: 'E1', subtopicRaw: 'Climate Change', name: 'Carbon pricing regulations', iroType: 'risk', actual: false,
+    description: 'Transition risk from evolving carbon pricing regulations (EU ETS).',
+    impactThreshold: 3.0, financialThreshold: 3.0,
+    assessments: [
+      { assessor: 'CFO office', scale: null, scope: null, irreversibility: null, likelihood: null, magnitude: 5, financialLikelihood: 5 },
+      { assessor: 'Risk committee', scale: null, scope: null, irreversibility: null, likelihood: null, magnitude: 4, financialLikelihood: 4 },
+    ],
+  },
+  {
+    id: 'iro-4', topic: 'S4', subtopicRaw: 'Consumers', name: 'New eco-product line', iroType: 'opportunity', actual: false,
+    description: 'Growth opportunity from a new sustainable product line.',
+    impactThreshold: 3.0, financialThreshold: 3.0,
+    assessments: [
+      { assessor: 'Commercial lead', scale: null, scope: null, irreversibility: null, likelihood: null, magnitude: 3, financialLikelihood: 3 },
+    ],
+  },
+];
+
+const DEMO_CALIBRATIONS = {
+  'iro-1': {
+    owner: 'Maria Novak', moderator: 'Tom Beck', calibratedValue: 3.2,
+    notes: "Group agreed the override was justified given repeated incidents, but adjusted slightly down from the raw average to reflect a declining trend since last year.",
+    calibratedAt: Date.now() - 1000 * 60 * 60 * 5, bandValue: null,
+  },
+};
+
+const DEMO_ASSESSMENTS = [
+  {
+    id: 'assessment-1', name: 'Acme Manufacturing — DMA 2026', type: 'Quantitative — Full', respondents: '18/24',
+    mode: 'quantitative', perspectiveFilter: 'full',
+    link: 'apus.app/survey/acme-manufacturing-dma-2026', startDate: '2026-08-25', endDate: '2026-09-22',
+    iroIds: ['iro-1', 'iro-2', 'iro-3', 'iro-4'],
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 17, updatedAt: Date.now() - 1000 * 60 * 60 * 3,
+  },
+  {
+    id: 'assessment-2', name: 'Acme Manufacturing — Expert Session', type: 'Qualitative — Full', status: 'Completed', respondents: '4/4',
+    mode: 'qualitative', perspectiveFilter: 'full',
+    iroIds: ['iro-1', 'iro-2', 'iro-3', 'iro-4'],
+    createdAt: Date.now() - 1000 * 60 * 60 * 24 * 10, updatedAt: Date.now() - 1000 * 60 * 60 * 24 * 9,
+  },
+];
+
 export default function App() {
   const [tab, setTab] = useState('Dashboard');
   const [collapsed, setCollapsed] = useState(false);
 
-  const [iros, setIros] = useState([]);
-  const [calibrations, setCalibrations] = useState({});
-  const [assessments, setAssessments] = useState([]);
+  const [iros, setIros] = useState(() => DEMO_IROS);
+  const [calibrations, setCalibrations] = useState(() => DEMO_CALIBRATIONS);
+  const [assessments, setAssessments] = useState(() => DEMO_ASSESSMENTS);
 
   const [flowStep, setFlowStep] = useState('overview');
   const [assessmentMode, setAssessmentMode] = useState(null); // 'quantitative' | 'qualitative'
