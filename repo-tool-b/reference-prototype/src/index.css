@@ -1,0 +1,53 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500&display=swap');
+
+@theme {
+  --color-app-black: #07070B;
+  --color-surface: #100E15;
+  --color-surface-2: #1A1820;
+  --color-border-apus: #2A2830;
+  --color-emerald: #4C6FFF;
+  --color-text-primary: #F5F6FA;
+  --color-text-secondary: #ACACB8;
+  --color-badge-blue: #4C6FFF;
+  --color-badge-amber: #D79A4C;
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-jost: 'Jost', system-ui, sans-serif;
+  --font-league: 'League Spartan', system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-app-black);
+  color: var(--color-text-primary);
+  font-family: var(--font-inter);
+  font-variant-numeric: tabular-nums;
+}
+
+.apus-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 10px;
+  border-radius: 9999px;
+  background: #1A1820;
+  outline: none;
+}
+.apus-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: currentColor;
+  border: 3px solid #07070B;
+  cursor: grab;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.apus-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: currentColor;
+  border: 3px solid #07070B;
+  cursor: grab;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
