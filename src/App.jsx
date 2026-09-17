@@ -20,6 +20,8 @@ import ResultsScreen from './components/ResultsScreen';
 import DmaMascot from './components/DmaMascot';
 import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, CalibrationIcon, ResultsIcon, CollapseIcon } from './components/icons';
 import { hasImpactAxis } from './lib/calc';
+import { loadStakeholderMap, saveStakeholderMap, loadTopicLibrary, saveTopicLibrary } from './lib/data';
+import { supabaseConfigError } from './lib/supabaseClient';
 
 const TABS = [
   { key: 'Dashboard', icon: DashboardIcon },
@@ -48,11 +50,9 @@ export default function App() {
   const [taskText, setTaskText] = useState(IMPACT_TASK);
   const [stakeholders, setStakeholders] = useState(DEFAULT_STAKEHOLDERS);
   const [participants, setParticipants] = useState([]);
-  const [stakeholderMap, setStakeholderMap] = useState(() => [
-    ...DEFAULT_STAKEHOLDERS.impact.map((name) => ({ id: crypto.randomUUID(), name, perspectives: ['impact'], members: [] })),
-    ...DEFAULT_STAKEHOLDERS.financial.map((name) => ({ id: crypto.randomUUID(), name, perspectives: ['financial'], members: [] })),
-    ...GENERIC_POOL_SUGGESTIONS.map((name) => ({ id: crypto.randomUUID(), name, perspectives: [], members: [] })),
-  ]);
+  const [stakeholderMap, setStakeholderMapLocal] = useState([]);
+  const [bootStatus, setBootStatus] = useState('loading'); // loading | config-error | ready
+  const [bootError, setBootError] = useState(null);
   // Topics is the one place IROs get defined now — assessments read from
   // `iros`, which stays in sync with the library here. Existing entries keep
   // their accumulated `assessments` (real ratings); only new library topics
@@ -67,7 +67,70 @@ export default function App() {
   // otherwise clicking "Stakeholders" while inside a specific group's
   // contact list would silently leave you stuck there.
   const [openGroupId, setOpenGroupId] = useState(null);
-  const [topicLibrary, setTopicLibrary] = useState([]);
+  const [topicLibrary, setTopicLibraryLocal] = useState([]);
+
+  // Boot: load the master data (Stakeholders, Topics) from Supabase once on
+  // mount. iros/assessments/calibrations are still in-memory for now — that's
+  // next session's work (see PROGRESS.md).
+  useEffect(() => {
+    if (supabaseConfigError) {
+      setBootError(supabaseConfigError);
+      setBootStatus('config-error');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let map = await loadStakeholderMap();
+        // Guards against React StrictMode's dev-mode double-invoke of this
+        // effect racing two concurrent seed writes: by the time this await
+        // resolves, the discarded first invocation's `cancelled` is already
+        // true (StrictMode runs mount→cleanup→remount synchronously, well
+        // before any network round trip completes) — so only the surviving
+        // invocation ever reaches the seed write below.
+        if (cancelled) return;
+        if (map.length === 0) {
+          // First-ever use of this master map — seed it with the same default
+          // groups + generic-pool suggestions the reference prototype always
+          // showed, so the UX matches exactly, but persisted for real.
+          map = [
+            ...DEFAULT_STAKEHOLDERS.impact.map((name) => ({ id: crypto.randomUUID(), name, perspectives: ['impact'], members: [] })),
+            ...DEFAULT_STAKEHOLDERS.financial.map((name) => ({ id: crypto.randomUUID(), name, perspectives: ['financial'], members: [] })),
+            ...GENERIC_POOL_SUGGESTIONS.map((name) => ({ id: crypto.randomUUID(), name, perspectives: [], members: [] })),
+          ];
+          await saveStakeholderMap(map);
+          if (cancelled) return;
+        }
+        const topics = await loadTopicLibrary();
+        if (cancelled) return;
+        setStakeholderMapLocal(map);
+        setTopicLibraryLocal(topics);
+        setBootStatus('ready');
+      } catch (err) {
+        if (cancelled) return;
+        setBootError(err.message || String(err));
+        setBootStatus('config-error');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function setStakeholderMap(updater) {
+    setStakeholderMapLocal((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveStakeholderMap(next).catch((err) => console.error('Failed to save stakeholder map:', err));
+      return next;
+    });
+  }
+
+  function setTopicLibrary(updater) {
+    setTopicLibraryLocal((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveTopicLibrary(next).catch((err) => console.error('Failed to save topic library:', err));
+      return next;
+    });
+  }
+
   useEffect(() => {
     setIros((prevIros) => {
       const byId = new Map(prevIros.map((i) => [i.id, i]));
@@ -371,6 +434,25 @@ export default function App() {
     setSessionAssessmentId(null);
     setFlowStep('overview');
     setTab('Calibration');
+  }
+
+  if (bootStatus === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#07070B' }}>
+        <p className="text-[13px] text-text-secondary">Loading…</p>
+      </div>
+    );
+  }
+
+  if (bootStatus === 'config-error') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#07070B' }}>
+        <div className="text-center max-w-md px-6">
+          <p className="text-[15px] font-semibold text-text-primary mb-1">Console misconfigured</p>
+          <p className="text-[12.5px] text-text-secondary">{bootError}</p>
+        </div>
+      </div>
+    );
   }
 
   return (

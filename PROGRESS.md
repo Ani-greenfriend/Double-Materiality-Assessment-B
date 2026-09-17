@@ -30,7 +30,12 @@ error-surfacing pattern) but nothing imports it yet. Fixed netlify.toml, which
 still pointed `base = "repo-tool-b"` at the now-deleted directory.
 
 Builder has explicitly chosen to stay on the Supabase **Free** plan for now
-(session 1) — not blocking, but the auto-pause risk stands.
+(session 1) — not blocking, but the auto-pause risk stands. Builder also
+confirmed Auth config is deliberately being left for later — not building a
+login gate yet, the whole app is open until that's addressed.
+
+Stakeholders and Topics are now wired to real Supabase data via
+`src/lib/data.js` — see Last session below.
 
 Note: an earlier session had built a full frontend-only pass (v1.0 spec, DB
 deferred) nested incorrectly inside a `repo-tool-b/` subdirectory instead of at
@@ -68,24 +73,48 @@ falling back to hardcoded defaults; added a `security_invoker` view of that
 exact name/shape over `stakeholder_groups` so Tool A's existing code starts
 working with no changes on its side. `get_advisors` security lints are clean.
 
+Wired Stakeholders and Topics to real Supabase data. Added `src/lib/data.js`
+with `load/saveStakeholderMap()` (stakeholder_groups + stakeholder_members,
+assembled into the nested shape StakeholderModule.jsx already expects) and
+`load/saveTopicLibrary()` (topic_library, field-mapped to TopicsModule.jsx's
+existing camelCase shape — note the JS field is `subtopic`, not `esrsSubtopic`,
+matching the component exactly). Both use a "full sync" pattern (upsert
+everything present, delete whatever's no longer there) rather than diffing —
+simple and correct at this tool's scale. App.jsx now boots by loading both
+from Supabase (with a loading screen and a config-error screen mirroring Tool
+A's exact pattern), seeds the stakeholder map with the reference prototype's
+default groups + generic-pool suggestions on genuinely first use (persisted
+for real, not recomputed every load), then wraps `setStakeholderMap` /
+`setTopicLibrary` so every existing call site in StakeholderModule.jsx and
+TopicsModule.jsx persists automatically — **zero changes needed in either
+component**, they're still exactly the ported reference files. Guarded the
+boot effect against React StrictMode's dev-mode double-invoke racing two
+concurrent seed writes.
+
+Verified the exact group+member and topic row shapes round-trip correctly by
+inserting/reading test rows directly via the Supabase MCP (then deleted them —
+tables are back to 0 rows). Could **not** browser-verify the live wiring
+end-to-end: this sandbox's browser cannot reach `*.supabase.co` at all
+(`ERR_TUNNEL_CONNECTION_FAILED` on every request) — same restriction Tool A's
+session 3 already hit and documented. Did verify what's testable from here:
+`npm run build` succeeds, and pulling `.env` to simulate missing config
+correctly shows the config-error screen instead of hanging (screenshot taken).
+**The real end-to-end test (open the app, add a stakeholder group, refresh,
+confirm it persisted) still needs to happen on Netlify or the builder's own
+machine before this is trusted.**
+
+iros/assessments/calibrations are still in-memory — next session's work.
+
 ## Remaining work
-- [ ] Ask the builder to configure Auth in the Supabase Dashboard
-      (magic link, self-signup disabled) — not settable via MCP
-- [ ] Build the magic-link login gate (App.jsx currently renders straight to
-      Dashboard with no auth check at all)
-- [ ] Build src/lib/data.js — real Supabase reads/writes replacing every
-      in-memory array, including the ratings/assessor_ratings reconciliation
-      documented in docs/supabase-setup.md
-- [ ] Note: every screen below already exists visually (verbatim port from
-      reference-prototype/) and works against in-memory state exactly like
-      the prototype — what's left for each is wiring it to real Supabase
-      reads/writes via src/lib/data.js, not building the UI from scratch
+- [ ] **Verify the Stakeholders/Topics Supabase wiring end-to-end in a real
+      browser** (add a group, refresh, confirm persistence) — this sandbox
+      cannot reach Supabase directly, so this hasn't been done yet
+- [ ] Ask the builder to configure Auth in the Supabase Dashboard (magic
+      link, self-signup disabled) when ready — not settable via MCP, and
+      deliberately deferred per the builder for now (no login gate exists;
+      the whole app is currently open)
 - [ ] Wire Dashboard to real data — currently the ported reference's in-memory
-      empty state
-- [ ] Wire Stakeholders (StakeholderModule.jsx) — mandatory Name/Role, email
-      validation, multi-select E/S/G, next-step banner
-- [ ] Wire Topics (TopicsModule.jsx) — manual add with dependent ESRS
-      sub-topic dropdown, bulk CSV upload, sign-off, edit/delete
+      empty state for iros/assessments/calibrations
 - [ ] Wire Assessment Overview
 - [ ] Wire New Assessment wizard — Mode Select, Perspective Select, Survey
       Setup, Review & Customize, Recipients, Created/Congratulations (including
@@ -123,11 +152,18 @@ working with no changes on its side. `get_advisors` security lints are clean.
 - No authenticated delete policy on `iros` (only read/insert/update) — matches
   docs/schema-draft.md literally; IROs are removed via cascade when their
   parent assessment is deleted, not directly.
+- Stakeholders/Topics sync as a "full sync" (upsert all present rows, delete
+  whatever's missing) rather than a tracked diff — simplest correct option at
+  this tool's realistic scale (dozens of rows, one consultant). Revisit if the
+  master data ever grows large enough for this to matter.
+- No login gate yet, by the builder's explicit choice — Auth setup is being
+  deferred to a later pass. The app is fully open to anyone who reaches the
+  deployed URL until that's built.
 
 ## Known issues
-- Auth (magic link, invite-only self-signup disabled) is not yet configured in
-  the Supabase Dashboard — cannot actually log in to Tool B until the builder
-  does this manually; not settable via MCP tools
+- No auth gate exists — deliberately deferred (see Build decisions above), not
+  an oversight. Auth (magic link, invite-only self-signup disabled) also isn't
+  configured in the Supabase Dashboard yet; not settable via MCP tools
 - Deletion-request contact/process for GDPR not yet confirmed with the builder
 - Whether the Results screen's adjustable threshold is a second stored value or
   a display-only re-slice of the fixed 3.0 threshold — not yet resolved
@@ -137,12 +173,16 @@ working with no changes on its side. `get_advisors` security lints are clean.
   free-text name field, now that Tier 3 auth exists — shipping as free text for v1
 
 ## Notes for next session
-Schema and app scaffold are both done and verified (build + real browser
-render). Next: confirm with the builder whether Auth has been configured in
-the Supabase Dashboard yet (magic link, self-signup off) — if not, build the
-login gate UI anyway but it can't be tested end-to-end until that's done.
-Then build src/lib/data.js and start wiring screens to real data, in roughly
-the order a consultant would touch them: Stakeholders and Topics first (the
-master-data screens nothing else can be tested against without), then
-Dashboard/Assessment Overview, then the New Assessment wizard, then
-Calibration and Results last (they depend on ratings existing).
+First priority: get a real browser to actually open the deployed (or
+locally-run outside this sandbox) app against Supabase and confirm the
+Stakeholders/Topics wiring genuinely works — this sandbox physically can't
+reach `*.supabase.co`, so session 1 could only verify the DB side (via MCP)
+and the app side (build + the config-error path) separately, never together.
+If that surfaces bugs, fix those first before building on top of the pattern.
+
+Then continue wiring screens to real data in roughly the order a consultant
+would touch them: Dashboard/Assessment Overview next, then the New Assessment
+wizard (this is the big one — it touches iros, assessments, and participants
+together), then Calibration and Results last (they depend on ratings/
+assessor_ratings existing). Auth is deliberately not next — wait for the
+builder to raise it.
