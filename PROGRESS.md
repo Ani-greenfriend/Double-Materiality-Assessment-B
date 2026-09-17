@@ -4,24 +4,44 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 0 — build not started
-**Last updated:** 2026-09-16 — by Project Governor, pre-build
+**Session:** 1
+**Last updated:** 2026-09-17 — by Claude Code
 **Live URL:** none yet
 
 ## Current state
-Nothing built. Repo contains CLAUDE.md, PROGRESS.md, product-spec.md,
-schema-draft.md, and reference-prototype/ (a fully working React/Vite prototype —
-authoritative for UI/UX, see CLAUDE.md Brand section).
+First Session Setup complete. docs/ now holds product-spec.md, schema-draft.md,
+and a mirrored copy of Tool A's supabase-setup.md. Nothing built yet beyond
+that — reference-prototype/ (a fully working React/Vite prototype — authoritative
+for UI/UX, see CLAUDE.md Brand section) is the porting source for the next
+session.
+
+Note: an earlier session had built a full frontend-only pass (v1.0 spec, DB
+deferred) nested incorrectly inside a `repo-tool-b/` subdirectory instead of at
+repo root. The builder deleted that directory directly on `main` before this
+session started; this session synced that deletion in via a fast-forward merge.
+That code is gone from the tree (still recoverable from git history at commit
+`4c4f22c` if ever needed) — this session restarts the build cleanly per the
+current v1.2 spec and CLAUDE.md, which now includes full Supabase/Auth from the
+start rather than deferring the database.
 
 ## Last session
-None — the first build session has not happened yet.
+Session 1: verified Tool A (`DMA-Questionnaire-A`) is built and its
+`docs/supabase-setup.md` exists — gate satisfied. Confirmed via Supabase MCP:
+project `evwmxduudcujtibirmga` is ACTIVE_HEALTHY, region `eu-west-1`, but the
+org (`Ani-greenfriend's Org`) is still on the **Free** plan, not Pro — the
+required manual billing upgrade has not been done. `public` schema currently
+only has Tool A's tables (`assessments`: 1 row, `iros`: 5 rows, `ratings`: 15
+rows, `session_comments`: 0 rows) — none of this tool's 8 tables exist yet, so
+there's no conflict with the deleted repo-tool-b false start. Ran First Session
+Setup: created docs/ (already existed from a prior partial run), moved
+schema-draft.md into it, removed the duplicate root-level product-spec.md
+(docs/product-spec.md already matched it, v1.2), and copied Tool A's
+supabase-setup.md into docs/ as a mirrored reference. Synced this branch with
+`main`'s repo-tool-b deletion via fast-forward merge.
 
 ## Remaining work
-- [ ] Confirm Tool A has been built and docs/supabase-setup.md exists in the
-      shared `greenfriend-dma` project — this tool cannot start schema work
-      until it does (see CLAUDE.md First Session Setup step 1)
-- [ ] First Session Setup: create docs/, move reference files, commit
-- [ ] Confirm Supabase Pro plan upgrade is done (manual billing step)
+- [ ] **Ask the builder to upgrade the shared Supabase org to Pro** (manual
+      dashboard step) — currently Free, at risk of auto-pause
 - [ ] Add this tool's 8 tables and RLS policies per docs/schema-draft.md, resolve
       the ratings/assessor_ratings shape question, then write/update
       docs/supabase-setup.md
@@ -63,4 +83,8 @@ None yet.
   free-text name field, now that Tier 3 auth exists — shipping as free text for v1
 
 ## Notes for next session
-None.
+Supabase org is still on the Free plan — flag to the builder again if not
+upgraded by the next session. Once acknowledged, start with the 8-table schema
++ RLS migration (docs/schema-draft.md), then scaffold the Vite/React/Tailwind
+app at repo root from reference-prototype/ (package.json, vite/tailwind/postcss
+config, index.html) and begin porting screens starting with Dashboard.
