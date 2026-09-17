@@ -12,11 +12,22 @@
 First Session Setup complete. Database schema is live: all 8 of this tool's
 tables + RLS exist in the shared Supabase project, `assessments`/`iros` have
 this tool's columns added, and a `stakeholder_options` view reconciles a
-naming mismatch with Tool A (see docs/supabase-setup.md). No frontend app
-exists at repo root yet — reference-prototype/ (a fully working React/Vite
-prototype — authoritative for UI/UX, see CLAUDE.md Brand section) is the
-porting source for the next session, starting with the app scaffold and
-Dashboard.
+naming mismatch with Tool A (see docs/supabase-setup.md).
+
+The app is now scaffolded at repo root — a straight verbatim copy of
+reference-prototype/ (package.json renamed to apus-dma-consultant-console,
+main.jsx's dead PreviewWindowApp branch dropped since Tool A is a real
+separate deployed site now, Tool-A-only files ParticipantExperience.jsx /
+ApusLogoLight.jsx not copied). `npm install` + `npm run build` succeed; ran
+the dev server and confirmed in a real browser the Dashboard renders exactly
+like the reference (dark theme, six process-step cards, empty-state stats) —
+screenshot taken, no console errors besides a Google Fonts fetch blocked by
+this sandbox's network policy (expected, not an app bug — see Tool A's own
+session-3 note on the same thing). Everything still runs on **in-memory React
+state only** — no Supabase reads/writes yet, no auth gate. Added
+`src/lib/supabaseClient.js` (Supabase client, mirrors Tool A's exact
+error-surfacing pattern) but nothing imports it yet. Fixed netlify.toml, which
+still pointed `base = "repo-tool-b"` at the now-deleted directory.
 
 Builder has explicitly chosen to stay on the Supabase **Free** plan for now
 (session 1) — not blocking, but the auto-pause risk stands.
@@ -58,31 +69,36 @@ exact name/shape over `stakeholder_groups` so Tool A's existing code starts
 working with no changes on its side. `get_advisors` security lints are clean.
 
 ## Remaining work
-- [ ] Scaffold the Vite/React/Tailwind app at repo root from
-      reference-prototype/ (package.json, vite/tailwind/postcss config,
-      index.html, public/), wire the Supabase client + magic-link auth
 - [ ] Ask the builder to configure Auth in the Supabase Dashboard
       (magic link, self-signup disabled) — not settable via MCP
+- [ ] Build the magic-link login gate (App.jsx currently renders straight to
+      Dashboard with no auth check at all)
 - [ ] Build src/lib/data.js — real Supabase reads/writes replacing every
       in-memory array, including the ratings/assessor_ratings reconciliation
       documented in docs/supabase-setup.md
-- [ ] Build Dashboard — hero CTA, six process-step cards with real progress
-- [ ] Build Stakeholders — master map, mandatory Name/Role, email validation,
-      multi-select E/S/G, next-step banner
-- [ ] Build Topics — manual add with dependent ESRS sub-topic dropdown, bulk CSV
-      upload, sign-off, edit/delete
-- [ ] Build Assessment Overview
-- [ ] Build New Assessment wizard — Mode Select, Perspective Select, Survey
+- [ ] Note: every screen below already exists visually (verbatim port from
+      reference-prototype/) and works against in-memory state exactly like
+      the prototype — what's left for each is wiring it to real Supabase
+      reads/writes via src/lib/data.js, not building the UI from scratch
+- [ ] Wire Dashboard to real data — currently the ported reference's in-memory
+      empty state
+- [ ] Wire Stakeholders (StakeholderModule.jsx) — mandatory Name/Role, email
+      validation, multi-select E/S/G, next-step banner
+- [ ] Wire Topics (TopicsModule.jsx) — manual add with dependent ESRS
+      sub-topic dropdown, bulk CSV upload, sign-off, edit/delete
+- [ ] Wire Assessment Overview
+- [ ] Wire New Assessment wizard — Mode Select, Perspective Select, Survey
       Setup, Review & Customize, Recipients, Created/Congratulations (including
       the re-edit-of-completed-assessment behavior)
-- [ ] Build Review Hub (both modes)
-- [ ] Build Intro Flow + Questionnaire (qualitative) — including per-topic
+- [ ] Wire Review Hub (AssessmentReviewHub.jsx, both modes)
+- [ ] Wire Intro Flow + Questionnaire (qualitative) — including per-topic
       session notes
-- [ ] Build QuantAssessmentGrid
-- [ ] Build Calibration — history log, sign-off, maker-checker
-- [ ] Build Results — topic summary rollup, bar chart, heatmaps, topic matrix,
+- [ ] Wire QuantAssessmentGrid
+- [ ] Wire Calibration — history log, sign-off, maker-checker
+- [ ] Wire Results — topic summary rollup, bar chart, heatmaps, topic matrix,
       CSV/PNG/PDF export panel
-- [ ] Wire Export arm: CSV/PNG/PDF download, browser-only
+- [ ] Wire Export arm: CSV/PNG/PDF download, browser-only (jspdf/papaparse
+      already in package.json, untouched from the reference)
 - [ ] Add the GDPR consent checkbox and confirmed data statement to both the
       Expected Participants and Stakeholder add-contact forms
 - [ ] Local test pass — full walkthrough of every view before deploying
@@ -121,10 +137,12 @@ working with no changes on its side. `get_advisors` security lints are clean.
   free-text name field, now that Tier 3 auth exists — shipping as free text for v1
 
 ## Notes for next session
-Schema is done. Start with the app scaffold at repo root (package.json,
-vite/tailwind/postcss config, index.html, public/ — copy from
-reference-prototype/ per CLAUDE.md Project Structure, not nested in a
-subdirectory this time), wire src/lib/supabaseClient.js + magic-link auth
-(after the builder confirms Auth is configured in the dashboard), then port
-screens starting with Dashboard. Ask the builder about Auth dashboard config
-before assuming login works.
+Schema and app scaffold are both done and verified (build + real browser
+render). Next: confirm with the builder whether Auth has been configured in
+the Supabase Dashboard yet (magic link, self-signup off) — if not, build the
+login gate UI anyway but it can't be tested end-to-end until that's done.
+Then build src/lib/data.js and start wiring screens to real data, in roughly
+the order a consultant would touch them: Stakeholders and Topics first (the
+master-data screens nothing else can be tested against without), then
+Dashboard/Assessment Overview, then the New Assessment wizard, then
+Calibration and Results last (they depend on ratings existing).
