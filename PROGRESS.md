@@ -4,17 +4,20 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 0 — build not started
-**Last updated:** 2026-09-16 — by Project Governor, pre-build
+**Session:** 1
+**Last updated:** 2026-09-18 — by Claude Code, first build session
 **Live URL:** none yet
 
 ## Current state
-Nothing built. Repo contains CLAUDE.md, PROGRESS.md, product-spec.md,
-schema-draft.md, and reference-prototype/ (a fully working React/Vite prototype —
-authoritative for UI/UX, see CLAUDE.md Brand section).
+First build session in progress. Scoped down from the full Tier-3 build per
+the builder's direction: build a read-only(-ish) results dashboard first
+(Results + Calibration + Stakeholders, behind minimal magic-link auth),
+deferring the New Assessment wizard, Topics admin, Questionnaire flow, and
+export panel to later sessions.
 
 ## Last session
-None — the first build session has not happened yet.
+None — this is the first build session. "Notes for next session" was empty,
+nothing to carry forward.
 
 ## Remaining work
 - [ ] Confirm Tool A has been built and docs/supabase-setup.md exists in the
