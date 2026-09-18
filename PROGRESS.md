@@ -6,7 +6,8 @@
 
 **Session:** 1
 **Last updated:** 2026-09-17 — by Claude Code
-**Live URL:** none yet
+**Live URL:** https://apusconsole.netlify.app (Netlify site "apusconsole," deploying
+from this branch, `claude/elegant-hypatia-vx86i7` — not `main` yet)
 
 ## Current state
 First Session Setup complete. Database schema is live: all 8 of this tool's
@@ -161,6 +162,19 @@ iros/assessments/calibrations are still in-memory — next session's work.
   deployed URL until that's built.
 
 ## Known issues
+- **⚠️ TEMPORARY, INSECURE RLS POLICIES ARE LIVE** — with no login gate built
+  yet, the deployed site couldn't write anything (RLS correctly blocked it:
+  "new row violates row-level security policy for stakeholder_groups"). Per
+  the builder's explicit request, added `TEMP anon insert/update/delete`
+  policies on `stakeholder_groups`, `stakeholder_members`, and `TEMP anon
+  select/insert/update/delete` on `topic_library`, purely so the deployed app
+  is testable right now without auth. **Anyone with the live URL can currently
+  read and write those three tables with no login.** These policies are named
+  with a `TEMP` prefix specifically so they're easy to find and drop —
+  `drop policy "TEMP anon insert stakeholder_groups" on public.stakeholder_groups;`
+  (and the same pattern for the other 9). **Must be dropped the moment the
+  login gate is built** — do not ship or leave this running with real client
+  data in it.
 - No auth gate exists — deliberately deferred (see Build decisions above), not
   an oversight. Auth (magic link, invite-only self-signup disabled) also isn't
   configured in the Supabase Dashboard yet; not settable via MCP tools
