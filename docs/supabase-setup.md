@@ -1,8 +1,13 @@
-# Supabase Setup — Apus DMA — Participant Questionnaire
+# Supabase Setup — Apus DMA (shared project, both tools)
 
-**Last updated:** 2026-09-18 — Session 4 (verified against the live project;
-corrected the `iros` columns and Protected tables list to match reality, and
-flagged a security exposure on Tool B's tables — see Notes below)
+> This file originated in Tool A (Participant Questionnaire) and is copied
+> into both repos per each tool's CLAUDE.md. Tool B (Consultant Console)
+> owns the sections below the "Tool B additions" marker; edit Tool A's copy
+> for anything above it.
+
+**Last updated:** 2026-09-18 — Tool B session 1 (added this tool's 8 tables,
+fixed the `TEMP anon` write-policy exposure flagged below, backfilled
+`assessor_ratings` from Tool A's existing demo data — see "Tool B additions")
 
 ## Project
 - Name: `greenfriend Double Materiality Assessment` (existing project — reused per
@@ -133,17 +138,17 @@ server-side code, no IP address stored (simpler GDPR posture), matching what
 most lightweight survey tools do. It's a courtesy, not a hard security
 boundary: clearing storage or switching browsers resets it.
 
-## Protected tables (owned by Tool B — never modified by this tool)
-Per CLAUDE.md's Hard Rules, this tool must never change schema, RLS, or write
-to these. Confirmed live in the project as of this session's verification:
+## Protected tables (owned by Tool B — never modified by Tool A)
+Per Tool A's CLAUDE.md Hard Rules, Tool A must never change schema, RLS, or
+write to these. Confirmed live in the project:
 `assessor_ratings`, `calibrations`, `calibration_history`, `participants`,
 `stakeholder_groups`, `stakeholder_members`, `topic_library`.
 
-This tool's data layer (`src/lib/data.js`) does a read-only, best-effort read
+Tool A's data layer (`src/lib/data.js`) does a read-only, best-effort read
 of `stakeholder_groups`/`stakeholder_members` (not `stakeholder_options` —
 that table was never actually created; the real names are these two) for the
 Stakeholder Group screen, and falls back to the spec's default option lists
-if the read fails or returns no rows — see PROGRESS.md.
+if the read fails or returns no rows — see Tool A's PROGRESS.md.
 
 ## Environment variables
 - `VITE_SUPABASE_URL` = `https://evwmxduudcujtibirmga.supabase.co`
@@ -154,20 +159,23 @@ if the read fails or returns no rows — see PROGRESS.md.
   variables at deploy time; never commit real values (`.env` is gitignored,
   `.env.example` has empty placeholders).
 
-## ⚠️ Security note (found this session, not caused by this tool)
-Live policy inspection (`pg_policies`) found `anon`-role **INSERT/UPDATE/DELETE**
-policies, named `TEMP anon insert/update/delete ...`, on three protected
-tables: `stakeholder_groups`, `stakeholder_members`, and `topic_library`
-(the latter also has a redundant `TEMP anon select`). That means the public
-anon key — the one this participant-facing tool ships to every browser —
-can currently write to Tool B's tables, not just read them.
+## ✅ Security note — RESOLVED in Tool B session 1
+Was: live policy inspection (`pg_policies`) found `anon`-role
+**INSERT/UPDATE/DELETE** policies, named `TEMP anon insert/update/delete ...`,
+on three tables Tool B owns: `stakeholder_groups`, `stakeholder_members`, and
+`topic_library` (the latter also had a redundant `TEMP anon select`). That
+meant the public anon key — the one Tool A ships to every browser — could
+write to Tool B's tables, not just read them. Read as scaffolding left over
+from an earlier build/test session.
 
-This is outside this tool's authority to fix: CLAUDE.md's Hard Rules forbid
-this tool from making *any* RLS change to `stakeholder_groups`,
-`stakeholder_members`, or `topic_library`, including tightening a policy
-someone else left open. Flagging here so the Consultant Console (Tool B)
-builder removes those `TEMP` policies before going live — they read like
-scaffolding from Tool B's own build/testing that was never cleaned up.
+Fixed in Tool B session 1 (this tool owns these tables, so this was in scope
+to fix directly): dropped all 10 `TEMP anon *` policies via
+`apply_migration` (`drop_temp_anon_write_policies`). Current state:
+`stakeholder_groups`/`stakeholder_members` keep their permanent `anon select`
+(needed by Tool A's Stakeholder Group screen) plus `authenticated full
+access`; `topic_library` has no `anon` access at all now (Tool A never reads
+it directly — it only reads the per-assessment `iros` rows, which are synced
+from `topic_library` at assessment-creation time).
 
 ## Notes for future sessions
 - **Incident (session 3):** the deployed app showed `Survey misconfigured` /
@@ -195,8 +203,69 @@ scaffolding from Tool B's own build/testing that was never cleaned up.
   frontend against this project could not be done from within this session. Test
   on Netlify (or the builder's own machine) once deployed.
 - A demo assessment (`slug = 'acme-2026'`, 5 IROs covering all four `iro_type`
-  values) was inserted for testing — safe to delete once Tool B exists and real
-  assessments are created there.
-- When Tool B is built and creates `stakeholder_options`, no change should be
-  needed here — `fetchStakeholderOptions` in `src/lib/data.js` already queries it
-  and only needs the table to start existing.
+  values) was inserted for testing — safe to delete once real assessments exist.
+- `stakeholder_options` was never created — the real tables are
+  `stakeholder_groups`/`stakeholder_members` (see Tool B additions below);
+  Tool A's `fetchStakeholderOptions` already falls back gracefully.
+
+---
+
+## Tool B additions (session 1 — Consultant Console)
+
+### Tables added — all live, matching docs/schema-draft.md exactly
+`topic_library`, `assessor_ratings`, `calibrations`, `calibration_history`,
+`participants`, `stakeholder_groups`, `stakeholder_members` — full field
+lists and RLS design are in `docs/schema-draft.md`; live inspection this
+session confirmed the columns match, plus two columns on `iros` that
+schema-draft.md called for but weren't yet documented anywhere:
+`topic_library_id` (FK → topic_library, nullable) and `session_notes`
+(text, nullable — the qualitative live-session per-topic notes field from
+product-spec.md Section 8, surfaced in this tool's Results and Calibration
+tabs).
+
+### RLS — as designed in schema-draft.md, confirmed live
+`authenticated` has full read/write (no delete on `assessor_ratings` or
+`calibrations`; `calibration_history` is insert+read only — append-only by
+policy) on all seven tables above. `anon` has select-only on
+`stakeholder_groups`/`stakeholder_members` (for Tool A's Stakeholder Group
+screen) and no access at all to the other five. See the resolved Security
+note above for the write-access holes found and closed this session.
+
+### Auth
+Magic link via Supabase Auth (`supabase.auth.signInWithOtp`), one shared
+permission level, no roles table — matches CLAUDE.md exactly. Whether public
+signup is disabled (true invite-only, vs. anyone with a magic link creating
+an account) is a Supabase dashboard **Auth → Settings** toggle this session
+did not change — confirm it's set to disabled before real client use.
+
+### `ratings` → `assessor_ratings` reconciliation (the open design question
+### schema-draft.md flagged — resolved for now, not closed permanently)
+Tool A's `ratings` is one row per (IRO × criterion × participant session);
+this tool's `assessor_ratings` is one row per (IRO × assessor), which is
+what `src/lib/calc.js` (ported verbatim from the reference prototype) expects.
+**Decision:** this tool never reads `ratings` directly — it's explicitly
+protected (Tool B's CLAUDE.md: "read only, never write, never alter its
+schema or RLS"), and `ratings` currently has **no SELECT policy for any
+role**, anon or authenticated, so there is no RLS-compliant way to read it
+from this tool even if that rule didn't exist. Instead:
+- **One-time backfill (done this session):** pivoted the 30 existing
+  `ratings` rows from the `acme-2026` demo assessment into 10
+  `assessor_ratings` rows (one per IRO × session), via a direct SQL
+  `INSERT ... SELECT` grouping by `(iro_id, session_id)` and using
+  `stakeholder_group` as `assessor_label`. Run once, by hand, via the
+  Supabase MCP tool — not part of the app's code path.
+- **Not yet solved: keeping this live.** New Tool A submissions land in
+  `ratings` and will **not** automatically appear in `assessor_ratings` —
+  this dashboard will go stale for any assessment completed after this
+  session. The clean fix is a small server-side sync (Supabase Edge
+  Function or Netlify Function) using the `SUPABASE_SERVICE_ROLE_KEY` — the
+  service role bypasses RLS entirely, so it never needs to touch `ratings`'
+  policy — that copies new `ratings` rows into `assessor_ratings` on a
+  schedule or on insert. CLAUDE.md flags that key as needing the builder's
+  go-ahead before any real use ("flag to the builder first") — not built
+  yet, flagged here for the next session.
+
+### Known gap: no Netlify deploy yet
+This session built the frontend (`src/`) and verified it locally
+(`npm run build`, `npm run lint`, and a headless-browser render of the
+Login screen) but did not deploy it — see PROGRESS.md.
