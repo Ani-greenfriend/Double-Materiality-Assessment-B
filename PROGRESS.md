@@ -28,11 +28,12 @@ nothing to carry forward.
       an earlier, undocumented session (not this repo's git history); this
       session verified them against docs/schema-draft.md, fixed a real
       security hole (see Build decisions), and updated docs/supabase-setup.md
-- [x] Resolve the ratings/assessor_ratings shape question — decided:
-      never read `ratings` directly (protected + no SELECT policy exists for
-      any role); backfilled a one-time snapshot into `assessor_ratings`
-      instead. Keeping it live is NOT solved — see docs/supabase-setup.md's
-      "Tool B additions" section and Notes for next session.
+- [x] Resolve the ratings/assessor_ratings shape question, including
+      keeping it live — a `pg_cron` job (`sync-ratings-to-assessor-ratings`,
+      every 10 min) syncs new `ratings` rows into `assessor_ratings`
+      automatically, entirely inside Postgres. Never touches `ratings`'
+      schema/RLS, needs no service-role key. Tested with a throwaway row
+      this session — see docs/supabase-setup.md's "Tool B additions".
 - [ ] Build Dashboard (the process-step-cards home screen) — not built;
       the app currently opens straight into Results after login
 - [ ] Build Stakeholders — the *master-map admin* (add/edit contacts,
@@ -77,9 +78,13 @@ nothing to carry forward.
   this tool's own tables, so in scope to fix directly (unlike `ratings`,
   which is Tool A's and off-limits). See docs/supabase-setup.md.
 - `ratings` → `assessor_ratings`: never read `ratings` directly (protected,
-  and it has no SELECT policy for any role anyway); did a one-time manual
-  SQL backfill of the existing demo data instead of building a live sync
-  pipeline. Deliberately incomplete — see Known issues and Notes below.
+  and it has no SELECT policy for any role anyway). Built a live sync as a
+  `pg_cron` job rather than a Supabase Edge Function or Netlify Function
+  with the service role key — same result (new submissions reach the
+  dashboard automatically), but it never needs a new credential anywhere
+  and never touches `ratings`' schema/RLS/triggers. Chose this over the
+  originally-sketched service-role approach once it became clear pg_cron
+  could do the same job with less exposure.
 - Fixed `netlify.toml`'s `base = "repo-tool-b"`, which didn't match
   CLAUDE.md's actual Project Structure (root-level `/src`, matching Tool A's
   layout) and pointed at a directory that was never created.
@@ -96,11 +101,6 @@ nothing to carry forward.
   real click-through — sign in, switch assessments, adjust/sign off a
   calibration, confirm it persists — once deployed or from an unrestricted
   machine.
-- **`assessor_ratings` will go stale.** Only the one-time backfill exists;
-  new Tool A submissions after this session won't appear here until a real
-  sync (Edge Function or Netlify Function with the service role key) is
-  built — see docs/supabase-setup.md's "Tool B additions" section. Flag to
-  the builder before wiring `SUPABASE_SERVICE_ROLE_KEY` per CLAUDE.md.
 - Supabase Auth's public-signup toggle (invite-only enforcement) was not
   checked/changed this session — confirm it's disabled in the dashboard.
 - Deletion-request contact/process for GDPR not yet confirmed with the builder
@@ -113,8 +113,7 @@ nothing to carry forward.
 
 ## Notes for next session
 Priority: get a real click-through test of the authenticated dashboard
-(deploy to Netlify, or test from a machine that can reach Supabase), then
-decide on the `assessor_ratings` sync approach (Edge Function vs. Netlify
-Function, and how often) before more real assessments accumulate data that
-won't show up here. After that: Dashboard home screen, then Topics/
-Stakeholders admin (needed before a real New Assessment wizard makes sense).
+(deploy to Netlify, or test from a machine that can reach Supabase). The
+`assessor_ratings` sync is done (pg_cron, every 10 min) — no longer blocking.
+After the click-through: Dashboard home screen, then Topics/Stakeholders
+admin (needed before a real New Assessment wizard makes sense).
