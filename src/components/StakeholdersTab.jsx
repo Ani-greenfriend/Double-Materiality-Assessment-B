@@ -1,7 +1,9 @@
 import { StakeholderIcon } from './icons';
 
+const TYPE_LABEL = { impact: 'Impact', financial: 'Financial', silent: 'Silent stakeholders' };
+
 export default function StakeholdersTab({ master, participation }) {
-  const totalRatings = participation.reduce((sum, p) => sum + p.ratingCount, 0);
+  const totalSubmissions = participation.reduce((sum, p) => sum + p.submissionCount, 0);
 
   return (
     <div>
@@ -23,7 +25,7 @@ export default function StakeholdersTab({ master, participation }) {
           {participation.map((p) => (
             <div key={p.group} className="bg-surface border border-border-apus rounded-xl p-3.5 flex items-center justify-between">
               <span className="text-[13px] font-medium">{p.group}</span>
-              <span className="text-[12px] text-text-secondary">{p.ratingCount} criteria answered · {totalRatings ? Math.round((p.ratingCount / totalRatings) * 100) : 0}% of ratings</span>
+              <span className="text-[12px] text-text-secondary">{p.submissionCount} submission{p.submissionCount === 1 ? '' : 's'} · {totalSubmissions ? Math.round((p.submissionCount / totalSubmissions) * 100) : 0}% of responses</span>
             </div>
           ))}
         </div>
@@ -35,28 +37,39 @@ export default function StakeholdersTab({ master, participation }) {
           No stakeholder groups defined yet.
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {master.map((g) => (
-            <div key={g.id} className="bg-surface border border-border-apus rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-semibold">{g.name}</span>
-                <span className="text-[10.5px] text-text-secondary">{(g.perspectives ?? []).join(' · ')}</span>
-              </div>
-              {g.members.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  {g.members.map((m) => (
-                    <div key={m.id} className="text-[11.5px] text-text-secondary flex flex-wrap gap-x-2">
-                      <span className="text-text-primary font-medium">{m.name}</span>
-                      <span>{m.role}</span>
-                      {m.company && <span>· {m.company}</span>}
-                      {(m.pillars ?? []).length > 0 && <span>· {m.pillars.join('/')}</span>}
+        ['impact', 'financial', 'silent', null].map((type) => {
+          const groups = master.filter((g) => g.type === type);
+          if (!groups.length) return null;
+          return (
+            <div key={type ?? 'unclassified'} className="mb-5">
+              <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                {type ? TYPE_LABEL[type] : 'Unclassified — needs a type'} · {groups.length}
+              </p>
+              <div className="flex flex-col gap-2">
+                {groups.map((g) => (
+                  <div key={g.id} className="bg-surface border border-border-apus rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[13px] font-semibold">{g.name}</span>
+                      <span className="text-[10.5px] text-text-secondary">{g.members.length} contact{g.members.length === 1 ? '' : 's'}</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {g.members.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        {g.members.map((m) => (
+                          <div key={m.id} className="text-[11.5px] text-text-secondary flex flex-wrap gap-x-2">
+                            <span className="text-text-primary font-medium">{m.name}</span>
+                            <span>{m.role}</span>
+                            {m.company && <span>· {m.company}</span>}
+                            {(m.pillars ?? []).length > 0 && <span>· {m.pillars.join('/')}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })
       )}
     </div>
   );

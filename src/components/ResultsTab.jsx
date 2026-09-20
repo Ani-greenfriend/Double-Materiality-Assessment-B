@@ -1,4 +1,4 @@
-import { aggregateIro, aggregateTopic, hasImpactAxis } from '../lib/calc';
+import { aggregateIro, aggregateTopic } from '../lib/calc';
 import { ESRS_TOPICS, PILLAR_COLOR, TYPE_LABEL, MATERIAL_BADGE, pillarFor } from '../lib/topics';
 import DmaMascot from './DmaMascot';
 import { ResultsIcon } from './icons';
@@ -7,19 +7,19 @@ function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
-export default function ResultsTab({ iros }) {
+export default function ResultsTab({ iros, thresholds }) {
   if (!iros.length) {
     return <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">This assessment has no IROs yet.</div>;
   }
 
   const topicIds = [...new Set(iros.map((i) => i.topic))];
   const topics = topicIds
-    .map((id) => ({ meta: ESRS_TOPICS.find((t) => t.id === id) ?? { id, cat: 'E', name: id }, agg: aggregateTopic(id, iros) }))
+    .map((id) => ({ meta: ESRS_TOPICS.find((t) => t.id === id) ?? { id, cat: 'E', name: id }, agg: aggregateTopic(id, iros, thresholds) }))
     .filter((t) => t.agg);
 
   const sortedIros = [...iros].sort((a, b) => {
-    const scoreA = hasImpactAxis(a.iroType) ? aggregateIro(a).impactScore : aggregateIro(a).financialScore;
-    const scoreB = hasImpactAxis(b.iroType) ? aggregateIro(b).impactScore : aggregateIro(b).financialScore;
+    const scoreA = aggregateIro(a, thresholds).effectiveValue;
+    const scoreB = aggregateIro(b, thresholds).effectiveValue;
     return (scoreB ?? -1) - (scoreA ?? -1);
   });
 
@@ -64,8 +64,8 @@ export default function ResultsTab({ iros }) {
 
       <div className="flex flex-col gap-2">
         {sortedIros.map((iro) => {
-          const agg = aggregateIro(iro);
-          const score = hasImpactAxis(iro.iroType) ? agg.impactScore : agg.financialScore;
+          const agg = aggregateIro(iro, thresholds);
+          const score = agg.effectiveValue;
           const pillar = PILLAR_COLOR[pillarFor(iro.topic)];
           return (
             <div key={iro.id} className="bg-surface border border-border-apus rounded-xl p-4">
@@ -76,13 +76,18 @@ export default function ResultsTab({ iros }) {
                   <span className="text-[9.5px] text-text-secondary">{TYPE_LABEL[iro.iroType]}</span>
                   {agg.isMaterial && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ color: MATERIAL_BADGE.text, background: MATERIAL_BADGE.bg }}>MATERIAL</span>}
                   {agg.discrepancy && <span className="text-[9.5px] rounded-full px-2 py-0.5 border border-text-secondary text-text-secondary">Needs review</span>}
+                  {iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined && (
+                    <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(76,111,255,0.14)', color: '#4C6FFF' }}>Calibrated</span>
+                  )}
                 </div>
                 <span className="text-[13px] font-bold" style={{ color: pillar.text }}>{fmt(score)}</span>
               </div>
               <div className="h-1.5 rounded-full bg-app-black overflow-hidden mb-2">
                 <div className="h-full rounded-full" style={{ width: `${Math.min(100, ((score ?? 0) / 5) * 100)}%`, background: pillar.text }} />
               </div>
-              <p className="text-[11px] text-text-secondary">{agg.n} assessor{agg.n === 1 ? '' : 's'} rated this IRO{agg.n === 0 ? ' — not yet rated' : ''}</p>
+              <p className="text-[11px] text-text-secondary">
+                {agg.n} assessor{agg.n === 1 ? '' : 's'} rated this IRO{agg.n === 0 ? ' — not yet rated' : ` (${agg.sourceBasis})`}
+              </p>
 
               {iro.sessionNotes && (
                 <div className="rounded-lg px-3 py-2.5 mt-2.5" style={{ background: 'rgba(76,111,255,0.08)', border: '1px solid rgba(76,111,255,0.2)' }}>

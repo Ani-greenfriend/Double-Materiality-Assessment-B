@@ -4,20 +4,50 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 1
-**Last updated:** 2026-09-20 — by Project Governor, spec revised to v2.0 (session state below preserved; no v2.0 code built yet)
+**Session:** 2
+**Last updated:** 2026-09-20 — session 2
 **Live URL:** none yet
 
 ## Current state
-First build session in progress. Scoped down from the full Tier-3 build per
-the builder's direction: build a read-only(-ish) results dashboard first
-(Results + Calibration + Stakeholders, behind minimal magic-link auth),
-deferring the New Assessment wizard, Topics admin, Questionnaire flow, and
-export panel to later sessions.
+The existing Results/Calibration/Stakeholders slice (behind magic-link auth)
+is now reworked against the live v2.0 schema and builds/lints clean. It is
+no longer broken, but it is still only that same three-tab slice from
+session 1 — none of the new v2.0 screens (Dashboard, Topics admin, Cycles
+overview, New cycle/assessment wizard, Invitations, Participants, Review
+Hub, Live session flow, the full Calibrate & Results workspace, Report
+builder) exist yet. Still not click-tested in a live browser (sandbox can't
+reach Supabase — see Known issues).
 
 ## Last session
-None — this is the first build session. "Notes for next session" was empty,
-nothing to carry forward.
+Re-verified docs/supabase-setup.md against the live database via Supabase
+MCP (list_tables/get_advisors) — schema matches exactly, migration 10's
+security fix is live, no new advisories. Reworked src/lib/calc.js for the
+v2.0 formula changes (Section 9): dropped `financialLikelihood` (a risk/
+opportunity's `likelihood` row is the financial likelihood), potential-
+human-rights-impact IROs now score on severity alone, thresholds moved from
+per-IRO to a `thresholds` param (they live on the cycle), added an
+`effectiveValue` helper (calibrated value if set, else calculated) used for
+materiality and topic roll-up, added per-source (survey/session) averages
+and the "source gap" ≥1.5 discrepancy check, bumped
+`CALC_METHODOLOGY_VERSION` to `severity-avg-with-override-v2`. Reworked
+src/lib/data.js to read `iros` (dropped retired `impact_threshold`/
+`financial_threshold`/`subtopic_raw` columns, added `time_horizon`/
+`potential_human_rights_impact`), `combined_ratings` (grouped by
+submission+iro into one "assessor" row, replacing `assessor_ratings`
+entirely), and `assessments` joined to `cycles`→`clients` for thresholds/
+stage/client name. Calibration writes now set `cycle_id`; the old
+`signOffCalibration`/`revokeCalibrationSignOff` functions (used retired
+`calibrations.signed_off_by`/`signed_off_at` columns) were replaced with
+`setReviewedWithOwner` (the real v2.0 field, a tick + date, not a sign-off —
+sign-off is cycle-level, not built yet). Updated App.jsx, ResultsTab,
+CalibrationTab and StakeholdersTab to match: assessment selector shows
+client + type + cycle stage/Provisional-Final; Calibration is read-only
+outside stage Calibrating (cycle-level, checked via the joined cycle);
+Stakeholders groups by `type` (Impact/Financial/Silent/Unclassified).
+`npm run build` and `npm run lint` both clean (only pre-existing warnings
+in reference-prototype/, none in src/). Sanity-checked the shape against
+live demo data via `execute_sql` (combined_ratings rows, assessments row)
+before writing the grouping logic — matches.
 
 ## Remaining work
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
@@ -74,9 +104,9 @@ nothing to carry forward.
       *(Netlify MCP is now active — deploy via MCP)*
 
 ### v2.0 revision items (spec v2.0, 2026-09-20)
-- [ ] (v2.0 revision) Confirm Tool A's PR with the security fix (migration 10 in docs/supabase-setup.md) is merged, then re-read docs/supabase-setup.md in case it changed again
-- [ ] (v2.0 revision) Connect to the existing Supabase project and read docs/supabase-setup.md (v2.0 schema) before any database work
-- [ ] (v2.0 revision) Rework the data layer and calc.js: read from `combined_ratings`, port `reference-prototype/src/lib/calc.js`, apply the Section 9 v2 rules; remove every reference to retired tables and columns
+- [x] (v2.0 revision) Confirm Tool A's PR with the security fix (migration 10 in docs/supabase-setup.md) is merged, then re-read docs/supabase-setup.md in case it changed again — confirmed live via Supabase MCP (list_tables/get_advisors), matches docs exactly
+- [x] (v2.0 revision) Connect to the existing Supabase project and read docs/supabase-setup.md (v2.0 schema) before any database work
+- [x] (v2.0 revision) Rework the data layer and calc.js: read from `combined_ratings`, port `reference-prototype/src/lib/calc.js`, apply the Section 9 v2 rules; remove every reference to retired tables and columns — done (see Last session); ResultsTab/CalibrationTab/StakeholdersTab updated to match and build/lint clean
 - [ ] (v2.0 revision) Create the logo storage bucket (client logo public-read) and document it in docs/supabase-setup.md
 - [ ] (v2.0 revision) Build Dashboard — the six process-step cards with real progress
 - [ ] (v2.0 revision) Build Stakeholders — master map with Impact / Financial / Silent types, contacts, consent checkbox and data statement; handle groups with no type
@@ -144,7 +174,8 @@ nothing to carry forward.
 - Maker-checker (Owner ≠ Moderator) is visually flagged in Calibration but not
   enforced — saving isn't blocked
 - Spec revised to v2.0 on 2026-09-20 — CLAUDE.md regenerated by Project Governor
-- **The session-1 code was built against the v1.1 schema and will not work.** ResultsTab, CalibrationTab and StakeholdersTab read tables and columns retired in the v2.0 migration (`assessor_ratings`, `participants`, respondent counters, calibration sign-off columns). Rework them against docs/supabase-setup.md; do not deploy the session-1 build as it stands
+- **Resolved 2026-09-20 (session 2):** the session-1 code was built against the retired v1.1 schema (`assessor_ratings`, calibration sign-off columns, etc.) and didn't work. Reworked in session 2 — see Last session. Still not click-tested live (see below).
+- The per-IRO "sign off this result" flow from session 1 is gone — `calibrations.signed_off_by`/`signed_off_at` were retired in the v2.0 migration. Replaced with `reviewed_with_owner` (a tick + date, not an approval). A real per-cycle sign-off flow (approver name/role/date/minutes reference) belongs on the not-yet-built Cycles and assessments overview screen.
 - Tool A's public-side security was reworked on 2026-09-20 (migration 10: anon has no table access to invitations, submissions, ratings, topic_justifications; six SECURITY DEFINER functions keyed by link code) — do not touch the anon side; re-read docs/supabase-setup.md at session start in case Tool A changes it again
 - `ratings.criterion_key` has no `financialLikelihood` value: for risks and opportunities the `likelihood` row is the financial likelihood
 - `stakeholder_groups` has 34 rows; the 31 original ones have `type` null — the Stakeholders screen must handle and let the builder classify them
@@ -157,11 +188,18 @@ nothing to carry forward.
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
 
 ## Notes for next session
-PRIORITY (v2.0 revision): spec v2.0 supersedes the plan below. Read docs/supabase-setup.md
-(v2.0 schema; re-check it is current), rework the data layer and calc.js against it,
-then build the v2.0 screens in the order listed under Remaining work.
-Earlier note (session-1 plan, now mostly superseded): get a real click-through test of the authenticated dashboard
-(deploy to Netlify, or test from a machine that can reach Supabase). The
-`assessor_ratings` sync is done (pg_cron, every 10 min) — no longer blocking.
-After the click-through: Dashboard home screen, then Topics/Stakeholders
-admin (needed before a real New Assessment wizard makes sense).
+Data layer and calc.js are now v2.0-correct and the three existing tabs
+(Results, Calibration, Stakeholders) work against the live schema again —
+but that's still the whole app. Next: pick up the v2.0 revision checklist
+above in order, starting with the Dashboard (six process-step cards) since
+nothing currently exists to get from login to anything other than the old
+three-tab view. Before building each new screen, re-read the matching
+subsection of docs/product-spec.md Section 8 (already read this session for
+Dashboard/Stakeholders/Topics/Cycles overview/New cycle/New assessment/
+Invitations/Participants/Created/Review Hub/Live session/Calibrate &
+Results/Report builder — Section 8 in full is worth a fresh read rather
+than relying on this note). Storage bucket for logos still doesn't exist —
+needed before New cycle's client-logo upload step can work. No live
+click-through test has been done yet this build (sandbox network
+restriction, unchanged from session 1) — do one from Netlify or an
+unrestricted machine before trusting the UI beyond build/lint passing.

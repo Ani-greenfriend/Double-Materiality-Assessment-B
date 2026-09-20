@@ -61,6 +61,11 @@ export default function App() {
   if (!session) return <Login />;
 
   const participation = participationByGroup(iros);
+  const currentAssessment = assessments.find((a) => a.id === assessmentId) ?? null;
+  const thresholds = {
+    impact: currentAssessment?.cycle?.impactThreshold ?? 3.0,
+    financial: currentAssessment?.cycle?.financialThreshold ?? 3.0,
+  };
 
   return (
     <div className="min-h-screen">
@@ -74,9 +79,16 @@ export default function App() {
               className="bg-surface border border-border-apus rounded-lg px-3 py-1.5 text-[12px] outline-none"
             >
               {assessments.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.mode})</option>
+                <option key={a.id} value={a.id}>
+                  {a.cycle?.clientName ? `${a.cycle.clientName} — ` : ''}{a.name} ({a.type === 'expert_live_session' ? 'Live session' : 'Survey'})
+                </option>
               ))}
             </select>
+          )}
+          {currentAssessment?.cycle?.stage && (
+            <span className="text-[10.5px] font-semibold rounded-full px-2 py-0.5 border border-border-apus text-text-secondary uppercase tracking-wide">
+              {currentAssessment.cycle.stage.replace('_', ' ')} · {currentAssessment.cycle.stage === 'signed_off' ? 'Final' : 'Provisional'}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -103,9 +115,17 @@ export default function App() {
           <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No assessments yet — create one in the New Assessment wizard (not built yet) or via Supabase directly.</div>
         ) : (
           <>
-            {tab === 'results' && <ResultsTab iros={iros} />}
+            {tab === 'results' && <ResultsTab iros={iros} thresholds={thresholds} />}
             {tab === 'stakeholders' && <StakeholdersTab master={stakeholderMaster} participation={participation} />}
-            {tab === 'calibration' && <CalibrationTab iros={iros} onChanged={reload} />}
+            {tab === 'calibration' && (
+              <CalibrationTab
+                iros={iros}
+                thresholds={thresholds}
+                cycleId={currentAssessment?.cycle?.id ?? null}
+                locked={currentAssessment?.cycle?.stage !== 'calibrating'}
+                onChanged={reload}
+              />
+            )}
           </>
         )}
       </main>
