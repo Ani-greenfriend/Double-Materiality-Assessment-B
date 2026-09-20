@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { startCalibration, signOffCycle, revokeCycleSignOff, deleteCycle, deleteAssessment, purgeUnfinishedDrafts } from '../lib/data';
 import { CycleIcon } from './icons';
 import NewCycleWizard from './NewCycleWizard';
+import NewAssessmentWizard from './NewAssessmentWizard';
+import InvitationsPanel from './InvitationsPanel';
+import ParticipantsPanel from './ParticipantsPanel';
 
 const STAGE_LABEL = { collecting: 'Collecting', calibrating: 'Calibrating', signed_off: 'Signed off' };
 const STAGE_COLOR = {
@@ -16,7 +19,7 @@ function fmt(v) {
   return v === null || v === undefined ? '–' : Number(v).toFixed(1);
 }
 
-export default function CyclesTab({ cycles, userId, onChanged }) {
+export default function CyclesTab({ cycles, userId, stakeholderMaster, onChanged }) {
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState(null);
 
@@ -60,7 +63,15 @@ export default function CyclesTab({ cycles, userId, onChanged }) {
       ) : (
         <div className="flex flex-col gap-2">
           {cycles.map((cycle) => (
-            <CycleRow key={cycle.id} cycle={cycle} isOpen={openId === cycle.id} onToggle={() => setOpenId((id) => (id === cycle.id ? null : cycle.id))} userId={userId} onChanged={onChanged} />
+            <CycleRow
+              key={cycle.id}
+              cycle={cycle}
+              isOpen={openId === cycle.id}
+              onToggle={() => setOpenId((id) => (id === cycle.id ? null : cycle.id))}
+              userId={userId}
+              stakeholderMaster={stakeholderMaster}
+              onChanged={onChanged}
+            />
           ))}
         </div>
       )}
@@ -68,13 +79,15 @@ export default function CyclesTab({ cycles, userId, onChanged }) {
   );
 }
 
-function CycleRow({ cycle, isOpen, onToggle, userId, onChanged }) {
+function CycleRow({ cycle, isOpen, onToggle, userId, stakeholderMaster, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [signingOff, setSigningOff] = useState(false);
   const [approverName, setApproverName] = useState(cycle.approverName ?? '');
   const [approverRole, setApproverRole] = useState(cycle.approverRole ?? '');
   const [minutesReference, setMinutesReference] = useState(cycle.minutesReference ?? '');
+  const [addingAssessment, setAddingAssessment] = useState(false);
+  const [openAssessmentId, setOpenAssessmentId] = useState(null);
 
   const stageColor = STAGE_COLOR[cycle.stage] ?? STAGE_COLOR.collecting;
 
@@ -168,40 +181,68 @@ function CycleRow({ cycle, isOpen, onToggle, userId, onChanged }) {
           ) : (
             <div className="flex flex-col gap-2 mb-4">
               {cycle.assessments.map((a) => (
-                <div key={a.id} className="bg-app-black rounded-lg px-3.5 py-3 flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="text-[12.5px] font-medium">{a.name} <span className="text-[10.5px] text-text-secondary">· {TYPE_LABEL[a.type] ?? a.type}</span></p>
-                    <p className="text-[11px] text-text-secondary mt-0.5">
-                      {a.type === 'expert_survey'
-                        ? Object.entries(a.invitationStatusCounts).length
-                          ? Object.entries(a.invitationStatusCounts).map(([status, count]) => `${count} ${status}`).join(' · ')
-                          : 'No invitations yet'
-                        : a.liveSession
-                          ? `Session ${a.liveSession.status}${a.liveSession.facilitator ? ` · facilitated by ${a.liveSession.facilitator}` : ''}`
-                          : 'Not started'}
-                      {a.draftCount > 0 && ` · ${a.draftCount} draft${a.draftCount === 1 ? '' : 's'}`}
-                      {a.submittedCount > 0 && ` · ${a.submittedCount} submitted`}
-                    </p>
-                  </div>
+                <div key={a.id}>
                   <button
-                    onClick={() => handleDeleteAssessment(a.id, a.name)}
-                    disabled={busy}
-                    className="text-[11px] text-text-secondary hover:text-badge-amber shrink-0 disabled:opacity-40"
+                    onClick={() => setOpenAssessmentId((id) => (id === a.id ? null : a.id))}
+                    className="w-full bg-app-black rounded-lg px-3.5 py-3 flex items-center justify-between flex-wrap gap-2 text-left"
                   >
-                    Delete
+                    <div>
+                      <p className="text-[12.5px] font-medium">{a.name} <span className="text-[10.5px] text-text-secondary">· {TYPE_LABEL[a.type] ?? a.type}</span></p>
+                      <p className="text-[11px] text-text-secondary mt-0.5">
+                        {a.type === 'expert_survey'
+                          ? Object.entries(a.invitationStatusCounts).length
+                            ? Object.entries(a.invitationStatusCounts).map(([status, count]) => `${count} ${status}`).join(' · ')
+                            : 'No invitations yet'
+                          : a.liveSession
+                            ? `Session ${a.liveSession.status}${a.liveSession.facilitator ? ` · facilitated by ${a.liveSession.facilitator}` : ''}`
+                            : 'Not started'}
+                        {a.draftCount > 0 && ` · ${a.draftCount} draft${a.draftCount === 1 ? '' : 's'}`}
+                        {a.submittedCount > 0 && ` · ${a.submittedCount} submitted`}
+                      </p>
+                    </div>
+                    <span
+                      onClick={(e) => { e.stopPropagation(); handleDeleteAssessment(a.id, a.name); }}
+                      className="text-[11px] text-text-secondary hover:text-badge-amber shrink-0"
+                    >
+                      Delete
+                    </span>
                   </button>
+                  {openAssessmentId === a.id && (
+                    <div className="mt-2">
+                      {a.type === 'expert_survey' ? (
+                        <InvitationsPanel assessment={a} stakeholderMaster={stakeholderMaster} onClose={() => setOpenAssessmentId(null)} />
+                      ) : (
+                        <ParticipantsPanel assessment={a} stakeholderMaster={stakeholderMaster} userId={userId} onClose={() => setOpenAssessmentId(null)} />
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
-          <button
-            disabled
-            title="New assessment wizard — coming next (this session's build order)"
-            className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 opacity-40 mb-4"
-          >
-            + New assessment
-          </button>
+          {!addingAssessment ? (
+            <button
+              onClick={() => setAddingAssessment(true)}
+              className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 mb-4"
+            >
+              + New assessment
+            </button>
+          ) : (
+            <div className="mb-4">
+              <NewAssessmentWizard
+                cycle={cycle}
+                userId={userId}
+                stakeholderMaster={stakeholderMaster}
+                onCancel={() => setAddingAssessment(false)}
+                onCreated={(created) => {
+                  setAddingAssessment(false);
+                  setOpenAssessmentId(created.id);
+                  onChanged();
+                }}
+              />
+            </div>
+          )}
 
           {error && <p className="text-[11.5px] text-badge-amber mb-3">{error}</p>}
 

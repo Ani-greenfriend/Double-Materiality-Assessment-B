@@ -115,7 +115,7 @@ export async function fetchCycles() {
   const cycleIds = cycles.map((c) => c.id);
   const { data: assessments, error: aError } = await supabase
     .from('assessments')
-    .select('id, cycle_id, name, type, status, justification_mode, created_at')
+    .select('id, cycle_id, name, slug, type, status, justification_mode, created_at')
     .in('cycle_id', cycleIds)
     .order('created_at', { ascending: true });
   if (aError) throw new Error(`assessments query failed: ${aError.message}`);
@@ -148,6 +148,7 @@ export async function fetchCycles() {
       id: a.id,
       cycleId: a.cycle_id,
       name: a.name,
+      slug: a.slug,
       type: a.type,
       status: a.status,
       justificationMode: a.justification_mode,
@@ -292,6 +293,232 @@ export async function fetchTopicLibraryCount(esrsVersion) {
     .eq('esrs_version', esrsVersion);
   if (error) throw new Error(`topic_library count failed: ${error.message}`);
   return count ?? 0;
+}
+
+// The library rows a new assessment snapshots into its own iros, filtered
+// by perspective (impact = neg/pos impact IROs, financial = risk/
+// opportunity), ESRS version and client (shared master topics have
+// client_id null; client-specific ones must match) — Section 8's New
+// assessment "Review & customise" step.
+const IMPACT_IRO_TYPES = ['neg_impact', 'pos_impact'];
+
+export async function fetchTopicLibraryForSnapshot({ esrsVersion, clientId, perspective }) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('topic_library')
+    .select('id, iro_type, esrs_topic_id, esrs_subtopic, short_title, description, actual, value_chain, time_horizon, potential_human_rights_impact, client_id, reference_code')
+    .eq('esrs_version', esrsVersion)
+    .order('esrs_topic_id', { ascending: true });
+  if (error) throw new Error(`topic_library query failed: ${error.message}`);
+  return data
+    .filter((t) => t.client_id === null || t.client_id === clientId)
+    .filter((t) => {
+      if (perspective === 'impact') return IMPACT_IRO_TYPES.includes(t.iro_type);
+      if (perspective === 'financial') return !IMPACT_IRO_TYPES.includes(t.iro_type);
+      return true;
+    });
+}
+
+// ---- New assessment: create the row, then snapshot chosen topics into iros ----
+
+function slugify(text) {
+  return text.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'assessment';
+}
+
+export async function createAssessment({
+  cycleId,
+  type,
+  perspectiveFilter,
+  name,
+  description,
+  startDate,
+  endDate,
+  welcomeText,
+  taskText,
+  justificationMode,
+  mandatory,
+  createdBy,
+}) {
+  assertConfigured();
+  const slug = `${slugify(name)}-${crypto.randomUUID().slice(0, 8)}`;
+  const { data, error } = await supabase
+    .from('assessments')
+    .insert({
+      cycle_id: cycleId,
+      type,
+      perspective_filter: perspectiveFilter,
+      name,
+      description: description || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      welcome_text: welcomeText || null,
+      task_text: taskText || null,
+      justification_mode: justificationMode,
+      mandatory,
+      slug,
+      status: 'active',
+      created_by: createdBy,
+    })
+    .select('id, slug')
+    .single();
+  if (error) throw new Error(`assessments insert failed: ${error.message}`);
+  return data;
+}
+
+export async function snapshotTopicsIntoIros(assessmentId, topics) {
+  assertConfigured();
+  if (!topics.length) return;
+  const rows = topics.map((t, idx) => ({
+    assessment_id: assessmentId,
+    topic_library_id: t.id,
+    esrs_topic_id: t.esrs_topic_id,
+    name: t.short_title,
+    description: t.description,
+    iro_type: t.iro_type,
+    actual: t.actual,
+    time_horizon: t.time_horizon,
+    potential_human_rights_impact: t.potential_human_rights_impact,
+    order: idx,
+  }));
+  const { error } = await supabase.from('iros').insert(rows);
+  if (error) throw new Error(`iros insert failed: ${error.message}`);
+}
+
+// ---- Invitations (expert survey) ----
+
+export async function fetchInvitations(assessmentId) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('id, assessment_id, name, email, stakeholder_group_id, link_code, status, sent_at, opened_at, submitted_at, anonymised_at, created_at, stakeholder_groups ( name )')
+    .eq('assessment_id', assessmentId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`invitations query failed: ${error.message}`);
+  return data.map((i) => ({
+    id: i.id,
+    assessmentId: i.assessment_id,
+    name: i.name,
+    email: i.email,
+    stakeholderGroupId: i.stakeholder_group_id,
+    groupName: i.stakeholder_groups?.name ?? null,
+    linkCode: i.link_code,
+    status: i.status,
+    sentAt: i.sent_at,
+    openedAt: i.opened_at,
+    submittedAt: i.submitted_at,
+    anonymisedAt: i.anonymised_at,
+    createdAt: i.created_at,
+  }));
+}
+
+function generateLinkCode() {
+  return crypto.randomUUID().replace(/-/g, '');
+}
+
+export async function createInvitation({ assessmentId, name, email, stakeholderGroupId }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('invitations')
+    .insert({ assessment_id: assessmentId, name, email, stakeholder_group_id: stakeholderGroupId, link_code: generateLinkCode() });
+  if (error) throw new Error(`invitations insert failed: ${error.message}`);
+}
+
+export async function updateInvitation(id, patch) {
+  assertConfigured();
+  const { error } = await supabase.from('invitations').update(patch).eq('id', id);
+  if (error) throw new Error(`invitations update failed: ${error.message}`);
+}
+
+// RLS-gated: only succeeds before the invitee has opened the link.
+export async function deleteInvitation(id) {
+  assertConfigured();
+  const { error } = await supabase.from('invitations').delete().eq('id', id);
+  if (error) throw new Error(`invitations delete failed: ${error.message}`);
+}
+
+export async function markInvitationSent(id) {
+  return updateInvitation(id, { sent_at: new Date().toISOString() });
+}
+
+// name/email are NOT NULL on invitations — anonymising replaces them with a
+// placeholder rather than clearing to null (Section 7's deletion mechanism).
+export async function anonymiseInvitation(id) {
+  return updateInvitation(id, { name: 'Anonymised', email: 'anonymised@invalid', anonymised_at: new Date().toISOString() });
+}
+
+// ---- Participants (expert live session) ----
+
+async function ensureLiveSession(assessmentId, facilitator) {
+  const { data: existing, error: selError } = await supabase
+    .from('live_sessions')
+    .select('id, status, facilitator, started_at, finished_at')
+    .eq('assessment_id', assessmentId)
+    .maybeSingle();
+  if (selError) throw new Error(`live_sessions query failed: ${selError.message}`);
+  if (existing) return existing;
+  const { data, error } = await supabase
+    .from('live_sessions')
+    .insert({ assessment_id: assessmentId, facilitator: facilitator || null })
+    .select('id, status, facilitator, started_at, finished_at')
+    .single();
+  if (error) throw new Error(`live_sessions insert failed: ${error.message}`);
+  return data;
+}
+
+export async function fetchLiveSessionWithParticipants(assessmentId) {
+  assertConfigured();
+  const liveSession = await ensureLiveSession(assessmentId, null);
+  const { data: participants, error } = await supabase
+    .from('live_session_participants')
+    .select('id, live_session_id, name, expertise, represents_group_id, removed_at, removed_reason')
+    .eq('live_session_id', liveSession.id)
+    .order('name', { ascending: true });
+  if (error) throw new Error(`live_session_participants query failed: ${error.message}`);
+  return { liveSession, participants };
+}
+
+export async function setLiveSessionFacilitator(liveSessionId, facilitator) {
+  assertConfigured();
+  const { error } = await supabase.from('live_sessions').update({ facilitator }).eq('id', liveSessionId);
+  if (error) throw new Error(`live_sessions update failed: ${error.message}`);
+}
+
+export async function addParticipant({ liveSessionId, name, expertise, representsGroupId, changedBy }) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('live_session_participants')
+    .insert({ live_session_id: liveSessionId, name, expertise, represents_group_id: representsGroupId || null })
+    .select('id')
+    .single();
+  if (error) throw new Error(`live_session_participants insert failed: ${error.message}`);
+  const { error: logError } = await supabase
+    .from('attendance_edit_log')
+    .insert({ live_session_id: liveSessionId, participant_id: data.id, action: 'added', changed_by: changedBy });
+  if (logError) throw new Error(`attendance_edit_log insert failed: ${logError.message}`);
+  return data.id;
+}
+
+export async function editParticipant({ liveSessionId, participantId, patch, changedBy }) {
+  assertConfigured();
+  const { error } = await supabase.from('live_session_participants').update(patch).eq('id', participantId);
+  if (error) throw new Error(`live_session_participants update failed: ${error.message}`);
+  const { error: logError } = await supabase
+    .from('attendance_edit_log')
+    .insert({ live_session_id: liveSessionId, participant_id: participantId, action: 'edited', changed_by: changedBy });
+  if (logError) throw new Error(`attendance_edit_log insert failed: ${logError.message}`);
+}
+
+export async function removeParticipant({ liveSessionId, participantId, reason, changedBy }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('live_session_participants')
+    .update({ removed_at: new Date().toISOString(), removed_reason: reason || null })
+    .eq('id', participantId);
+  if (error) throw new Error(`live_session_participants update failed: ${error.message}`);
+  const { error: logError } = await supabase
+    .from('attendance_edit_log')
+    .insert({ live_session_id: liveSessionId, participant_id: participantId, action: 'removed', reason: reason || null, changed_by: changedBy });
+  if (logError) throw new Error(`attendance_edit_log insert failed: ${logError.message}`);
 }
 
 // ---- Dashboard: IROs + their submitted ratings (via combined_ratings),

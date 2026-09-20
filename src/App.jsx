@@ -172,7 +172,7 @@ export default function App() {
           {loadError && <p className="text-[12px] text-badge-amber mb-4">{loadError}</p>}
 
           {tab === 'dashboard' && <DashboardTab cycles={cycles} stakeholderMaster={stakeholderMaster} session={session} onNavigate={navigate} />}
-          {tab === 'cycles' && <CyclesTab cycles={cycles} userId={session.user.id} onChanged={reloadCyclesAndAssessments} />}
+          {tab === 'cycles' && <CyclesTab cycles={cycles} userId={session.user.id} stakeholderMaster={stakeholderMaster} onChanged={reloadCyclesAndAssessments} />}
           {tab === 'stakeholders' && <StakeholdersTab master={stakeholderMaster} participation={participation} />}
           {tab === 'topics' && <TopicsTab />}
           {tab === 'report' && <ReportTab />}

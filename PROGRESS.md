@@ -5,31 +5,27 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-20 — session 2, part 3
+**Last updated:** 2026-09-20 — session 2, part 4
 **Live URL:** none yet — see PR #4, Netlify branch deploy in progress (builder testing there directly)
 
 ## Current state
-The app shell now matches product-spec.md Section 8's v2.0 IA, ported from
-reference-prototype/'s sidebar mechanics per the builder's direction after
-seeing the flat top-tab-bar version didn't match: a collapsible left rail
-(logo, six nav items — Dashboard, Cycles, Stakeholders, Topics, Calibrate &
-Results, Report) replaces the old top tab bar. Dashboard is a real screen
-now (hero CTA, six process-step cards with live progress, activity feed,
-quick tips — ported from the prototype's Dashboard.jsx). Calibrate & Results
-is the session-1 Results/Calibration screens merged under one nav item with
-an internal switcher (not yet the full redesigned workspace — that's still
-later work). Topics and Report are "not built yet" stubs. An ErrorBoundary
-now wraps the app and the auth-loading state is a visible "Loading…" instead
-of a blank screen, in response to the builder reporting the live preview
-froze. Cycles (overview + New cycle wizard) and Stakeholders are unchanged
-from part 2 except: the New cycle wizard's silent-stakeholders step is gone
-per the builder's correction, and "Delete unfinished drafts" is now fully
-wired (new RLS policies + UI), also per explicit builder direction. Not yet
-built: Topics admin, New assessment wizard, Invitations, Participants,
-Review Hub, Live session flow, the full Calibrate & Results workspace,
-Report builder. Still not click-tested live by Claude Code (sandbox can't
-reach Supabase) — the builder is testing directly on the Netlify branch
-deploy as each push lands.
+The app shell matches product-spec.md Section 8's v2.0 IA (sidebar ported
+from reference-prototype/'s mechanics, item set from spec — see Part 3).
+Cycles now supports the full assessment-creation path: New assessment
+wizard (mode, perspective, survey setup, review & customise with a real
+topic-library snapshot), Invitations (add/remove/copy-link/mark-sent/
+anonymise, consent + data statement), and Participants (add/remove
+attendees with expertise + optional silent-stakeholder representation,
+facilitator, consent + data statement, attendance edit log) are all wired
+up from a cycle's assessment list. A few spec pieces are knowingly
+simplified this round — see Part 4 below and Known issues. Dashboard,
+Stakeholders (read-only), Calibrate & Results (still the session-1 shape)
+are unchanged from Part 3. Not yet built: Topics admin, Review Hub, Live
+session run flow (Intro/Questionnaire — Participants only sets up who's
+attending, it doesn't run the session), the full redesigned Calibrate &
+Results workspace, Report builder. Still not click-tested live by Claude
+Code (sandbox can't reach Supabase) — the builder is testing directly on
+the Netlify branch deploy as each push lands.
 
 ## Last session
 **Part 1** — re-verified docs/supabase-setup.md against the live database,
@@ -129,9 +125,70 @@ branch for the branch deploy they've enabled. Did the first item:
    shared-with-Tool-A boundary (authenticated-only policies, no anon or
    schema change).
 
-`npm run build` and `npm run lint` clean after every step. Then started
-item 2 (New assessment, Invitations, Participants) inside the new shell —
-see below for how far that got this session.
+`npm run build` and `npm run lint` clean after every step. Then moved on to
+item 2 inside the new shell:
+
+**Part 4** — New assessment, Invitations, Participants, all reached from a
+cycle's assessment list in CyclesTab.jsx (click "+ New assessment", or
+click an existing assessment row to open its Invitations/Participants
+inline):
+- **New assessment wizard** (`NewAssessmentWizard.jsx`): Mode select →
+  Perspective select → Survey setup (name, description, dates, welcome/task
+  text) → Review & customise. Review & customise fetches real candidate
+  topics via the new `fetchTopicLibraryForSnapshot` (filtered by the
+  cycle's ESRS version + client + chosen perspective — verified against
+  live topic_library data, 10 shared master topics exist at
+  `esrs_2023_amended`, so this is genuinely testable against the existing
+  demo cycle), lets the consultant check/uncheck which to include, sets
+  justification mode and mandatory, and shows the master stakeholder
+  groups read-only (see simplification below). On create: `createAssessment`
+  inserts the row, `snapshotTopicsIntoIros` bulk-inserts the checked topics
+  as that assessment's `iros`.
+- **Invitations** (`InvitationsPanel.jsx`): add (name/email/stakeholder
+  group, all required — matches the NOT NULL columns, verified live before
+  writing the insert), consent checkbox + Section 7's exact data statement,
+  copy personal link, mark as sent, remove (before opened — RLS-gated,
+  same pattern as cycle/assessment deletes), anonymise (sets name/email to
+  a placeholder rather than null — `invitations.name`/`email` are NOT NULL,
+  checked live first), per-group invited/submitted counts.
+- **Participants** (`ParticipantsPanel.jsx`): `ensureLiveSession` creates
+  the `live_sessions` row on first open (a live-session-type assessment
+  doesn't get one at creation, only when someone opens Participants).
+  Add/remove attendees (name + expertise E1–G1 multi-select + optional
+  "represents" a silent stakeholder group), facilitator name, consent +
+  data statement, every add/remove logged to `attendance_edit_log`.
+- **Simplifications, disclosed rather than silently dropped:**
+  - No separate "Created / Congratulations" screen — creating an
+    assessment jumps straight into its Invitations/Participants panel.
+    That screen's own content (Preview card → Review Hub, "Kick off" →
+    Intro flow) depends on Review Hub and the live session run flow,
+    neither built yet, so it would have been a dead end regardless.
+  - The wizard doesn't auto-save a draft assessment row from the moment
+    mode+perspective are chosen (Section 8's stated behavior) — the row is
+    created only once, when Review & customise is finished. Abandoning the
+    wizard mid-way currently loses the in-progress selections; it doesn't
+    leave an orphan draft row either way, which is a smaller version of
+    the same gap.
+  - No topic reordering in Review & customise (spec lists "reorder" as a
+    user action) — only include/exclude.
+  - Participants supports add/remove but not editing an existing
+    attendee's name/expertise in place (spec lists "edit" as a user
+    action) — remove and re-add covers the same ground today.
+  - Tool A's site address isn't configured (still unresolved from session
+    1 — no env var existed for it). Added an optional `VITE_TOOL_A_URL`
+    (not yet in CLAUDE.md's Environment Variables list) — Copy Link uses
+    it if set, otherwise copies just the `/survey/[slug]/[link_code]` path
+    with a visible note. Needs the builder to either provide Tool A's real
+    domain or confirm this env var addition.
+
+`npm run build` and `npm run lint` clean throughout. Found and fixed one
+real bug before committing: `fetchCycles` wasn't selecting/mapping
+`assessments.slug`, which Invitations needs for the personal link — added
+it. Verified every new table's RLS policies (`iros`, `topic_library`,
+`live_session_participants`, `attendance_edit_log`, `stakeholder_groups`
+inserts) and the `assessments`/`invitations` NOT NULL columns live before
+writing the corresponding insert/update calls, rather than assuming the
+docs were complete or guessing at constraints.
 
 ## Remaining work
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
@@ -195,12 +252,12 @@ see below for how far that got this session.
 - [ ] (v2.0 revision) Build Dashboard — the six process-step cards with real progress *(builder's explicit order: last)*
 - [ ] (v2.0 revision) Build Stakeholders — master map with Impact / Financial / Silent types, contacts, consent checkbox and data statement; handle groups with no type *(builder's explicit order: after Invitations/Participants)*
 - [ ] (v2.0 revision) Build Topics — library filtered by ESRS version, time horizon, human rights flag, CSV upload, sign-off *(builder's explicit order: after Invitations/Participants)*
-- [x] (v2.0 revision) Build Cycles and assessments overview — stages, counts, completeness, sign-off and revoke done (CyclesTab.jsx, now the app's default tab); **purge drafts not done** — no supporting RLS exists and Section 6 vs. Section 8 conflict, see Known issues; shown disabled with an explanation instead of guessing
-- [x] (v2.0 revision) Build New cycle — financial year first, ESRS version pre-selected, client and logo, thresholds baseline, silent stakeholders prompt — NewCycleWizard.jsx, all 5 steps
-- [ ] (v2.0 revision) Build New assessment — mode select, perspective select, setup, review and customise (justification mode, mandatory)
-- [ ] (v2.0 revision) Build Invitations — list with personal links, mark as sent, group mismatch flag, consent checkbox
-- [ ] (v2.0 revision) Build Participants — live session attendee list, soft removal, attendance edit log, consent checkbox
-- [ ] (v2.0 revision) Build the Created / Congratulations screen
+- [x] (v2.0 revision) Build Cycles and assessments overview — stages, counts, completeness, sign-off, revoke, and purge drafts (RLS added Part 3) all done (CyclesTab.jsx, now reached via the sidebar's Cycles item)
+- [x] (v2.0 revision) Build New cycle — financial year first, ESRS version pre-selected, client and logo, thresholds baseline — NewCycleWizard.jsx, 4 steps (silent stakeholders step removed per builder direction, Part 3)
+- [x] (v2.0 revision) Build New assessment — mode select, perspective select, setup, review and customise (justification mode, mandatory) — NewAssessmentWizard.jsx; no topic reordering, no auto-save-from-step-1 draft row (see Part 4 simplifications)
+- [x] (v2.0 revision) Build Invitations — list with personal links, mark as sent, consent checkbox — InvitationsPanel.jsx; **group mismatch flag not built** (needs Tool A submission data cross-referenced against the invited group — deferred, no spec-critical blocker, just not done yet); personal link needs `VITE_TOOL_A_URL` set to be a full URL (see Known issues)
+- [x] (v2.0 revision) Build Participants — live session attendee list, soft removal, attendance edit log, consent checkbox — ParticipantsPanel.jsx; add/remove only, no in-place edit (see Part 4 simplifications)
+- [ ] (v2.0 revision) Build the Created / Congratulations screen — skipped; New assessment routes straight into Invitations/Participants instead since Review Hub and the live session run flow (this screen's own links) aren't built yet either
 - [ ] (v2.0 revision) Build Review Hub — render Tool A's screens exactly, including About you and Save and continue later
 - [ ] (v2.0 revision) Build Live session Intro flow and Questionnaire — justifications, Save and pause, Finish session
 - [ ] (v2.0 revision) Build the Calibrate & Results workspace — Calibrate, Results and Matrix tabs, stage banner, two thresholds with Apply and reason
@@ -269,30 +326,42 @@ see below for how far that got this session.
 - 3 pre-existing test rows in `stakeholder_members` ("k", "test", "s") should be removed before real use; the two demo invitations ("Demo Expert" — already submitted — and "Demo Expert 2") on `acme-2026` are placeholder data
 - Supabase advisor shows a "leaked password protection disabled" Auth warning — not relevant to magic-link login unless passwords are enabled
 - Supabase project stays on the Free plan (accepted risk): a paused project breaks experts' personal and resume links — open a survey link or the console weekly during a survey window
-- Personal link format seen on Tool A's deploy preview: `/survey/[assessment slug]/[link_code]`. Decide with the builder how Tool B learns Tool A's site address (no environment variable is defined for it yet)
-- No storage bucket for logos is documented yet; `live_sessions`, `live_session_participants` and `attendance_edit_log` fields are defined only in spec Section 5
+- **Partially resolved (Part 4):** Tool A's site address for the personal link. Added an optional `VITE_TOOL_A_URL` env var (see .env.example) — `InvitationsPanel`'s Copy Link uses it if set, else copies just the `/survey/[slug]/[link_code]` path with a visible note. Still needs the builder to provide the real domain (or confirm adding this var to CLAUDE.md's Environment Variables list — not done there yet, since that's the builder/Project Governor's file to change, not something to edit unilaterally)
+- Invitations' "flag where the group an expert chose in Tool A differs from the group invited" (Section 8) is not built — would need `submissions.stakeholder_group` cross-referenced per invitation, deferred this session
+- Participants supports add/remove only, not in-place edit of an existing attendee (Section 8 lists "edit" too)
+- New assessment's draft auto-save (row created and kept in sync from the moment mode+perspective are picked, so abandoning the wizard never loses progress — Section 8) is not implemented; the assessment row is created once, at the end of the wizard
 - Before inviting any real expert, the builder gets a short GDPR check (business reason: audit traceability; anonymise-on-request approach). Does not block the build
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
 
 ## Notes for next session
 Builder's explicit build order (overrides the plain top-to-bottom v2.0
 revision checklist order above — follow this instead): (1) logo storage
-bucket, New cycle, Cycles and assessments overview — **done this session**;
-(2) New assessment, Invitations and Participants — **next**; (3) Topics and
-Stakeholders admin; (4) Live session flow and the full Calibrate & Results
-workspace; (5) Report builder, Review Hub, then Dashboard last.
+bucket, New cycle, Cycles and assessments overview — **done**; (2) New
+assessment, Invitations and Participants — **done this session (Part 4)**,
+with the simplifications listed above; (3) Topics and Stakeholders admin —
+**next**; (4) Live session flow and the full Calibrate & Results workspace;
+(5) Report builder, Review Hub, then Dashboard last. Note: Dashboard was
+actually built in Part 3 as part of porting the nav shell (the builder
+asked for "the left-hand navigation and Dashboard structure" together) —
+it's done, ahead of where the order lists it; nothing further needed there
+unless the builder asks for changes.
 
-Start item (2) with New assessment (mode select, perspective select, setup,
-review & customise — Section 8) since Invitations/Participants both need an
-assessment to attach to; CyclesTab.jsx already has a disabled "+ New
-assessment" placeholder button per cycle, ready to wire up. New assessment
-snapshots `topic_library` into `iros` at creation (filtered by perspective,
-ESRS version and client) — re-read Section 8's New assessment subsection
-and Section 9's "Assessments snapshot topic_library into iros" business
-rule before starting. Invitations needs the GDPR consent checkbox + data
-statement (Section 7 exact text is quoted in CLAUDE.md's Hard Rules) — this
-is the first form in the app that adds a named person, so get that pattern
-right here since Participants and Stakeholder contacts will reuse it.
+Start item (3) with Topics admin — the master IRO library
+(`topic_library`): manual add, CSV upload (sub-topic codes matched by
+prefix, unmatched flagged not dropped), sign-off/revoke, filtered by ESRS
+version. Currently a stub (`TopicsTab.jsx`). Then Stakeholders admin — turn
+the current read-only `StakeholdersTab.jsx` into a real admin (add/edit/
+remove groups and contacts, the consent checkbox + data statement pattern
+already established in Invitations/Participants, custom silent stakeholder
+groups). Both are independent of any cycle (Section 8) so don't need a
+selected cycle to work, unlike everything built in Part 4. Re-read Section
+8's Topics and Stakeholders subsections before starting each.
+
+Three open items need the builder's input, not more building: the
+Invitations "group mismatch" flag and Participants in-place edit (both
+just deferred, not blocked — pick these up when there's a natural moment,
+no decision needed); and Tool A's real site address for
+`VITE_TOOL_A_URL` (this one is genuinely blocked on the builder).
 
 All work should keep pushing straight to this PR branch
 (claude/wonderful-darwin-ztquwp) — builder has branch deploys enabled on
