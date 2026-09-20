@@ -1,7 +1,6 @@
 import { aggregateIro, aggregateTopic } from '../lib/calc';
 import { ESRS_TOPICS, PILLAR_COLOR, TYPE_LABEL, MATERIAL_BADGE, pillarFor } from '../lib/topics';
 import DmaMascot from './DmaMascot';
-import { ResultsIcon } from './icons';
 
 function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
@@ -32,14 +31,6 @@ export default function ResultsTab({ iros, thresholds }) {
           clears its threshold (default 3.0 on both axes).
         </p>
       </DmaMascot>
-
-      <h2 className="text-[24px] font-bold flex items-center gap-3 mb-1">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #6C8CFF, #4C6FFF)' }}>
-          <ResultsIcon size={19} />
-        </span>
-        Results
-      </h2>
-      <p className="text-[12px] text-text-secondary mb-5">Topic Summary, every rated IRO, and the notes captured behind each one.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         {topics.map(({ meta, agg }) => {

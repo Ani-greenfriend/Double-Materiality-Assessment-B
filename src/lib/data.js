@@ -200,8 +200,6 @@ export async function createCycle({
   esrsVersion,
   impactThreshold,
   financialThreshold,
-  silentStakeholdersConsidered,
-  silentStakeholdersNote,
   createdBy,
 }) {
   assertConfigured();
@@ -216,8 +214,6 @@ export async function createCycle({
       financial_threshold: financialThreshold,
       baseline_impact_threshold: impactThreshold,
       baseline_financial_threshold: financialThreshold,
-      silent_stakeholders_considered: silentStakeholdersConsidered,
-      silent_stakeholders_note: silentStakeholdersNote || null,
       created_by: createdBy,
     })
     .select('id')
@@ -271,6 +267,31 @@ export async function deleteAssessment(assessmentId) {
   assertConfigured();
   const { error } = await supabase.from('assessments').delete().eq('id', assessmentId);
   if (error) throw new Error(`assessments delete failed: ${error.message}`);
+}
+
+// Deletes every DRAFT submission across a cycle's assessments (ratings and
+// topic_justifications cascade automatically). RLS-gated to draft rows in a
+// Calibrating or Signed off cycle only — submitted rows are never touched.
+export async function purgeUnfinishedDrafts(cycleId) {
+  assertConfigured();
+  const { data: assessments, error: aError } = await supabase.from('assessments').select('id').eq('cycle_id', cycleId);
+  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
+  const assessmentIds = assessments.map((a) => a.id);
+  if (!assessmentIds.length) return;
+  const { error } = await supabase.from('submissions').delete().eq('status', 'draft').in('assessment_id', assessmentIds);
+  if (error) throw new Error(`submissions delete failed: ${error.message}`);
+}
+
+// ---- Topic library — read-only count for the Dashboard until Topics admin is built ----
+
+export async function fetchTopicLibraryCount(esrsVersion) {
+  assertConfigured();
+  const { count, error } = await supabase
+    .from('topic_library')
+    .select('id', { count: 'exact', head: true })
+    .eq('esrs_version', esrsVersion);
+  if (error) throw new Error(`topic_library count failed: ${error.message}`);
+  return count ?? 0;
 }
 
 // ---- Dashboard: IROs + their submitted ratings (via combined_ratings),

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { aggregateIro, hasImpactAxis, MAGNITUDE_BANDS, CALC_METHODOLOGY_VERSION } from '../lib/calc';
 import { PILLAR_COLOR, TYPE_LABEL, TYPE_COLOR, pillarFor } from '../lib/topics';
 import { saveCalibrationAdjustment, resetCalibrationToCalculated, setReviewedWithOwner, updateCalibrationFields } from '../lib/data';
-import { CalibrationIcon } from './icons';
 import DmaMascot from './DmaMascot';
 
 function fmt(v) {
@@ -35,12 +34,6 @@ export default function CalibrationTab({ iros, thresholds, cycleId, locked, onCh
         <p>The original calculated value is always kept, and any change needs a stated reason — nothing is overwritten silently.</p>
       </DmaMascot>
 
-      <h2 className="text-[24px] font-bold flex items-center gap-3 mb-1">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #E8B26B, #D79A4C)' }}>
-          <CalibrationIcon size={19} />
-        </span>
-        Calibration
-      </h2>
       <p className="text-[12px] text-text-secondary mb-1">This step is done together with leadership or subject-matter experts — review the calculated results and adjust only where the group agrees it's needed.</p>
       <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {iros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
       {locked && (

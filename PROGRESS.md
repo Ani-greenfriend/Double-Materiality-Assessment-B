@@ -5,20 +5,31 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-20 — session 2, part 2
-**Live URL:** none yet — see PR #4, Netlify branch deploy pending (builder connecting it manually)
+**Last updated:** 2026-09-20 — session 2, part 3
+**Live URL:** none yet — see PR #4, Netlify branch deploy in progress (builder testing there directly)
 
 ## Current state
-Results/Calibration/Stakeholders (session 1, reworked for v2.0 earlier this
-session) plus a new **Cycles** tab (Cycles and assessments overview + New
-cycle wizard) are live in the app and build/lint clean. Cycles is now the
-default/first tab — it's the real entry point until Dashboard exists. Not
-yet built: Topics admin, New assessment wizard, Invitations, Participants,
-Review Hub, Live session flow, the full Calibrate & Results workspace
-(current Results/Calibration are still the simplified session-1 versions),
-Report builder, Dashboard. Still not click-tested in a live browser — PR #4
-is open and the builder is setting up a Netlify branch deploy to test this
-and the session-1 tabs before more screens get built.
+The app shell now matches product-spec.md Section 8's v2.0 IA, ported from
+reference-prototype/'s sidebar mechanics per the builder's direction after
+seeing the flat top-tab-bar version didn't match: a collapsible left rail
+(logo, six nav items — Dashboard, Cycles, Stakeholders, Topics, Calibrate &
+Results, Report) replaces the old top tab bar. Dashboard is a real screen
+now (hero CTA, six process-step cards with live progress, activity feed,
+quick tips — ported from the prototype's Dashboard.jsx). Calibrate & Results
+is the session-1 Results/Calibration screens merged under one nav item with
+an internal switcher (not yet the full redesigned workspace — that's still
+later work). Topics and Report are "not built yet" stubs. An ErrorBoundary
+now wraps the app and the auth-loading state is a visible "Loading…" instead
+of a blank screen, in response to the builder reporting the live preview
+froze. Cycles (overview + New cycle wizard) and Stakeholders are unchanged
+from part 2 except: the New cycle wizard's silent-stakeholders step is gone
+per the builder's correction, and "Delete unfinished drafts" is now fully
+wired (new RLS policies + UI), also per explicit builder direction. Not yet
+built: Topics admin, New assessment wizard, Invitations, Participants,
+Review Hub, Live session flow, the full Calibrate & Results workspace,
+Report builder. Still not click-tested live by Claude Code (sandbox can't
+reach Supabase) — the builder is testing directly on the Netlify branch
+deploy as each push lands.
 
 ## Last session
 **Part 1** — re-verified docs/supabase-setup.md against the live database,
@@ -47,20 +58,16 @@ branch for the branch deploy they've enabled. Did the first item:
   Added a narrow second OR'd policy allowing exactly the
   `signed_off → calibrating` transition. Documented in
   docs/supabase-setup.md.
-- **Found but did NOT fix:** Section 8's "Delete unfinished drafts" purge
-  action has no supporting RLS — Section 6 lists `submissions` DELETE as
-  "No" for every role with no draft carve-out, and there's a real
-  immutability rationale in Section 7 ("deleting responses would change
-  the scores and break the audit trail"). This reads as a genuine spec
-  contradiction, not an obvious oversight like the revoke bug above, so I
-  left it unbuilt rather than guessing — the Cycles overview shows the
-  action disabled with an explanation. Documented in docs/supabase-setup.md
-  as a decision the builder needs to make.
-- **New cycle wizard** (`src/components/NewCycleWizard.jsx`): the 5 spec'd
-  steps (financial year → ESRS version pre-select/override → client
-  choose-or-create with logo upload → cycle name + baseline thresholds →
-  silent stakeholders prompt). Writes via new `data.js` functions
-  (`fetchClients`, `createClient`, `uploadClientLogo`, `createCycle`).
+- **Found but did NOT fix (superseded — see Part 3 below):** Section 8's
+  "Delete unfinished drafts" purge action has no supporting RLS — Section 6
+  lists `submissions` DELETE as "No" for every role with no draft carve-out.
+  Flagged as a spec contradiction rather than guessed at; the builder
+  decided in Part 3 and it's now built.
+- **New cycle wizard** (`src/components/NewCycleWizard.jsx`, since reduced
+  to 4 steps — see Part 3): financial year → ESRS version pre-select/
+  override → client choose-or-create with logo upload → cycle name +
+  baseline thresholds. Writes via new `data.js` functions (`fetchClients`,
+  `createClient`, `uploadClientLogo`, `createCycle`).
 - **Cycles and assessments overview** (`src/components/CyclesTab.jsx`,
   now the app's first/default tab): lists cycles (client, FY, ESRS version,
   stage badge, thresholds vs. baseline, silent-stakeholders note), expands
@@ -80,6 +87,51 @@ branch for the branch deploy they've enabled. Did the first item:
   (`pg_policies`) before wiring it up, and the join shape against the demo
   cycle/assessment row, rather than assuming the docs were complete.
   `npm run build` and `npm run lint` clean throughout.
+
+**Part 3** — builder gave three corrections after seeing the deploy:
+1. **Nav shell.** The top tab bar didn't match reference-prototype/'s
+   layout. Compared App.jsx against the prototype and found a real conflict
+   with spec Section 8 (prototype's 6 flat tabs are pre-cycle v1.2; v2.0
+   merges Calibration+Results and adds Cycles/Report) — flagged it and got
+   builder confirmation to follow Section 8's item set before touching any
+   code, per their explicit "tell me before changing" instruction. Ported
+   the prototype's sidebar mechanics (collapsible rail, ApusLogo, icon+label
+   nav) with the v2.0 item set: Dashboard, Cycles, Stakeholders, Topics,
+   Calibrate & Results, Report. Built a real Dashboard
+   (`src/components/DashboardTab.jsx`, ported from the prototype's
+   Dashboard.jsx — same hero banner/process-row/overview structure, content
+   swapped for v2.0's six steps with live progress data) and a
+   `CalibrateResultsTab.jsx` wrapper merging the existing Results/
+   Calibration screens under one nav item with an internal switcher (not
+   the full redesigned workspace yet — still later work). Topics and
+   Report are stub screens. Also added `ErrorBoundary.jsx` (wraps the whole
+   app in main.jsx) and replaced the auth-loading blank screen with a
+   visible "Loading…" state, since the builder reported the live preview
+   freezing — this makes failures visible rather than diagnosing the
+   specific freeze blind (sandbox can't reach Supabase to reproduce it).
+2. **Silent stakeholders.** Removed the New cycle wizard's step 5 entirely
+   (state, UI, the `createCycle` params) — no replacement note, per
+   instruction. Left `cycles.silent_stakeholders_considered`/`_note`
+   columns as-is (unused now from this UI, but not dropped). Added the
+   spec's exact guidance text to the Silent stakeholders group in
+   StakeholdersTab.jsx.
+3. **Delete unfinished drafts, built for real.** Builder resolved the
+   Section 6/8 conflict flagged in Part 2: build it, drafts only. Added
+   three RLS policies (migration
+   `v2_delete_drafts_in_calibrating_or_signed_off`) on `submissions`,
+   `ratings` and `topic_justifications`, each requiring `status = 'draft'`
+   and the owning cycle's stage to be Calibrating or Signed off — submitted
+   rows are never touched by any of them. Added `purgeUnfinishedDrafts` to
+   data.js (deletes draft submissions; ratings/topic_justifications cascade
+   via existing FKs) and wired the button in CyclesTab.jsx, shown only when
+   `cycle.hasAnyDraft`. Documented in docs/supabase-setup.md, including why
+   this is safe re: the submissions/ratings/topic_justifications
+   shared-with-Tool-A boundary (authenticated-only policies, no anon or
+   schema change).
+
+`npm run build` and `npm run lint` clean after every step. Then started
+item 2 (New assessment, Invitations, Participants) inside the new shell —
+see below for how far that got this session.
 
 ## Remaining work
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists

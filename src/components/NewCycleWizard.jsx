@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchClients, createClient, uploadClientLogo, createCycle } from '../lib/data';
 
-const STEPS = ['Financial year', 'ESRS version', 'Client', 'Cycle & thresholds', 'Silent stakeholders'];
+const STEPS = ['Financial year', 'ESRS version', 'Client', 'Cycle & thresholds'];
 
 // Financial year 2026 pre-selects ESRS 2023 as amended; 2027 or later pre-selects ESRS 2026 (Section 8/9).
 function esrsVersionForYear(year) {
@@ -28,9 +28,6 @@ export default function NewCycleWizard({ userId, onCreated, onCancel }) {
   const [impactThreshold, setImpactThreshold] = useState(3.0);
   const [financialThreshold, setFinancialThreshold] = useState(3.0);
 
-  const [silentConsidered, setSilentConsidered] = useState(null);
-  const [silentNote, setSilentNote] = useState('');
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,7 +53,6 @@ export default function NewCycleWizard({ userId, onCreated, onCancel }) {
     !!esrsVersion,
     clientMode === 'existing' ? !!clientId : newClientName.trim().length > 0,
     cycleName.trim().length > 0 || selectedClientName,
-    true,
   ];
 
   async function handleCreate() {
@@ -77,8 +73,6 @@ export default function NewCycleWizard({ userId, onCreated, onCancel }) {
         esrsVersion,
         impactThreshold: Number(impactThreshold),
         financialThreshold: Number(financialThreshold),
-        silentStakeholdersConsidered: !!silentConsidered,
-        silentStakeholdersNote: silentNote.trim(),
         createdBy: userId,
       });
       onCreated(newCycleId);
@@ -194,26 +188,6 @@ export default function NewCycleWizard({ userId, onCreated, onCancel }) {
               <input type="number" step="0.1" min="0" max="5" value={financialThreshold} onChange={(e) => setFinancialThreshold(e.target.value)} className={inputClass} />
             </div>
           </div>
-        </div>
-      )}
-
-      {step === 4 && (
-        <div>
-          <p className="text-[13px] font-medium mb-2">Are any silent stakeholders affected by this company's activities?</p>
-          <p className="text-[11.5px] text-text-secondary mb-3">For example nature. If so, invite a representative — see the Stakeholders screen.</p>
-          <div className="flex gap-2 mb-3">
-            <button onClick={() => setSilentConsidered(true)} className={`text-[12.5px] rounded-lg px-4 py-2 ${silentConsidered === true ? 'font-semibold' : 'text-text-secondary'}`} style={silentConsidered === true ? { background: '#5ED996', color: '#07070B' } : { background: '#100E15', border: '1px solid #2A2830' }}>Yes</button>
-            <button onClick={() => setSilentConsidered(false)} className={`text-[12.5px] rounded-lg px-4 py-2 ${silentConsidered === false ? 'font-semibold' : 'text-text-secondary'}`} style={silentConsidered === false ? { background: '#2A2830' } : { background: '#100E15', border: '1px solid #2A2830' }}>No</button>
-          </div>
-          {silentConsidered && (
-            <textarea
-              value={silentNote}
-              onChange={(e) => setSilentNote(e.target.value)}
-              placeholder="Which silent stakeholders, and who represents them…"
-              className="w-full bg-app-black border border-border-apus rounded-lg px-3 py-2.5 text-[13px] outline-none min-h-[70px]"
-            />
-          )}
-          <p className="text-[10.5px] text-text-secondary mt-3">This is recorded for the record and does not block creating the cycle.</p>
         </div>
       )}
 

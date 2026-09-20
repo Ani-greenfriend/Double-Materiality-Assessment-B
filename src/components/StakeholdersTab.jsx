@@ -45,6 +45,13 @@ export default function StakeholdersTab({ master, participation }) {
               <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
                 {type ? TYPE_LABEL[type] : 'Unclassified — needs a type'} · {groups.length}
               </p>
+              {type === 'silent' && (
+                <p className="text-[11.5px] text-text-secondary mb-3 leading-relaxed">
+                  Nature and other silent stakeholders cannot speak for themselves. ESRS allows a proxy — for example
+                  an ecologist, a nature NGO or a scientific study. Consider whether any silent stakeholder is
+                  affected by this company's activities and, if so, add a representative.
+                </p>
+              )}
               <div className="flex flex-col gap-2">
                 {groups.map((g) => (
                   <div key={g.id} className="bg-surface border border-border-apus rounded-xl p-4">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { startCalibration, signOffCycle, revokeCycleSignOff, deleteCycle, deleteAssessment } from '../lib/data';
+import { startCalibration, signOffCycle, revokeCycleSignOff, deleteCycle, deleteAssessment, purgeUnfinishedDrafts } from '../lib/data';
 import { CycleIcon } from './icons';
 import NewCycleWizard from './NewCycleWizard';
 
@@ -125,6 +125,12 @@ function CycleRow({ cycle, isOpen, onToggle, userId, onChanged }) {
     }
   }
 
+  async function handlePurgeDrafts() {
+    if (window.confirm('Delete every unfinished draft in this cycle? Submitted responses are never affected. This cannot be undone.')) {
+      await run(() => purgeUnfinishedDrafts(cycle.id));
+    }
+  }
+
   return (
     <div className="rounded-xl overflow-hidden bg-surface border border-border-apus">
       <button onClick={onToggle} className="w-full flex items-center justify-between px-4 py-3.5 text-left">
@@ -218,11 +224,11 @@ function CycleRow({ cycle, isOpen, onToggle, userId, onChanged }) {
               </button>
             )}
 
-            {(cycle.stage === 'calibrating' || cycle.stage === 'signed_off') && (
+            {(cycle.stage === 'calibrating' || cycle.stage === 'signed_off') && cycle.hasAnyDraft && (
               <button
-                disabled
-                title="Blocked: submissions has no DELETE policy for drafts in the current schema (docs/supabase-setup.md — needs a builder decision). See Section 6 vs Section 8 conflict."
-                className="text-[12px] text-text-secondary px-3 py-1.5 opacity-40"
+                onClick={handlePurgeDrafts}
+                disabled={busy}
+                className="text-[12px] text-text-secondary hover:text-badge-amber px-3 py-1.5 disabled:opacity-40"
               >
                 Delete unfinished drafts
               </button>

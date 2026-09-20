@@ -412,21 +412,31 @@ OR'd permissive UPDATE policy, `authenticated revoke cycle sign-off`:
 exactly the `signed_off → calibrating` transition and nothing else about a
 signed-off cycle. Migration: `v2_allow_cycle_revoke_signoff`.
 
-### Known gap — "Delete unfinished drafts" has no supporting RLS (not fixed)
+### RLS — "Delete unfinished drafts" (resolved, builder decision 2026-09-20)
 Section 8's Cycles and assessments overview specifies a manual "Delete
 unfinished drafts" purge action, but Section 6's access matrix lists
 `submissions` DELETE as **No** for every role, with no carve-out for
-drafts, and no DELETE policy exists on `submissions` at all. This
-contradicts the feature description — unlike the Revoke sign-off gap
-above, it isn't a narrow, obviously-intended fix (Section 6's flat "No" and
-the note "a submitted response is never edited or deleted... deleting the
-responses themselves would change the scores and break the audit trail, so
-it is not the default" reads as a deliberate immutability rule, and it's
-ambiguous whether drafts were meant to be exempt). Left unbuilt this
-session — the Cycles overview shows the action as disabled with this
-explanation rather than guessing at an RLS change. Needs a decision from
-the builder: either confirm drafts should get a DELETE policy (`status =
-'draft'` only) or drop the manual-purge feature from spec.
+drafts, and no DELETE policy existed on `submissions`, `ratings` or
+`topic_justifications`. Flagged as a spec contradiction earlier this
+session rather than guessed at; the builder confirmed the feature should be
+built, for drafts only. Added three narrow DELETE policies, all requiring
+`status = 'draft'` on the submission and the owning cycle's `stage` to be
+`calibrating` or `signed_off` — submitted rows are never covered by any of
+them, matching Section 7's immutability rule for submitted responses:
+- `authenticated delete draft submissions in calibrating or signed off cycles` on `submissions`
+- `authenticated delete ratings of draft submissions in calibrating or signed off cycles` on `ratings`
+- `authenticated delete topic_justifications of draft submissions in calibrating or signed off cycles` on `topic_justifications`
+
+These three tables are shared with Tool A, but the policies are
+`authenticated`-only (Tool B's own consultant login) and don't touch any
+`anon` grant, policy or the tables' schema — outside the "never change
+without going through Tool A" boundary in CLAUDE.md's Hard Rules. In
+practice the app only ever calls the `submissions` delete directly
+(`purgeUnfinishedDrafts` in `src/lib/data.js`); `ratings`/
+`topic_justifications` cascade automatically via their existing `on delete
+cascade` foreign keys, so their own policies exist for completeness/direct
+access rather than because the cascade needs them. Migration:
+`v2_delete_drafts_in_calibrating_or_signed_off`.
 
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
