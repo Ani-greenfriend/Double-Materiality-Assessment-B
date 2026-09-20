@@ -5,49 +5,81 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-20 — session 2
-**Live URL:** none yet
+**Last updated:** 2026-09-20 — session 2, part 2
+**Live URL:** none yet — see PR #4, Netlify branch deploy pending (builder connecting it manually)
 
 ## Current state
-The existing Results/Calibration/Stakeholders slice (behind magic-link auth)
-is now reworked against the live v2.0 schema and builds/lints clean. It is
-no longer broken, but it is still only that same three-tab slice from
-session 1 — none of the new v2.0 screens (Dashboard, Topics admin, Cycles
-overview, New cycle/assessment wizard, Invitations, Participants, Review
-Hub, Live session flow, the full Calibrate & Results workspace, Report
-builder) exist yet. Still not click-tested in a live browser (sandbox can't
-reach Supabase — see Known issues).
+Results/Calibration/Stakeholders (session 1, reworked for v2.0 earlier this
+session) plus a new **Cycles** tab (Cycles and assessments overview + New
+cycle wizard) are live in the app and build/lint clean. Cycles is now the
+default/first tab — it's the real entry point until Dashboard exists. Not
+yet built: Topics admin, New assessment wizard, Invitations, Participants,
+Review Hub, Live session flow, the full Calibrate & Results workspace
+(current Results/Calibration are still the simplified session-1 versions),
+Report builder, Dashboard. Still not click-tested in a live browser — PR #4
+is open and the builder is setting up a Netlify branch deploy to test this
+and the session-1 tabs before more screens get built.
 
 ## Last session
-Re-verified docs/supabase-setup.md against the live database via Supabase
-MCP (list_tables/get_advisors) — schema matches exactly, migration 10's
-security fix is live, no new advisories. Reworked src/lib/calc.js for the
-v2.0 formula changes (Section 9): dropped `financialLikelihood` (a risk/
-opportunity's `likelihood` row is the financial likelihood), potential-
-human-rights-impact IROs now score on severity alone, thresholds moved from
-per-IRO to a `thresholds` param (they live on the cycle), added an
-`effectiveValue` helper (calibrated value if set, else calculated) used for
-materiality and topic roll-up, added per-source (survey/session) averages
-and the "source gap" ≥1.5 discrepancy check, bumped
-`CALC_METHODOLOGY_VERSION` to `severity-avg-with-override-v2`. Reworked
-src/lib/data.js to read `iros` (dropped retired `impact_threshold`/
-`financial_threshold`/`subtopic_raw` columns, added `time_horizon`/
-`potential_human_rights_impact`), `combined_ratings` (grouped by
-submission+iro into one "assessor" row, replacing `assessor_ratings`
-entirely), and `assessments` joined to `cycles`→`clients` for thresholds/
-stage/client name. Calibration writes now set `cycle_id`; the old
-`signOffCalibration`/`revokeCalibrationSignOff` functions (used retired
-`calibrations.signed_off_by`/`signed_off_at` columns) were replaced with
-`setReviewedWithOwner` (the real v2.0 field, a tick + date, not a sign-off —
-sign-off is cycle-level, not built yet). Updated App.jsx, ResultsTab,
-CalibrationTab and StakeholdersTab to match: assessment selector shows
-client + type + cycle stage/Provisional-Final; Calibration is read-only
-outside stage Calibrating (cycle-level, checked via the joined cycle);
-Stakeholders groups by `type` (Impact/Financial/Silent/Unclassified).
-`npm run build` and `npm run lint` both clean (only pre-existing warnings
-in reference-prototype/, none in src/). Sanity-checked the shape against
-live demo data via `execute_sql` (combined_ratings rows, assessments row)
-before writing the grouping logic — matches.
+**Part 1** — re-verified docs/supabase-setup.md against the live database,
+reworked calc.js and data.js for the v2.0 schema (financialLikelihood
+retired, effective/calibrated value materiality, cycle-level thresholds,
+`combined_ratings` replacing `assessor_ratings`, `reviewed_with_owner`
+replacing the retired calibration sign-off columns). Opened PR #4. Netlify
+MCP isn't available in this cloud session (no connector) — builder is
+connecting Netlify to GitHub manually instead; given env vars for that.
+
+**Part 2** — builder gave an explicit build order (logo bucket → New cycle
++ Cycles overview → New assessment/Invitations/Participants → Topics/
+Stakeholders admin → Live session + full Calibrate & Results → Report
+builder/Review Hub → Dashboard last) and asked to push straight to the PR
+branch for the branch deploy they've enabled. Did the first item:
+- **Logo storage bucket** (`logos`, public-read, migration
+  `v2_logos_storage_bucket`) — client logo must be public-read for Tool A;
+  consultant logo shares the bucket per CLAUDE.md's Storage line. Only the
+  client-logo upload path is wired up in the UI this session (New cycle's
+  client step); no practice-settings screen for the consultant's own logo
+  yet — out of this session's ordered scope.
+- **RLS fix, `cycles` Revoke sign-off** (migration
+  `v2_allow_cycle_revoke_signoff`): the existing UPDATE policy
+  (`stage <> 'signed_off'`) made the spec's Revoke sign-off action
+  impossible — once signed off, no update to that row passed RLS at all.
+  Added a narrow second OR'd policy allowing exactly the
+  `signed_off → calibrating` transition. Documented in
+  docs/supabase-setup.md.
+- **Found but did NOT fix:** Section 8's "Delete unfinished drafts" purge
+  action has no supporting RLS — Section 6 lists `submissions` DELETE as
+  "No" for every role with no draft carve-out, and there's a real
+  immutability rationale in Section 7 ("deleting responses would change
+  the scores and break the audit trail"). This reads as a genuine spec
+  contradiction, not an obvious oversight like the revoke bug above, so I
+  left it unbuilt rather than guessing — the Cycles overview shows the
+  action disabled with an explanation. Documented in docs/supabase-setup.md
+  as a decision the builder needs to make.
+- **New cycle wizard** (`src/components/NewCycleWizard.jsx`): the 5 spec'd
+  steps (financial year → ESRS version pre-select/override → client
+  choose-or-create with logo upload → cycle name + baseline thresholds →
+  silent stakeholders prompt). Writes via new `data.js` functions
+  (`fetchClients`, `createClient`, `uploadClientLogo`, `createCycle`).
+- **Cycles and assessments overview** (`src/components/CyclesTab.jsx`,
+  now the app's first/default tab): lists cycles (client, FY, ESRS version,
+  stage badge, thresholds vs. baseline, silent-stakeholders note), expands
+  to each cycle's assessments (invitation status counts for surveys, live
+  session status for live sessions, draft/submitted counts), Start
+  calibration, Sign off cycle (approver name/role/minutes reference inline
+  form, blocked if `require_both_sources` and a source has no submitted
+  data — checked client-side against `submittedSources`), Revoke sign-off,
+  Delete cycle/Delete assessment (rely on the existing RLS state-gating,
+  surface any rejection as an inline error rather than pre-checking
+  client-side). "New assessment" is a disabled placeholder button (that's
+  the next ordered item, not this one). Added `fetchCycles` (cycles + their
+  assessments + invitation/live-session/submission summaries in 4 queries)
+  and the cycle-lifecycle functions (`createCycle`, `startCalibration`,
+  `signOffCycle`, `revokeCycleSignOff`, `deleteCycle`, `deleteAssessment`)
+  to data.js. Verified every new query's RLS policy exists live
+  (`pg_policies`) before wiring it up, and the join shape against the demo
+  cycle/assessment row, rather than assuming the docs were complete.
+  `npm run build` and `npm run lint` clean throughout.
 
 ## Remaining work
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
@@ -107,12 +139,12 @@ before writing the grouping logic — matches.
 - [x] (v2.0 revision) Confirm Tool A's PR with the security fix (migration 10 in docs/supabase-setup.md) is merged, then re-read docs/supabase-setup.md in case it changed again — confirmed live via Supabase MCP (list_tables/get_advisors), matches docs exactly
 - [x] (v2.0 revision) Connect to the existing Supabase project and read docs/supabase-setup.md (v2.0 schema) before any database work
 - [x] (v2.0 revision) Rework the data layer and calc.js: read from `combined_ratings`, port `reference-prototype/src/lib/calc.js`, apply the Section 9 v2 rules; remove every reference to retired tables and columns — done (see Last session); ResultsTab/CalibrationTab/StakeholdersTab updated to match and build/lint clean
-- [ ] (v2.0 revision) Create the logo storage bucket (client logo public-read) and document it in docs/supabase-setup.md
-- [ ] (v2.0 revision) Build Dashboard — the six process-step cards with real progress
-- [ ] (v2.0 revision) Build Stakeholders — master map with Impact / Financial / Silent types, contacts, consent checkbox and data statement; handle groups with no type
-- [ ] (v2.0 revision) Build Topics — library filtered by ESRS version, time horizon, human rights flag, CSV upload, sign-off
-- [ ] (v2.0 revision) Build Cycles and assessments overview — stages, counts, completeness, sign-off and revoke, purge drafts
-- [ ] (v2.0 revision) Build New cycle — financial year first, ESRS version pre-selected, client and logo, thresholds baseline, silent stakeholders prompt
+- [x] (v2.0 revision) Create the logo storage bucket (client logo public-read) and document it in docs/supabase-setup.md — `logos` bucket, migration `v2_logos_storage_bucket`; only the client-logo upload path is wired into the UI so far (New cycle's client step)
+- [ ] (v2.0 revision) Build Dashboard — the six process-step cards with real progress *(builder's explicit order: last)*
+- [ ] (v2.0 revision) Build Stakeholders — master map with Impact / Financial / Silent types, contacts, consent checkbox and data statement; handle groups with no type *(builder's explicit order: after Invitations/Participants)*
+- [ ] (v2.0 revision) Build Topics — library filtered by ESRS version, time horizon, human rights flag, CSV upload, sign-off *(builder's explicit order: after Invitations/Participants)*
+- [x] (v2.0 revision) Build Cycles and assessments overview — stages, counts, completeness, sign-off and revoke done (CyclesTab.jsx, now the app's default tab); **purge drafts not done** — no supporting RLS exists and Section 6 vs. Section 8 conflict, see Known issues; shown disabled with an explanation instead of guessing
+- [x] (v2.0 revision) Build New cycle — financial year first, ESRS version pre-selected, client and logo, thresholds baseline, silent stakeholders prompt — NewCycleWizard.jsx, all 5 steps
 - [ ] (v2.0 revision) Build New assessment — mode select, perspective select, setup, review and customise (justification mode, mandatory)
 - [ ] (v2.0 revision) Build Invitations — list with personal links, mark as sent, group mismatch flag, consent checkbox
 - [ ] (v2.0 revision) Build Participants — live session attendee list, soft removal, attendance edit log, consent checkbox
@@ -175,7 +207,10 @@ before writing the grouping logic — matches.
   enforced — saving isn't blocked
 - Spec revised to v2.0 on 2026-09-20 — CLAUDE.md regenerated by Project Governor
 - **Resolved 2026-09-20 (session 2):** the session-1 code was built against the retired v1.1 schema (`assessor_ratings`, calibration sign-off columns, etc.) and didn't work. Reworked in session 2 — see Last session. Still not click-tested live (see below).
-- The per-IRO "sign off this result" flow from session 1 is gone — `calibrations.signed_off_by`/`signed_off_at` were retired in the v2.0 migration. Replaced with `reviewed_with_owner` (a tick + date, not an approval). A real per-cycle sign-off flow (approver name/role/date/minutes reference) belongs on the not-yet-built Cycles and assessments overview screen.
+- The per-IRO "sign off this result" flow from session 1 is gone — `calibrations.signed_off_by`/`signed_off_at` were retired in the v2.0 migration. Replaced with `reviewed_with_owner` (a tick + date, not an approval).
+  **Resolved 2026-09-20 (session 2 part 2):** the real per-cycle sign-off flow (approver name/role/minutes reference, recorded_by) is now built on the Cycles and assessments overview (CyclesTab.jsx), including Revoke sign-off (needed an RLS fix — see below) and the `require_both_sources` block.
+- **Open — needs a builder decision:** "Delete unfinished drafts" (Section 8, Cycles and assessments overview) has no supporting RLS — `submissions` has no DELETE policy for any role, and Section 6's matrix lists it as "No" flatly (no draft carve-out), while Section 7 gives an explicit immutability rationale ("deleting responses would change the scores and break the audit trail"). This looks like a genuine spec contradiction rather than an oversight, so it wasn't built — shown as a disabled button with an explanation in CyclesTab.jsx instead. Either confirm a `status = 'draft'` DELETE policy should be added, or drop the feature from spec. See docs/supabase-setup.md's "Known gap" note for the full reasoning.
+- **Fixed 2026-09-20 (session 2 part 2):** the `cycles` UPDATE RLS policy (`stage <> 'signed_off'`) made Revoke sign-off impossible — once signed off, no update to that row passed RLS, including the revoke itself. Added a narrow second policy (`v2_allow_cycle_revoke_signoff`) permitting exactly the `signed_off → calibrating` transition. Documented in docs/supabase-setup.md.
 - Tool A's public-side security was reworked on 2026-09-20 (migration 10: anon has no table access to invitations, submissions, ratings, topic_justifications; six SECURITY DEFINER functions keyed by link code) — do not touch the anon side; re-read docs/supabase-setup.md at session start in case Tool A changes it again
 - `ratings.criterion_key` has no `financialLikelihood` value: for risks and opportunities the `likelihood` row is the financial likelihood
 - `stakeholder_groups` has 34 rows; the 31 original ones have `type` null — the Stakeholders screen must handle and let the builder classify them
@@ -188,17 +223,31 @@ before writing the grouping logic — matches.
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
 
 ## Notes for next session
-Builder set the v2.0 rework's build order explicitly (overrides the plain
-top-to-bottom v2.0 revision checklist order above — follow this instead):
-(1) logo storage bucket, then New cycle and the Cycles and assessments
-overview; (2) New assessment, Invitations and Participants; (3) Topics and
+Builder's explicit build order (overrides the plain top-to-bottom v2.0
+revision checklist order above — follow this instead): (1) logo storage
+bucket, New cycle, Cycles and assessments overview — **done this session**;
+(2) New assessment, Invitations and Participants — **next**; (3) Topics and
 Stakeholders admin; (4) Live session flow and the full Calibrate & Results
-workspace; (5) Report builder, Review Hub, then Dashboard last. PR #4
+workspace; (5) Report builder, Review Hub, then Dashboard last.
+
+Start item (2) with New assessment (mode select, perspective select, setup,
+review & customise — Section 8) since Invitations/Participants both need an
+assessment to attach to; CyclesTab.jsx already has a disabled "+ New
+assessment" placeholder button per cycle, ready to wire up. New assessment
+snapshots `topic_library` into `iros` at creation (filtered by perspective,
+ESRS version and client) — re-read Section 8's New assessment subsection
+and Section 9's "Assessments snapshot topic_library into iros" business
+rule before starting. Invitations needs the GDPR consent checkbox + data
+statement (Section 7 exact text is quoted in CLAUDE.md's Hard Rules) — this
+is the first form in the app that adds a named person, so get that pattern
+right here since Participants and Stakeholder contacts will reuse it.
+
+All work should keep pushing straight to this PR branch
+(claude/wonderful-darwin-ztquwp) — builder has branch deploys enabled on
+Netlify and is testing there rather than waiting for a merge. PR #4
 (https://github.com/Ani-greenfriend/Double-Materiality-Assessment-B/pull/4)
-is open with the data-layer rework, targeting the builder's manually
-connected Netlify site (see Known issues — no Netlify MCP connector in this
-cloud session). Before building each new screen, re-read the matching
-subsection of docs/product-spec.md Section 8. No live click-through test
-has been done yet this build (sandbox network restriction, unchanged from
-session 1) — the Netlify deploy preview once connected is the way to get
-one; don't trust the UI beyond build/lint passing until then.
+covers everything through this session. Two things flagged this session
+still need a builder decision, not more building: "Delete unfinished
+drafts" has no RLS support and conflicts with Section 6 (see Known issues);
+Netlify MCP isn't available in this cloud session so deploys are
+builder-managed via the dashboard.

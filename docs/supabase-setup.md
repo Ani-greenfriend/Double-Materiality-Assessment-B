@@ -382,6 +382,52 @@ executable.
   `stakeholder_members` (3 test rows: "k", "test", "s" — pre-existing test
   data, confirmed non-real before the migration) carried forward unchanged
 
+## Tool B additions
+
+### Storage — `logos` bucket (added Tool B session 2, 2026-09-20)
+One public-read bucket holds both logo types named in CLAUDE.md's Storage
+line (client, consultant) — no split by tool needed since both are
+non-sensitive brand assets.
+- `public = true` — required so Tool A's public survey can render the
+  client logo (`clients.logo_url` is a public Storage URL); no other file
+  in the bucket is sensitive either, so the whole bucket is public-read
+  rather than scoping per-object.
+- RLS on `storage.objects`, scoped to `bucket_id = 'logos'`: SELECT open to
+  everyone (`public`, i.e. anon + authenticated); INSERT/UPDATE/DELETE
+  restricted to `authenticated` (Tool B's one shared access level — no
+  further scoping by uploader, consistent with every other authenticated
+  policy in this schema).
+- Path convention (enforced client-side, not by a storage policy):
+  `clients/<client_id>/logo.<ext>` for client logos,
+  `practice/logo.<ext>` for the consultant's own logo.
+- Migration: `v2_logos_storage_bucket`.
+
+### RLS fix — `cycles` Revoke sign-off (added Tool B session 2, 2026-09-20)
+The `authenticated update cycles` policy from the v2.0 migration is
+`USING (stage <> 'signed_off')` — once a cycle is signed off, **no** update
+to that row passes RLS, including the sign-off revoke itself (spec Section
+8: "revoking a sign-off returns the cycle to Calibrating"). Added a second,
+OR'd permissive UPDATE policy, `authenticated revoke cycle sign-off`:
+`USING (stage = 'signed_off') WITH CHECK (stage = 'calibrating')` — allows
+exactly the `signed_off → calibrating` transition and nothing else about a
+signed-off cycle. Migration: `v2_allow_cycle_revoke_signoff`.
+
+### Known gap — "Delete unfinished drafts" has no supporting RLS (not fixed)
+Section 8's Cycles and assessments overview specifies a manual "Delete
+unfinished drafts" purge action, but Section 6's access matrix lists
+`submissions` DELETE as **No** for every role, with no carve-out for
+drafts, and no DELETE policy exists on `submissions` at all. This
+contradicts the feature description — unlike the Revoke sign-off gap
+above, it isn't a narrow, obviously-intended fix (Section 6's flat "No" and
+the note "a submitted response is never edited or deleted... deleting the
+responses themselves would change the scores and break the audit trail, so
+it is not the default" reads as a deliberate immutability rule, and it's
+ambiguous whether drafts were meant to be exempt). Left unbuilt this
+session — the Cycles overview shows the action as disabled with this
+explanation rather than guessing at an RLS change. Needs a decision from
+the builder: either confirm drafts should get a DELETE policy (`status =
+'draft'` only) or drop the manual-purge feature from spec.
+
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel

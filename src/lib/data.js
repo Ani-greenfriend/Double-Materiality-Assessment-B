@@ -65,6 +65,214 @@ export async function fetchAssessments() {
   }));
 }
 
+// ---- Clients + logo upload (Storage bucket `logos`, public-read) ----
+
+export async function fetchClients() {
+  assertConfigured();
+  const { data, error } = await supabase.from('clients').select('id, name, logo_url').order('name', { ascending: true });
+  if (error) throw new Error(`clients query failed: ${error.message}`);
+  return data;
+}
+
+export async function createClient({ name }) {
+  assertConfigured();
+  const { data, error } = await supabase.from('clients').insert({ name }).select('id, name, logo_url').single();
+  if (error) throw new Error(`clients insert failed: ${error.message}`);
+  return data;
+}
+
+export async function uploadClientLogo(clientId, file) {
+  assertConfigured();
+  const ext = file.name.split('.').pop();
+  const path = `clients/${clientId}/logo.${ext}`;
+  const { error: upError } = await supabase.storage.from('logos').upload(path, file, { upsert: true });
+  if (upError) throw new Error(`logo upload failed: ${upError.message}`);
+  const { data: urlData } = supabase.storage.from('logos').getPublicUrl(path);
+  const { error: updError } = await supabase.from('clients').update({ logo_url: urlData.publicUrl }).eq('id', clientId);
+  if (updError) throw new Error(`clients update failed: ${updError.message}`);
+  return urlData.publicUrl;
+}
+
+// ---- Cycles and assessments overview — cycles joined to their client, with
+// each assessment's response summary (invitation status counts for surveys,
+// live session status for live sessions, submission counts for both) ----
+
+export async function fetchCycles() {
+  assertConfigured();
+  const { data: cycles, error: cError } = await supabase
+    .from('cycles')
+    .select(`
+      id, client_id, name, financial_year, esrs_version, stage,
+      impact_threshold, financial_threshold, baseline_impact_threshold, baseline_financial_threshold,
+      require_both_sources, silent_stakeholders_considered, silent_stakeholders_note,
+      approver_name, approver_role, minutes_reference, signed_off_at, created_at,
+      clients ( id, name, logo_url )
+    `)
+    .order('created_at', { ascending: false });
+  if (cError) throw new Error(`cycles query failed: ${cError.message}`);
+  if (!cycles.length) return [];
+
+  const cycleIds = cycles.map((c) => c.id);
+  const { data: assessments, error: aError } = await supabase
+    .from('assessments')
+    .select('id, cycle_id, name, type, status, justification_mode, created_at')
+    .in('cycle_id', cycleIds)
+    .order('created_at', { ascending: true });
+  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
+
+  const assessmentIds = assessments.map((a) => a.id);
+  let invitations = [];
+  let liveSessions = [];
+  let submissions = [];
+  if (assessmentIds.length) {
+    const [invRes, lsRes, subRes] = await Promise.all([
+      supabase.from('invitations').select('assessment_id, status').in('assessment_id', assessmentIds),
+      supabase.from('live_sessions').select('id, assessment_id, status, facilitator, started_at, finished_at').in('assessment_id', assessmentIds),
+      supabase.from('submissions').select('id, assessment_id, source, status').in('assessment_id', assessmentIds),
+    ]);
+    if (invRes.error) throw new Error(`invitations query failed: ${invRes.error.message}`);
+    if (lsRes.error) throw new Error(`live_sessions query failed: ${lsRes.error.message}`);
+    if (subRes.error) throw new Error(`submissions query failed: ${subRes.error.message}`);
+    invitations = invRes.data;
+    liveSessions = lsRes.data;
+    submissions = subRes.data;
+  }
+
+  const assessmentsWithDetail = assessments.map((a) => {
+    const invitationStatusCounts = invitations
+      .filter((i) => i.assessment_id === a.id)
+      .reduce((acc, i) => ({ ...acc, [i.status]: (acc[i.status] ?? 0) + 1 }), {});
+    const liveSession = liveSessions.find((s) => s.assessment_id === a.id) ?? null;
+    const ownSubmissions = submissions.filter((s) => s.assessment_id === a.id);
+    return {
+      id: a.id,
+      cycleId: a.cycle_id,
+      name: a.name,
+      type: a.type,
+      status: a.status,
+      justificationMode: a.justification_mode,
+      createdAt: a.created_at,
+      invitationStatusCounts,
+      liveSession,
+      draftCount: ownSubmissions.filter((s) => s.status === 'draft').length,
+      submittedCount: ownSubmissions.filter((s) => s.status === 'submitted').length,
+      hasAnyResponse: ownSubmissions.length > 0,
+    };
+  });
+
+  return cycles.map((c) => {
+    const cycleAssessments = assessmentsWithDetail.filter((a) => a.cycleId === c.id);
+    const submittedSources = new Set(
+      submissions.filter((s) => cycleAssessments.some((a) => a.id === s.assessment_id) && s.status === 'submitted').map((s) => s.source)
+    );
+    return {
+      id: c.id,
+      clientId: c.client_id,
+      clientName: c.clients?.name ?? null,
+      clientLogoUrl: c.clients?.logo_url ?? null,
+      name: c.name,
+      financialYear: c.financial_year,
+      esrsVersion: c.esrs_version,
+      stage: c.stage,
+      impactThreshold: c.impact_threshold,
+      financialThreshold: c.financial_threshold,
+      baselineImpactThreshold: c.baseline_impact_threshold,
+      baselineFinancialThreshold: c.baseline_financial_threshold,
+      requireBothSources: c.require_both_sources,
+      silentStakeholdersConsidered: c.silent_stakeholders_considered,
+      silentStakeholdersNote: c.silent_stakeholders_note,
+      approverName: c.approver_name,
+      approverRole: c.approver_role,
+      minutesReference: c.minutes_reference,
+      signedOffAt: c.signed_off_at,
+      createdAt: c.created_at,
+      assessments: cycleAssessments,
+      submittedSources,
+      hasAnyDraft: cycleAssessments.some((a) => a.draftCount > 0),
+    };
+  });
+}
+
+export async function createCycle({
+  clientId,
+  name,
+  financialYear,
+  esrsVersion,
+  impactThreshold,
+  financialThreshold,
+  silentStakeholdersConsidered,
+  silentStakeholdersNote,
+  createdBy,
+}) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('cycles')
+    .insert({
+      client_id: clientId,
+      name,
+      financial_year: financialYear,
+      esrs_version: esrsVersion,
+      impact_threshold: impactThreshold,
+      financial_threshold: financialThreshold,
+      baseline_impact_threshold: impactThreshold,
+      baseline_financial_threshold: financialThreshold,
+      silent_stakeholders_considered: silentStakeholdersConsidered,
+      silent_stakeholders_note: silentStakeholdersNote || null,
+      created_by: createdBy,
+    })
+    .select('id')
+    .single();
+  if (error) throw new Error(`cycles insert failed: ${error.message}`);
+  return data.id;
+}
+
+export async function startCalibration(cycleId) {
+  assertConfigured();
+  const { error } = await supabase.from('cycles').update({ stage: 'calibrating' }).eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
+}
+
+export async function signOffCycle({ cycleId, approverName, approverRole, minutesReference, recordedBy }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('cycles')
+    .update({
+      stage: 'signed_off',
+      approver_name: approverName,
+      approver_role: approverRole,
+      minutes_reference: minutesReference || null,
+      signed_off_at: new Date().toISOString(),
+      signed_off_recorded_by: recordedBy,
+    })
+    .eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
+}
+
+export async function revokeCycleSignOff(cycleId) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('cycles')
+    .update({ stage: 'calibrating', signed_off_at: null, signed_off_recorded_by: null })
+    .eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
+}
+
+// RLS-gated: only succeeds when no response exists anywhere in the cycle
+// (see docs/supabase-setup.md — "authenticated delete cycles without responses").
+export async function deleteCycle(cycleId) {
+  assertConfigured();
+  const { error } = await supabase.from('cycles').delete().eq('id', cycleId);
+  if (error) throw new Error(`cycles delete failed: ${error.message}`);
+}
+
+// RLS-gated: only succeeds when the assessment has no submissions at all
+// (see docs/supabase-setup.md — "authenticated delete assessments without responses").
+export async function deleteAssessment(assessmentId) {
+  assertConfigured();
+  const { error } = await supabase.from('assessments').delete().eq('id', assessmentId);
+  if (error) throw new Error(`assessments delete failed: ${error.message}`);
+}
+
 // ---- Dashboard: IROs + their submitted ratings (via combined_ratings),
 // shaped for src/lib/calc.js. One "assessment row" (assessor) per submission —
 // a submitted survey response or a finished live session — never per rating. ----

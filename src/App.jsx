@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabaseConfigError } from './lib/supabaseClient';
-import { getSession, onAuthStateChange, signOut, fetchAssessments, fetchDashboard, fetchStakeholderMaster, participationByGroup } from './lib/data';
+import { getSession, onAuthStateChange, signOut, fetchAssessments, fetchDashboard, fetchStakeholderMaster, participationByGroup, fetchCycles } from './lib/data';
 import Login from './components/Login';
 import ResultsTab from './components/ResultsTab';
 import StakeholdersTab from './components/StakeholdersTab';
 import CalibrationTab from './components/CalibrationTab';
+import CyclesTab from './components/CyclesTab';
 
 const TABS = [
+  { id: 'cycles', label: 'Cycles' },
   { id: 'results', label: 'Results' },
   { id: 'stakeholders', label: 'Stakeholders' },
   { id: 'calibration', label: 'Calibration' },
@@ -18,7 +20,8 @@ export default function App() {
   const [assessmentId, setAssessmentId] = useState(null);
   const [iros, setIros] = useState([]);
   const [stakeholderMaster, setStakeholderMaster] = useState([]);
-  const [tab, setTab] = useState('results');
+  const [cycles, setCycles] = useState([]);
+  const [tab, setTab] = useState('cycles');
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
@@ -31,16 +34,30 @@ export default function App() {
     return () => sub.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!session) return;
+  const reloadCycles = useCallback(() => {
+    fetchCycles().then(setCycles).catch((err) => setLoadError(err.message));
+  }, []);
+
+  const reloadAssessments = useCallback(() => {
     fetchAssessments()
       .then((rows) => {
         setAssessments(rows);
-        if (rows.length) setAssessmentId((id) => id ?? rows[0].id);
+        setAssessmentId((id) => (rows.some((r) => r.id === id) ? id : rows[0]?.id ?? null));
       })
       .catch((err) => setLoadError(err.message));
+  }, []);
+
+  const reloadCyclesAndAssessments = useCallback(() => {
+    reloadCycles();
+    reloadAssessments();
+  }, [reloadCycles, reloadAssessments]);
+
+  useEffect(() => {
+    if (!session) return;
+    reloadAssessments();
+    reloadCycles();
     fetchStakeholderMaster().then(setStakeholderMaster).catch((err) => setLoadError(err.message));
-  }, [session]);
+  }, [session, reloadAssessments, reloadCycles]);
 
   const reload = useCallback(() => {
     if (!assessmentId) return;
@@ -111,9 +128,11 @@ export default function App() {
 
       <main className="px-6 py-6 max-w-5xl mx-auto">
         {loadError && <p className="text-[12px] text-badge-amber mb-4">{loadError}</p>}
-        {!assessments.length ? (
+        {tab === 'cycles' && <CyclesTab cycles={cycles} userId={session.user.id} onChanged={reloadCyclesAndAssessments} />}
+        {tab !== 'cycles' && !assessments.length && (
           <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No assessments yet — create one in the New Assessment wizard (not built yet) or via Supabase directly.</div>
-        ) : (
+        )}
+        {tab !== 'cycles' && assessments.length > 0 && (
           <>
             {tab === 'results' && <ResultsTab iros={iros} thresholds={thresholds} />}
             {tab === 'stakeholders' && <StakeholdersTab master={stakeholderMaster} participation={participation} />}

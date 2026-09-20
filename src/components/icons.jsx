@@ -27,3 +27,12 @@ export function ResultsIcon({ size = 18 }) {
     </svg>
   );
 }
+
+export function CycleIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3 12a9 9 0 0115-6.7M21 12a9 9 0 01-15 6.7" />
+      <path d="M18 3v4h-4M6 21v-4h4" />
+    </svg>
+  );
+}
