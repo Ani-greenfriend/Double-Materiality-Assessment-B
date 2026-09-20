@@ -125,7 +125,7 @@ before writing the grouping logic — matches.
 - [ ] (v2.0 revision) Local test pass — full signed-in click-through in a browser that can reach Supabase
 - [ ] (v2.0 revision) Acceptance criteria pass — all 25 criteria in spec v2.0 Section 13
 - [ ] (v2.0 revision) Builder, before inviting any real expert: short GDPR check (legal basis, anonymise-on-request approach)
-- [ ] (v2.0 revision) Deploy to Netlify via MCP and set environment variables
+- [ ] (v2.0 revision) Deploy to Netlify — **blocked from Claude Code's side in this cloud session: no Netlify MCP connector is available here** (checked via ToolSearch and ListConnectors — only Claude_Code_Remote/Claude_Docs/Supabase/github are connected), contradicting CLAUDE.md's "Netlify MCP is active" line. Builder is connecting the Netlify dashboard to GitHub manually instead (New site → Import from GitHub → this repo; `npm run build` / `dist` already set in netlify.toml; env vars VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to be set in Netlify's UI). If a Netlify connector becomes available to Claude Code in a future session, CLAUDE.md's MCP-deploy path can be used again — otherwise treat Netlify as builder-managed from here on
 
 ## Build decisions
 - Scoped this session down from the full Tier-3 build to a read/write
@@ -188,18 +188,17 @@ before writing the grouping logic — matches.
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
 
 ## Notes for next session
-Data layer and calc.js are now v2.0-correct and the three existing tabs
-(Results, Calibration, Stakeholders) work against the live schema again —
-but that's still the whole app. Next: pick up the v2.0 revision checklist
-above in order, starting with the Dashboard (six process-step cards) since
-nothing currently exists to get from login to anything other than the old
-three-tab view. Before building each new screen, re-read the matching
-subsection of docs/product-spec.md Section 8 (already read this session for
-Dashboard/Stakeholders/Topics/Cycles overview/New cycle/New assessment/
-Invitations/Participants/Created/Review Hub/Live session/Calibrate &
-Results/Report builder — Section 8 in full is worth a fresh read rather
-than relying on this note). Storage bucket for logos still doesn't exist —
-needed before New cycle's client-logo upload step can work. No live
-click-through test has been done yet this build (sandbox network
-restriction, unchanged from session 1) — do one from Netlify or an
-unrestricted machine before trusting the UI beyond build/lint passing.
+Builder set the v2.0 rework's build order explicitly (overrides the plain
+top-to-bottom v2.0 revision checklist order above — follow this instead):
+(1) logo storage bucket, then New cycle and the Cycles and assessments
+overview; (2) New assessment, Invitations and Participants; (3) Topics and
+Stakeholders admin; (4) Live session flow and the full Calibrate & Results
+workspace; (5) Report builder, Review Hub, then Dashboard last. PR #4
+(https://github.com/Ani-greenfriend/Double-Materiality-Assessment-B/pull/4)
+is open with the data-layer rework, targeting the builder's manually
+connected Netlify site (see Known issues — no Netlify MCP connector in this
+cloud session). Before building each new screen, re-read the matching
+subsection of docs/product-spec.md Section 8. No live click-through test
+has been done yet this build (sandbox network restriction, unchanged from
+session 1) — the Netlify deploy preview once connected is the way to get
+one; don't trust the UI beyond build/lint passing until then.
