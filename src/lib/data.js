@@ -1030,14 +1030,32 @@ export async function updateIroOverrides(overridesByIroId) {
   }
 }
 
+// Removes one topic from this assessment only — never the master library —
+// for a questionnaire going out scoped to fewer topics than the library
+// snapshot offered.
+export async function deleteAssessmentIro(iroId) {
+  assertConfigured();
+  const { error } = await supabase.from('iros').delete().eq('id', iroId);
+  if (error) throw new Error(`iros delete failed: ${error.message}`);
+}
+
 // ---- Recipients screen → real invitations/participants rows ----
 
 // invitations.email is NOT NULL, but the master stakeholder map treats
 // email as optional — anyone without one can't get a personal link, so
 // they're skipped here and handed back for the wizard to surface.
+// Recipients is reachable more than once for the same assessment (the
+// wizard, and the Assessment overview's direct shortcut) — its own
+// candidate list is always freshly derived from the master map, with no
+// memory of who's already invited, so this skips anyone who already has an
+// invitation here (matched by email) rather than creating a duplicate row.
 export async function createInvitationsFromRecipients(assessmentId, people) {
   assertConfigured();
-  const withEmail = people.filter((p) => p.email);
+  const { data: existing, error: selError } = await supabase.from('invitations').select('email').eq('assessment_id', assessmentId);
+  if (selError) throw new Error(`invitations query failed: ${selError.message}`);
+  const existingEmails = new Set(existing.map((i) => i.email));
+
+  const withEmail = people.filter((p) => p.email && !existingEmails.has(p.email));
   const skipped = people.filter((p) => !p.email).map((p) => p.name);
   for (const p of withEmail) {
     await createInvitation({ assessmentId, name: p.name, email: p.email, stakeholderGroupId: p.groupId ?? null });
@@ -1045,9 +1063,19 @@ export async function createInvitationsFromRecipients(assessmentId, people) {
   return { created: withEmail.length, skipped };
 }
 
+// Same dedup reasoning as above — matched by name, since participants (unlike
+// invitations) have no unique identifier like email to key off.
 export async function addParticipantsFromRecipients(liveSessionId, people, changedBy) {
   assertConfigured();
-  for (const p of people) {
+  const { data: existing, error: selError } = await supabase
+    .from('live_session_participants')
+    .select('name')
+    .eq('live_session_id', liveSessionId)
+    .is('removed_at', null);
+  if (selError) throw new Error(`live_session_participants query failed: ${selError.message}`);
+  const existingNames = new Set(existing.map((p) => p.name));
+
+  for (const p of people.filter((p) => !existingNames.has(p.name))) {
     await addParticipant({ liveSessionId, name: p.name, expertise: p.expertise ?? [], representsGroupId: p.groupId ?? null, changedBy });
   }
 }

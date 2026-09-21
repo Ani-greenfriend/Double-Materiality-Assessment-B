@@ -178,7 +178,7 @@ function StakeholderCard({ stakeholders, setStakeholders, perspectiveFilter }) {
   );
 }
 
-function TopicsCard({ title, iros, overrides, setOverrides }) {
+function TopicsCard({ title, iros, overrides, setOverrides, onDeleteTopic }) {
   const [editingId, setEditingId] = useState(null);
 
   function get(iro, field) {
@@ -188,10 +188,16 @@ function TopicsCard({ title, iros, overrides, setOverrides }) {
     setOverrides((prev) => ({ ...prev, [iroId]: { ...prev[iroId], [field]: value } }));
   }
 
+  function handleDelete(iro) {
+    if (window.confirm(`Remove "${get(iro, 'name')}" from this assessment? Experts won't be asked about it, and any ratings already recorded for it here are deleted too. This doesn't touch the master topic library.`)) {
+      onDeleteTopic(iro.id);
+    }
+  }
+
   return (
     <div className="rounded-2xl p-5 mb-4" style={{ background: 'linear-gradient(160deg, #9B7FE012, var(--color-surface))', borderLeft: '3px solid #9B7FE0' }}>
       <p className="text-[12.5px] font-semibold mb-1 flex items-center gap-2"><span className="text-[15px]">🗂️</span>{title}</p>
-      <p className="text-[11px] text-text-secondary mb-3">{iros.length} IROs — edit a topic's name or description if it needs clarifying for participants.</p>
+      <p className="text-[11px] text-text-secondary mb-3">{iros.length} IROs — edit a topic's name or description if it needs clarifying for participants, or remove one that shouldn't be part of this assessment.</p>
       <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
         {iros.map((iro) => (
           <div key={iro.id} className="bg-surface-2 rounded-lg p-3">
@@ -216,9 +222,14 @@ function TopicsCard({ title, iros, overrides, setOverrides }) {
                   {get(iro, 'description') && <p className="text-[11px] text-text-secondary mt-0.5">{get(iro, 'description')}</p>}
                 </div>
               )}
-              <button onClick={() => setEditingId(editingId === iro.id ? null : iro.id)} className="text-[11px] text-badge-blue shrink-0">
-                {editingId === iro.id ? 'Done' : 'Edit'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => setEditingId(editingId === iro.id ? null : iro.id)} className="text-[11px] text-badge-blue">
+                  {editingId === iro.id ? 'Done' : 'Edit'}
+                </button>
+                <button onClick={() => handleDelete(iro)} className="text-text-secondary hover:text-[#E0645A]" title="Remove this topic from the assessment">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" /></svg>
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -234,7 +245,7 @@ export default function SetupReviewStep({
   stakeholders, setStakeholders,
   participants, setParticipants,
   stakeholderMap, setStakeholderMap,
-  topicOverrides, setTopicOverrides,
+  topicOverrides, setTopicOverrides, onDeleteTopic,
   mandatory, setMandatory,
   justificationMode, setJustificationMode,
   onBack, onCreate,
@@ -259,7 +270,7 @@ export default function SetupReviewStep({
       {isQual
         ? <ParticipantListCard participants={participants} setParticipants={setParticipants} stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap} />
         : <StakeholderCard stakeholders={stakeholders} setStakeholders={setStakeholders} perspectiveFilter={perspectiveFilter} />}
-      <TopicsCard title="Assessment" iros={iros} overrides={topicOverrides} setOverrides={setTopicOverrides} />
+      <TopicsCard title="Assessment" iros={iros} overrides={topicOverrides} setOverrides={setTopicOverrides} onDeleteTopic={onDeleteTopic} />
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: 'linear-gradient(160deg, #4C6FFF12, var(--color-surface))', borderLeft: '3px solid #4C6FFF' }}>
         <p className="text-[12.5px] font-semibold mb-3 flex items-center gap-2"><span className="text-[15px]">✍️</span>Justification mode</p>

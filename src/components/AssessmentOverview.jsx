@@ -41,6 +41,20 @@ function TrashIcon() {
   );
 }
 
+// Not in the original prototype table — a shortcut straight to Recipients
+// (survey) or Participants (live session) without going through the whole
+// setup wizard, per the builder's direct request.
+function PeopleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="17" cy="8" r="2.4" />
+      <path d="M15.5 14.2c2.8.4 5 2.8 5 5.8" />
+    </svg>
+  );
+}
+
 // A survey with dates isn't "Active" just because it was created — it only goes
 // live once today falls inside the start/end window, and closes after.
 function computeStatus(a) {
@@ -57,7 +71,7 @@ function fmtDate(s) {
   return new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete }) {
+export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete, onRecipients }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
@@ -116,6 +130,9 @@ export default function AssessmentOverview({ assessments, onNew, onEdit, onPrevi
                       <div className="flex gap-3 text-text-secondary">
                         <button onClick={() => onPreview(a)} className="hover:text-text-primary" title="Preview how this looks for participants">
                           <EyeIcon />
+                        </button>
+                        <button onClick={() => onRecipients(a)} className="hover:text-text-primary" title={a.type === 'Expert live session' ? 'Participants' : 'Recipients'}>
+                          <PeopleIcon />
                         </button>
                         <button onClick={() => onEdit(a)} className="hover:text-text-primary" title="Edit setup">
                           <EditIcon />

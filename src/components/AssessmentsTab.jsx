@@ -12,7 +12,7 @@ import Questionnaire from './Questionnaire';
 import WizardBreadcrumb from './WizardBreadcrumb';
 import {
   fetchAssessmentsForOverview, fetchTopicLibraryForSnapshot, createAssessment, snapshotTopicsIntoIros,
-  updateAssessment, updateIroOverrides, findCycleForFinancialYear, getOrCreateCycleForFinancialYear,
+  updateAssessment, updateIroOverrides, deleteAssessmentIro, findCycleForFinancialYear, getOrCreateCycleForFinancialYear,
   fetchInvitations, buildPersonalLink, createInvitationsFromRecipients, deleteAssessment,
   fetchLiveSessionWithParticipants, addParticipantsFromRecipients, fetchLiveSessionProgress,
   saveLiveSessionProgress, finishLiveSession, fetchDashboard,
@@ -58,6 +58,10 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   const [adjustingId, setAdjustingId] = useState(null);
   const [candidateIros, setCandidateIros] = useState([]);
   const [cycleForYear, setCycleForYear] = useState(null);
+  // Recipients is reachable two ways: through the wizard (Back returns to
+  // Review) or as a direct shortcut from Assessment overview (Back returns
+  // straight to the overview, since there's no in-progress wizard state).
+  const [recipientsBackTarget, setRecipientsBackTarget] = useState('review');
 
   const [stakeholderMap, setStakeholderMapLocal] = useState([]);
 
@@ -114,6 +118,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     setJustificationMode('per_criterion');
     setAdjustingId(null);
     setCandidateIros([]);
+    setRecipientsBackTarget('review');
   }
 
   // ---- Mode / Perspective ----
@@ -155,6 +160,30 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   // ---- Review & customise ----
+
+  // For a questionnaire going out scoped to fewer topics than the library
+  // snapshot offered. Before the assessment is first created, this is just
+  // local draft state; once it exists (including a re-edit), the iro row
+  // (and any ratings already against it) is deleted immediately — there's
+  // no separate save step for a removal, unlike a text override.
+  async function handleDeleteTopic(iroId) {
+    setError('');
+    if (adjustingId) {
+      try {
+        await deleteAssessmentIro(iroId);
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+    setCandidateIros((prev) => prev.filter((t) => t.id !== iroId));
+    setTopicOverrides((prev) => {
+      if (!(iroId in prev)) return prev;
+      const next = { ...prev };
+      delete next[iroId];
+      return next;
+    });
+  }
 
   async function handleCreate() {
     setBusy(true);
@@ -254,6 +283,22 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     navigator.clipboard?.writeText(inv.link).catch(() => {});
   }
 
+  // Jumps straight to Recipients (survey) or Participants (live session)
+  // for an existing assessment, without going through the setup wizard.
+  function openRecipientsDirect(assessment) {
+    setError('');
+    const names = (persp) => stakeholderMap.filter((g) => g.perspectives.includes(persp)).map((g) => g.name);
+    const pf = assessment.perspectiveFilter || 'full';
+    setStakeholdersChoice({
+      impact: pf === 'financial' ? [] : names('impact'),
+      financial: pf === 'impact' ? [] : names('financial'),
+    });
+    setAssessmentMode(assessment.type);
+    setActiveAssessment(assessment);
+    setRecipientsBackTarget('overview');
+    setFlowStep('recipients');
+  }
+
   async function openReviewHub(assessment) {
     setError('');
     try {
@@ -273,11 +318,17 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   async function enterLiveSession(assessment) {
     setError('');
     try {
+      const { liveSession: ls, participants } = await fetchLiveSessionWithParticipants(assessment.id);
+      const active = participants.filter((p) => !p.removed_at);
+      if (active.length === 0) {
+        openRecipientsDirect(assessment);
+        setError('No one has signed up for this session yet — add participants before kicking it off.');
+        return;
+      }
       const { iros } = await fetchDashboard(assessment.id);
       setActiveIros(iros);
       setActiveAssessment(assessment);
-      const { liveSession: ls, participants } = await fetchLiveSessionWithParticipants(assessment.id);
-      setLiveSession({ ...ls, participants: participants.filter((p) => !p.removed_at) });
+      setLiveSession({ ...ls, participants: active });
       const progress = await fetchLiveSessionProgress(assessment.id, ls.id);
       setSessionProgress(progress);
       setFlowStep(progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
@@ -395,6 +446,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           onPreview={(a) => openReviewHub(assessments.find((x) => x.id === a.id))}
           onViewResults={(a) => onViewResults?.(assessments.find((x) => x.id === a.id))}
           onDelete={(a) => handleDelete(a)}
+          onRecipients={(a) => openRecipientsDirect(assessments.find((x) => x.id === a.id))}
         />
       )}
 
@@ -428,7 +480,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           stakeholders={stakeholdersChoice} setStakeholders={setStakeholdersChoice}
           participants={participantsChoice} setParticipants={setParticipantsChoice}
           stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap}
-          topicOverrides={topicOverrides} setTopicOverrides={setTopicOverrides}
+          topicOverrides={topicOverrides} setTopicOverrides={setTopicOverrides} onDeleteTopic={handleDeleteTopic}
           mandatory={mandatory} setMandatory={setMandatory}
           justificationMode={justificationMode} setJustificationMode={setJustificationMode}
           onBack={() => setFlowStep('survey-details')}
@@ -441,7 +493,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           mode={assessmentMode}
           stakeholders={stakeholdersChoice}
           stakeholderMap={stakeholderMap}
-          onBack={() => setFlowStep('review')}
+          onBack={() => setFlowStep(recipientsBackTarget)}
           onContinue={handleRecipientsContinue}
           onGoToStakeholders={() => setError('Add more stakeholders from the Stakeholders tab, then come back and continue.')}
         />

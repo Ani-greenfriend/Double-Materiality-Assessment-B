@@ -132,9 +132,12 @@ function GroupRow({ g, onOpenGroup, onRename, onRemove, onSetBoth, editingId, se
 function Section({ title, icon, accentColor, accentBg, perspective, groups, setGroups, onOpenGroup, editingId, setEditingId, emptyHint }) {
   const [dragOverId, setDragOverId] = useState(null);
   const [containerDragOver, setContainerDragOver] = useState(false);
-  const filtered = perspective === null
+  // Silent stakeholders surface first in whichever list they're in — easy
+  // to find, since they're the ones most likely to be forgotten.
+  const filtered = (perspective === null
     ? groups.filter((g) => g.perspectives.length === 0)
-    : groups.filter((g) => g.perspectives.includes(perspective));
+    : groups.filter((g) => g.perspectives.includes(perspective))
+  ).sort((a, b) => (a.type === 'silent' ? 0 : 1) - (b.type === 'silent' ? 0 : 1));
 
   function reassign(id, insertBeforeId) {
     setGroups((prev) => {
