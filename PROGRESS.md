@@ -5,13 +5,21 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 9 (prototype-UI restore, step 2 correction: silent stakeholders)
+**Last updated:** 2026-09-21 — session 2, part 10 (prototype-UI restore, step 3: full assessment flow, Cycles removed from the UI)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
-**Direction change 2026-09-21:** the builder found the app's UI had drifted from reference-prototype/ into a simplified, rewritten shell (sessions 1–2, PR #4). CLAUDE.md now carries a Hard Rule — prototype screens are copied verbatim, never restyled/simplified/rewritten, changing only data wiring, the Expert survey/Expert live session wording, and explicit v2.0 spec changes. A full restore is underway on a **new branch** (`claude/restore-prototype-ui`, PR #5, draft until complete), built from `claude/wonderful-darwin-ztquwp`'s tip so the v2.0 data layer, calc.js, login, cycles, invitations, participants and draft deletion are all kept. The restore proceeds in 6 builder-approved steps, each pushed to the same PR (stable deploy preview URL) and reported with a before/after checklist, stopping for the builder's OK after each one. **Steps 1–2 (Dashboard/shell; Stakeholders + Topics) are done and pushed; awaiting OK before step 3.**
+**Direction change 2026-09-21:** the builder found the app's UI had drifted from reference-prototype/ into a simplified, rewritten shell (sessions 1–2, PR #4). CLAUDE.md now carries a Hard Rule — prototype screens are copied verbatim, never restyled/simplified/rewritten, changing only data wiring, the Expert survey/Expert live session wording, and explicit v2.0 spec changes. A full restore is underway on a **new branch** (`claude/restore-prototype-ui`, PR #5, draft until complete), built from `claude/wonderful-darwin-ztquwp`'s tip so the v2.0 data layer, calc.js, login, invitations, participants and draft deletion are all kept. Reported with a before/after checklist and a per-screen diff against reference-prototype/ after each step, stopping for the builder's OK after each one.
 
-Report format also changed mid-project: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4). `entered_by` (nullable, additive) on `submissions` is proposed for step 3's "Enter expert responses" screen — not yet applied, needs the builder's approval first per CLAUDE.md's Open Questions.
+**Step 3's scope changed mid-step (spec v2.0 amended 5/6, plus stricter builder instructions given directly in chat, ahead of a not-yet-pushed "amended 7"):**
+- Silent stakeholders (amended 5) are ordinary list entries, not a separate panel — done in step 2's correction.
+- Cycles are no longer shown in the interface at all (amended 6) — no Cycles screen, cycle selector or New cycle wizard; the `cycles` table stays in the database, created automatically with a financial year's first assessment.
+- The assessment flow must be the prototype's full flow, copied verbatim — Assessment overview, Mode select, Perspective select, General info, Review & customise, Recipients, Created, Review Hub, Intro flow and Questionnaire — with only six sanctioned differences (Section 8, "New assessment"): wording; Recipients keeps the prototype's layout; a justification-mode setting in Review & customise; financial year + ESRS version in General info; Created's link card shows a list of personal links; justification/Save and pause/who-answered in the live-session grid.
+- **Dropped by the builder mid-step:** "Enter expert responses" (`QuantAssessmentGrid`) — every expert response comes through Tool A's survey, no exceptions; Tool B is consultant/owner setup only. No `entered_by` column needed; the earlier open question about it is moot.
+
+**Steps 1–3 are done and pushed (PR #5); awaiting the builder's OK before step 4** (Calibrate & Results workspace redesign — Matrix tab, persistent filters — was step 5 in the original plan; step 4, Review Hub + Intro/Questionnaire, is now folded into step 3 above, so step 4 going forward is the old step 5's scope, and step 5 is the PDF report builder, old step 6).
+
+Report format: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4).
 
 ## Earlier state (superseded by the restore above, kept for history)
 Cycles now supports the full assessment-creation path: New assessment
@@ -31,6 +39,112 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 10 (2026-09-21) — Step 3: the full assessment flow, Cycles removed from the interface.**
+The builder's instruction for this step arrived in two messages: an initial
+one describing the change, then a stricter follow-up ("Step 3, stricter
+than before") giving the definitive six-item allowed-difference list and
+folding in Review Hub/Intro/Questionnaire (previously step 4's scope).
+Worked through it as eight sub-parts, each its own commit/push so the
+deploy preview never broke:
+
+1. **Removed Cycles from the interface.** Deleted `CyclesTab.jsx` and
+   `NewCycleWizard.jsx`; dropped the Cycles nav item; replaced the
+   Dashboard's cycle selector with a financial-year selector (shown only
+   when more than one financial year has assessments). The `cycles` table
+   stays in the database — `getOrCreateCycleForFinancialYear`/
+   `findCycleForFinancialYear` (data.js) auto-create a cycle for a
+   financial year's first assessment, against a single default client
+   (CLAUDE.md's "acceptable with one client and one user"), and attach
+   later assessments of the same year to it. `createCycle` removed (no
+   caller left).
+2. **Restored calc.js's anchor label constants** (SCALE_LABELS,
+   SCOPE_LABELS, IRREMEDIABILITY_LABELS, IMPACT_LIKELIHOOD_LABELS,
+   FINANCIAL_LIKELIHOOD_LABELS, RISK_MAGNITUDE_LABELS,
+   OPPORTUNITY_MAGNITUDE_LABELS) — dropped from the earlier v2.0 rework,
+   needed verbatim by Questionnaire.jsx/AssessmentReviewHub.jsx for rating-
+   scale display text. Pure strings, no scoring-function changes.
+3. **Ported 14 prototype screens byte-for-byte** (confirmed with `diff`,
+   zero output on every file before any sanctioned edit): AssessmentOverview,
+   AssessmentModeSelect, PerspectiveSelect, SurveySetupStep, SetupReviewStep,
+   RecipientsScreen, ExpertAssessmentCreated, WizardBreadcrumb, LogoUpload,
+   DatePicker, AssessmentReviewHub, IntroFlow, Questionnaire,
+   QuantAssessmentGrid. `QuantAssessmentGrid` was removed again a few
+   commits later — see below.
+4. **Builder dropped "Enter expert responses"/QuantAssessmentGrid** mid-step
+   after a clarifying exchange: Tool B is consultant/owner setup only,
+   every expert response comes through Tool A. Removed the file; no
+   `entered_by` column needed (the long-open question from earlier sessions
+   is now moot).
+5. **Built the assessment-flow data layer** (data.js): `updateAssessment`
+   (draft autosave/patch — none existed before), `updateIroOverrides`
+   (Review Hub's per-assessment topic overrides, written onto the
+   assessment's own `iros` snapshot, never the master library),
+   `createInvitationsFromRecipients`/`addParticipantsFromRecipients`
+   (Recipients' included list → real invitations/participants rows — people
+   without an email on file are skipped and surfaced, since
+   `invitations.email` is NOT NULL but the master map treats it as
+   optional), and the live-session ratings engine
+   (`fetchLiveSessionProgress` for resume, `saveLiveSessionProgress`/"Save
+   and pause session", `finishLiveSession`/"Finish session"). Verified the
+   `ratings`/`topic_justifications` unique constraints live before relying
+   on `upsert`'s `onConflict`. The prototype's `financialLikelihood`
+   criterion key (a risk/opportunity's likelihood axis, retired in the
+   v2.0 schema in favour of a single `likelihood` key) is translated only
+   at this data boundary — Questionnaire.jsx keeps using its own internal
+   name unchanged.
+6. **Fixed every remaining "quantitative"/"qualitative" instance** across
+   the newly-ported screens (a repo-wide grep had only ever been run on
+   Step 1/2's screens before) — `AssessmentModeSelect`'s mode keys are now
+   `'expert_survey'`/`'expert_live_session'` directly (matching the DB's
+   own `type` enum, so no translation layer is needed anywhere downstream),
+   with every screen that branches on `mode` updated to match, plus visible
+   copy fixes in `AssessmentOverview`. Confirmed clean with a repo-wide
+   grep, including a pre-existing "cycle"-word leak in `CalibrationTab.jsx`
+   caught by the same pass.
+7. **Built `AssessmentsTab.jsx`**, replacing the stub: Assessment overview
+   table, then the wizard state machine (Mode → Perspective → General info
+   → Review & customise → Recipients → Created), Review Hub, and Intro →
+   Questionnaire for a live session, with resume support. "Edit setup"
+   re-fetches the assessment's own already-created `iros` (never
+   re-snapshots — never resets responses or status, per CLAUDE.md).
+   Deleted the now-fully-superseded `NewAssessmentWizard.jsx`,
+   `InvitationsPanel.jsx`, `ParticipantsPanel.jsx`. The General info logo
+   (LogoUpload.jsx hands back a base64 data URL, not a File) is re-encoded
+   and uploaded through the same Storage path the client record's own logo
+   already uses, per the builder's answer to a direct question ("logo only,
+   no new company-name field").
+8. **Moved the removed Cycles screen's stage controls into the Calibrate &
+   Results header**: Start calibration, Sign off (approver name/role/
+   minutes reference, blocked by "require both sources" the same way as
+   before), Revoke sign-off, a require-both-sources toggle (new —
+   `setRequireBothSources` in data.js, no UI existed for it previously),
+   and Delete unfinished drafts. Header shows client/financial year/ESRS
+   version/stage/Provisional-or-Final, matching the spec's shared-header
+   description, without ever saying "cycle."
+9. **Verification pass**: diffed every ported screen against
+   reference-prototype/ one more time to catalogue exactly what changed.
+   Caught two real gaps this surfaced: (a) item 3 of the six sanctioned
+   differences ("a justification setting in Review & customise") had never
+   actually been built — added a per-criterion/per-topic picker to
+   `SetupReviewStep.jsx`, wired through to Questionnaire; (b) a freshly-
+   created assessment's `mandatory`/`justificationMode` weren't being
+   carried into the in-memory `activeAssessment` used if the consultant
+   kicks off a live session in the same sitting right after Create — fixed.
+
+Known simplifications, disclosed rather than dropped silently (see also
+part 6's commit message): re-visiting Recipients on an "Edit setup" pass
+can re-invite someone already invited (no dedup check yet); live-session
+participants added from Recipients get no E1–G1 expertise yet (edit them
+afterward — `editParticipant` already supports it); Review Hub's
+"Stakeholder Group" chip-removal isn't persisted (no clear schema slot for
+it distinct from real invitations, and it's explicitly a preview-only tab
+per spec); `npm run build` and `npx oxlint` clean throughout (two
+pre-existing prototype warnings only — `PerspectiveTag` in
+`StakeholderModule.jsx`, `surveyName` in `SetupReviewStep.jsx`, both
+confirmed present in reference-prototype/'s own files). Not click-tested
+live — magic-link auth needs a real inbox this sandbox can't reach, same
+caveat as every earlier part.
+
 **Part 9 (2026-09-21) — Step 2 correction: silent stakeholders are ordinary entries.**
 Builder corrected the previous part's approach (spec v2.0 amended 5 — main
 doesn't have this revision pushed yet, but the builder's chat instruction
@@ -362,18 +476,17 @@ left the actual spec-derived rules alone). `npm run build` and
 ## Remaining work
 **Restore checklist (current plan — supersedes the item ordering below):**
 - [x] Step 1 — Dashboard and shell
-- [x] Step 2 — Stakeholders full admin and Topics with CSV upload
-- [ ] Step 3 — Assessment wizard (all steps incl. Created) + Assessment overview scoped to cycle; restyle Invitations/Participants
-- [ ] Step 4 — Review Hub + live session Intro/Questionnaire (justifications, Save and pause)
-- [ ] Step 5 — Calibrate & Results: prototype's Calibration/Results/heatmaps/Topic Matrix as tabs
-- [ ] Step 6 — PDF report builder
-- [ ] Additive `entered_by` column on `submissions` — proposed, needs builder approval before applying (step 3)
+- [x] Step 2 — Stakeholders full admin and Topics with CSV upload (+ correction: silent stakeholders as ordinary entries)
+- [x] Step 3 — Full assessment flow verbatim (Assessment overview, Mode/Perspective/General info/Review/Recipients/Created, Review Hub, Intro/Questionnaire), Cycles removed from the interface, stage controls moved into Calibrate & Results
+- [ ] Step 4 — Calibrate & Results workspace redesign: the prototype's Calibration/Results/heatmaps/Topic Matrix as tabs, persistent filters (this absorbs the old step 5's scope, since step 3 above already absorbed the old step 4's Review Hub/Questionnaire work)
+- [ ] Step 5 — PDF report builder (old step 6)
+- [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
 superseded by the steps above now that the UI itself is being rebuilt from
 the prototype. Kept for reference since the underlying data-layer/RLS work
-it describes is still current (nothing in the restore touches the schema
-except the proposed `entered_by` column).
+it describes is still current (nothing in the restore has touched the
+schema — every new field the flow needed already existed).
 
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
 - [x] First Session Setup: create docs/, move reference files, commit
@@ -519,39 +632,43 @@ except the proposed `entered_by` column).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-stopped after Step 2 (Stakeholders full admin + Topics with CSV upload) for
-the builder's OK, per their explicit instruction to stop after every step.
-Do not start Step 3 until that OK arrives.
+stopped after Step 3 (full assessment flow, Cycles removed from the
+interface) for the builder's OK, per their explicit instruction to stop
+after every step. Do not start Step 4 until that OK arrives.
 
-Step 3, when approved: the assessment wizard (all steps including Created)
-and the Assessment overview scoped to the selected cycle, then restyle
-Invitations and Participants to match the prototype's verbatim visual style
-(they're currently the session-1-era rewritten panels, not ported from
-reference-prototype/ — check `AssessmentModeSelect.jsx`,
-`PerspectiveSelect.jsx`, `SurveySetupStep.jsx`, `SetupReviewStep.jsx`,
-`RecipientsScreen.jsx`, `ExpertAssessmentCreated.jsx`, `AssessmentOverview.jsx`
-in reference-prototype/ and in PR #3's `claude/elegant-hypatia-vx86i7`
-branch, which already wired an earlier version of most of these against the
-v1.1 schema — same source worth reading first, same as Step 2 did for
-`StakeholderModule`/`TopicsModule`). Also where "Enter expert responses"
-(kept `QuantAssessmentGrid`, wired to an invitation) is expected to be
-built: the additive `entered_by` column on `submissions` still needs the
-builder's explicit approval before applying — ask before writing that
-migration, not after. Use
-docs/product-spec-v1.2-prototype-reference.md Section 8 for detailed screen
-behaviour where product-spec.md is silent, same as Step 2.
+Step 4, when approved: the Calibrate & Results workspace redesign — the
+prototype's Calibration/Results screens plus the Matrix tab (heatmaps,
+topic scatter), persistent filters (assessment source, ESRS topic,
+material only) across all three tabs. `CalibrationTab.jsx`/`ResultsTab.jsx`
+are still their session-1 shape (not ported from reference-prototype/'s
+`CalibrationScreen.jsx`/`ResultsScreen.jsx`) — the shared workspace header
+built in step 3 (`CalibrateResultsTab.jsx`'s `WorkspaceHeader`) stays; only
+the two tab bodies (and the new Matrix tab) get replaced with verbatim
+prototype screens. Check PR #3's `claude/elegant-hypatia-vx86i7` branch and
+reference-prototype/'s own `CalibrationScreen.jsx`/`ResultsScreen.jsx` first,
+same pattern as steps 2–3. Known simplifications from step 3 worth
+revisiting if there's time: Recipients re-invite dedup on "Edit setup",
+E1–G1 expertise for participants added via Recipients (currently empty,
+editable after), Review Hub's stakeholder-chip-removal persistence.
 
 Hard Rule to hold the line on throughout every remaining step: copy each
 prototype component verbatim (check with `diff` against
-reference-prototype/, as Step 1 did for Dashboard.jsx/icons/DmaMascot);
-change only (a) data wiring — done in the shell/App.jsx or small adapter
-functions in data.js, never inside the copied component; (b) Expert
-survey/Expert live session wording; (c) explicit v2.0 spec changes. If
-a prototype behaviour and the v2.0 spec conflict, or it's unclear which
-bucket a needed change falls into, ask the builder — don't guess.
+reference-prototype/, as every step so far has); change only (a) data
+wiring — done in the shell/App.jsx or small adapter functions in data.js,
+never inside the copied component; (b) Expert survey/Expert live session
+wording (and, as of step 3, no "cycle" wording anywhere in the interface —
+check with a repo-wide grep, not just the screens just touched); (c)
+explicit v2.0 spec changes. If a prototype behaviour and the v2.0 spec
+conflict, or it's unclear which bucket a needed change falls into, ask the
+builder — don't guess. After finishing a step, re-diff every touched
+screen against reference-prototype/ one more time before reporting done —
+step 3 caught two real gaps (a missing justification-mode picker, an
+unpassed `mandatory`/`justificationMode` value) exactly this way.
 
 Two things flagged in earlier sessions are genuinely resolved and need no
 further action: "Delete unfinished drafts" has RLS support (built in the
 pre-restore work); Tool A's site address is hardcoded with an env var
-override. The Netlify MCP gap is now moot — the builder pushes/tests via
-their own Netlify dashboard against PR #5's deploy preview.
+override; the `entered_by`/"Enter expert responses" question is moot
+(dropped in step 3). The Netlify MCP gap is now moot — the builder
+pushes/tests via their own Netlify dashboard against PR #5's deploy
+preview.
