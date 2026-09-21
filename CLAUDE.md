@@ -46,6 +46,8 @@ VITE_SUPABASE_URL — Supabase: Project Settings → API → Project URL — Net
 VITE_SUPABASE_ANON_KEY — the publishable key (sb_publishable_...), not the legacy anon JWT — Netlify env var
 No server functions; both are browser-exposed. Confirm both exist at session start; prompt the builder if missing. No value ever appears in code or a committed file.
 
+Tool A's site address (https://questionnaire-dma.netlify.app, confirmed by the builder 2026-09-21), used only to build the full personal-link URL on Invitations (`/survey/[assessment slug]/[link code]`), is not a secret — unlike the two vars above it's hardcoded as a default in `src/lib/data.js`, overridable via the optional `VITE_TOOL_A_URL` env var if it ever changes.
+
 ## Supabase
 Project: "greenfriend Double Materiality Assessment" — already exists. Project URL: https://evwmxduudcujtibirmga.supabase.co
 docs/supabase-setup.md is the schema source of truth (Tool A migrated the v2.0 schema). Read it before any database work; never recreate what exists; update it at every save point that touches the database. docs/schema-draft.md, if present, is superseded — ignore it. Plan: Free (pause risk accepted).

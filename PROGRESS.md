@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-20 — session 2, part 4
+**Last updated:** 2026-09-21 — session 2, part 5
 **Live URL:** none yet — see PR #4, Netlify branch deploy in progress (builder testing there directly)
 
 ## Current state
@@ -174,12 +174,13 @@ inline):
   - Participants supports add/remove but not editing an existing
     attendee's name/expertise in place (spec lists "edit" as a user
     action) — remove and re-add covers the same ground today.
-  - Tool A's site address isn't configured (still unresolved from session
-    1 — no env var existed for it). Added an optional `VITE_TOOL_A_URL`
-    (not yet in CLAUDE.md's Environment Variables list) — Copy Link uses
-    it if set, otherwise copies just the `/survey/[slug]/[link_code]` path
-    with a visible note. Needs the builder to either provide Tool A's real
-    domain or confirm this env var addition.
+  - **Resolved same session:** Tool A's site address — builder confirmed
+    it's https://questionnaire-dma.netlify.app. Since it's a public URL,
+    not a secret, hardcoded it as the default in `buildPersonalLink()`
+    (src/lib/data.js) rather than requiring a Netlify env var like the two
+    Supabase ones; `VITE_TOOL_A_URL` still works as an optional override if
+    the domain ever changes. Added to CLAUDE.md's Environment Variables
+    section.
 
 `npm run build` and `npm run lint` clean throughout. Found and fixed one
 real bug before committing: `fetchCycles` wasn't selecting/mapping
@@ -189,6 +190,18 @@ it. Verified every new table's RLS policies (`iros`, `topic_library`,
 inserts) and the `assessments`/`invitations` NOT NULL columns live before
 writing the corresponding insert/update calls, rather than assuming the
 docs were complete or guessing at constraints.
+
+**Part 5** — builder gave Tool A's real address:
+https://questionnaire-dma.netlify.app. Since it's a public URL, not a
+secret like the two Supabase vars, hardcoded it as the default in a new
+`buildPersonalLink()` (src/lib/data.js), overridable via the optional
+`VITE_TOOL_A_URL` env var rather than requiring it — moved the link-
+building logic there from InvitationsPanel.jsx, which now always produces
+a real, working personal link. Added the address and the reasoning to
+CLAUDE.md's Environment Variables section (a small, low-risk doc update
+within this session's normal Save Point duties, not a governance change —
+left the actual spec-derived rules alone). `npm run build` and
+`npm run lint` clean.
 
 ## Remaining work
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
@@ -255,7 +268,7 @@ docs were complete or guessing at constraints.
 - [x] (v2.0 revision) Build Cycles and assessments overview — stages, counts, completeness, sign-off, revoke, and purge drafts (RLS added Part 3) all done (CyclesTab.jsx, now reached via the sidebar's Cycles item)
 - [x] (v2.0 revision) Build New cycle — financial year first, ESRS version pre-selected, client and logo, thresholds baseline — NewCycleWizard.jsx, 4 steps (silent stakeholders step removed per builder direction, Part 3)
 - [x] (v2.0 revision) Build New assessment — mode select, perspective select, setup, review and customise (justification mode, mandatory) — NewAssessmentWizard.jsx; no topic reordering, no auto-save-from-step-1 draft row (see Part 4 simplifications)
-- [x] (v2.0 revision) Build Invitations — list with personal links, mark as sent, consent checkbox — InvitationsPanel.jsx; **group mismatch flag not built** (needs Tool A submission data cross-referenced against the invited group — deferred, no spec-critical blocker, just not done yet); personal link needs `VITE_TOOL_A_URL` set to be a full URL (see Known issues)
+- [x] (v2.0 revision) Build Invitations — list with personal links, mark as sent, consent checkbox — InvitationsPanel.jsx; personal link is a real, full URL (Tool A's address confirmed and hardcoded — see Known issues); **group mismatch flag not built** (needs Tool A submission data cross-referenced against the invited group — deferred, no spec-critical blocker, just not done yet)
 - [x] (v2.0 revision) Build Participants — live session attendee list, soft removal, attendance edit log, consent checkbox — ParticipantsPanel.jsx; add/remove only, no in-place edit (see Part 4 simplifications)
 - [ ] (v2.0 revision) Build the Created / Congratulations screen — skipped; New assessment routes straight into Invitations/Participants instead since Review Hub and the live session run flow (this screen's own links) aren't built yet either
 - [ ] (v2.0 revision) Build Review Hub — render Tool A's screens exactly, including About you and Save and continue later
@@ -326,7 +339,7 @@ docs were complete or guessing at constraints.
 - 3 pre-existing test rows in `stakeholder_members` ("k", "test", "s") should be removed before real use; the two demo invitations ("Demo Expert" — already submitted — and "Demo Expert 2") on `acme-2026` are placeholder data
 - Supabase advisor shows a "leaked password protection disabled" Auth warning — not relevant to magic-link login unless passwords are enabled
 - Supabase project stays on the Free plan (accepted risk): a paused project breaks experts' personal and resume links — open a survey link or the console weekly during a survey window
-- **Partially resolved (Part 4):** Tool A's site address for the personal link. Added an optional `VITE_TOOL_A_URL` env var (see .env.example) — `InvitationsPanel`'s Copy Link uses it if set, else copies just the `/survey/[slug]/[link_code]` path with a visible note. Still needs the builder to provide the real domain (or confirm adding this var to CLAUDE.md's Environment Variables list — not done there yet, since that's the builder/Project Governor's file to change, not something to edit unilaterally)
+- **Resolved (Part 5):** Tool A's site address — builder confirmed https://questionnaire-dma.netlify.app. Hardcoded as the default in `buildPersonalLink()` (src/lib/data.js), overridable via the optional `VITE_TOOL_A_URL` env var. Added to CLAUDE.md's Environment Variables section.
 - Invitations' "flag where the group an expert chose in Tool A differs from the group invited" (Section 8) is not built — would need `submissions.stakeholder_group` cross-referenced per invitation, deferred this session
 - Participants supports add/remove only, not in-place edit of an existing attendee (Section 8 lists "edit" too)
 - New assessment's draft auto-save (row created and kept in sync from the moment mode+perspective are picked, so abandoning the wizard never loses progress — Section 8) is not implemented; the assessment row is created once, at the end of the wizard
@@ -357,11 +370,10 @@ groups). Both are independent of any cycle (Section 8) so don't need a
 selected cycle to work, unlike everything built in Part 4. Re-read Section
 8's Topics and Stakeholders subsections before starting each.
 
-Three open items need the builder's input, not more building: the
-Invitations "group mismatch" flag and Participants in-place edit (both
-just deferred, not blocked — pick these up when there's a natural moment,
-no decision needed); and Tool A's real site address for
-`VITE_TOOL_A_URL` (this one is genuinely blocked on the builder).
+Two open items are just deferred, not blocked — pick these up when there's
+a natural moment, no builder decision needed: the Invitations "group
+mismatch" flag and Participants in-place edit. Tool A's site address is
+resolved (Part 5).
 
 All work should keep pushing straight to this PR branch
 (claude/wonderful-darwin-ztquwp) — builder has branch deploys enabled on

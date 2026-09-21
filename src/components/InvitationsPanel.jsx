@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchInvitations, createInvitation, deleteInvitation, markInvitationSent, anonymiseInvitation } from '../lib/data';
+import { fetchInvitations, createInvitation, deleteInvitation, markInvitationSent, anonymiseInvitation, buildPersonalLink } from '../lib/data';
 
 const STATUS_COLOR = {
   invited: { text: '#8A8894', bg: 'rgba(138,136,148,0.14)' },
@@ -9,12 +9,6 @@ const STATUS_COLOR = {
 };
 
 const DATA_STATEMENT = "The details you enter about this person are stored securely and used only to organise and document this materiality assessment. Their answers can be connected to them through their invitation or the session attendee list. They may be shared with the client company and its auditor. They can request deletion or anonymisation at any time by contacting: anikalerch@greenfriend.org.";
-
-function personalLink(slug, linkCode) {
-  const base = import.meta.env.VITE_TOOL_A_URL;
-  const path = `/survey/${slug}/${linkCode}`;
-  return base ? `${base.replace(/\/$/, '')}${path}` : path;
-}
 
 export default function InvitationsPanel({ assessment, stakeholderMaster, onClose }) {
   const [invitations, setInvitations] = useState([]);
@@ -58,7 +52,7 @@ export default function InvitationsPanel({ assessment, stakeholderMaster, onClos
   }
 
   async function handleCopy(inv) {
-    const link = personalLink(assessment.slug, inv.linkCode);
+    const link = buildPersonalLink(assessment.slug, inv.linkCode);
     try {
       await navigator.clipboard.writeText(link);
       setCopiedId(inv.id);
@@ -149,10 +143,6 @@ export default function InvitationsPanel({ assessment, stakeholderMaster, onClos
           })
         )}
       </div>
-
-      {!import.meta.env.VITE_TOOL_A_URL && (
-        <p className="text-[10.5px] text-text-secondary mb-3">Tool A's site address isn't configured yet — Copy Link copies just the /survey/… path for now.</p>
-      )}
 
       {error && <p className="text-[11.5px] text-badge-amber mb-3">{error}</p>}
 
