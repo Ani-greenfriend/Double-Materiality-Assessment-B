@@ -7,22 +7,21 @@ import {
 import Login from './components/Login';
 import ApusLogo from './components/ApusLogo';
 import Dashboard from './components/Dashboard';
-import CyclesTab from './components/CyclesTab';
 import StakeholdersTab from './components/StakeholdersTab';
 import TopicsTab from './components/TopicsTab';
 import AssessmentsTab from './components/AssessmentsTab';
 import CalibrateResultsTab from './components/CalibrateResultsTab';
 import ReportTab from './components/ReportTab';
-import { DashboardIcon, CycleIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
+import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
 
 // Nav item set and order per product-spec.md Section 8 "App shell and
-// navigation": Dashboard, Cycles, Stakeholders, Topics, Assessments,
-// Calibrate & Results, Report. Sidebar mechanics (collapsible rail, logo,
-// icon+label buttons, its styling) are ported from reference-prototype/'s
-// App.jsx as-is; there is no separate top tab bar.
+// navigation" (v2.0 amended 6): Dashboard, Stakeholders, Topics, Assessments,
+// Calibrate & Results, Report — no Cycles item; cycles exist only in the
+// database now, never in the interface. Sidebar mechanics (collapsible
+// rail, logo, icon+label buttons, its styling) are ported from
+// reference-prototype/'s App.jsx as-is; there is no separate top tab bar.
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', Icon: DashboardIcon },
-  { key: 'cycles', label: 'Cycles', Icon: CycleIcon },
   { key: 'stakeholders', label: 'Stakeholders', Icon: StakeholderIcon },
   { key: 'topics', label: 'Topics', Icon: TopicsIcon },
   { key: 'assessments', label: 'Assessments', Icon: AssessmentIcon },
@@ -41,10 +40,12 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  // Dashboard is scoped to one selected cycle (Section 8: "a cycle selector
-  // when more than one exists") — new v2.0 chrome, not part of the ported
-  // Dashboard component itself.
-  const [dashboardCycleId, setDashboardCycleId] = useState(null);
+  // Dashboard is scoped to one financial year — v2.0 amended 6: "a small
+  // financial year selector appears only when more than one financial year
+  // has assessments." Cycles are never named or selected directly in the
+  // interface; a financial year maps to exactly one cycle under the
+  // one-client assumption (see getOrCreateCycleForFinancialYear in data.js).
+  const [dashboardFinancialYear, setDashboardFinancialYear] = useState(null);
   const [dashboardIros, setDashboardIros] = useState([]);
   const [dashboardCalibrations, setDashboardCalibrations] = useState({});
   const [dashboardTopicLibrary, setDashboardTopicLibrary] = useState([]);
@@ -98,11 +99,17 @@ export default function App() {
     fetchClients().then(setClients).catch((err) => setLoadError(err.message));
   }, [session, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
 
-  useEffect(() => {
-    if (cycles.length && !cycles.some((c) => c.id === dashboardCycleId)) setDashboardCycleId(cycles[0].id);
-  }, [cycles, dashboardCycleId]);
+  // Financial years that actually have assessments, newest first — the pool
+  // the selector (and its default) draws from.
+  const financialYearsWithAssessments = [...new Set(cycles.filter((c) => c.assessments.length > 0).map((c) => c.financialYear))].sort((a, b) => b - a);
 
-  const dashboardCycle = cycles.find((c) => c.id === dashboardCycleId) ?? null;
+  useEffect(() => {
+    if (cycles.length && !cycles.some((c) => c.financialYear === dashboardFinancialYear)) {
+      setDashboardFinancialYear(financialYearsWithAssessments[0] ?? cycles[0].financialYear);
+    }
+  }, [cycles, dashboardFinancialYear, financialYearsWithAssessments]);
+
+  const dashboardCycle = cycles.find((c) => c.financialYear === dashboardFinancialYear) ?? null;
 
   const reloadDashboard = useCallback(() => {
     if (!dashboardCycle) {
@@ -243,14 +250,14 @@ export default function App() {
 
           {tab === 'dashboard' && (
             <div>
-              {cycles.length > 1 && (
+              {financialYearsWithAssessments.length > 1 && (
                 <div className="flex justify-end mb-3">
                   <select
-                    value={dashboardCycleId ?? ''}
-                    onChange={(e) => setDashboardCycleId(e.target.value)}
+                    value={dashboardFinancialYear ?? ''}
+                    onChange={(e) => setDashboardFinancialYear(Number(e.target.value))}
                     className="bg-surface border border-border-apus rounded-lg px-3 py-1.5 text-[12px] outline-none"
                   >
-                    {cycles.map((c) => <option key={c.id} value={c.id}>{c.clientName} — {c.name}</option>)}
+                    {financialYearsWithAssessments.map((year) => <option key={year} value={year}>FY{year}</option>)}
                   </select>
                 </div>
               )}
@@ -265,7 +272,6 @@ export default function App() {
               />
             </div>
           )}
-          {tab === 'cycles' && <CyclesTab cycles={cycles} userId={session.user.id} stakeholderMaster={stakeholderMaster} onChanged={reloadCyclesAndAssessments} />}
           {tab === 'stakeholders' && (
             <StakeholdersTab
               openGroupId={openGroupId} setOpenGroupId={setOpenGroupId}
@@ -301,7 +307,7 @@ export default function App() {
                 </div>
               )}
               {assessments.length === 0 ? (
-                <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No assessments yet — create one from a cycle in the Cycles tab.</div>
+                <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No assessments yet — create one from the Assessments tab.</div>
               ) : (
                 <CalibrateResultsTab
                   iros={iros}

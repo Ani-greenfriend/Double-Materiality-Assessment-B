@@ -195,33 +195,67 @@ export async function fetchCycles() {
   });
 }
 
-export async function createCycle({
-  clientId,
-  name,
-  financialYear,
-  esrsVersion,
-  impactThreshold,
-  financialThreshold,
-  createdBy,
-}) {
+// ---- Cycles — v2.0 amended 6: never shown in the interface. A cycle is
+// created automatically with the first assessment of a financial year, and
+// every later assessment of the same year joins it. One client is assumed
+// (CLAUDE.md's access model: "acceptable with one client and one user") —
+// there is no client-picker UI any more, so the single existing client row
+// is reused, or a placeholder one is created the first time this runs. ----
+
+async function getOrCreateDefaultClient() {
+  const { data: existing, error: selError } = await supabase
+    .from('clients')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (selError) throw new Error(`clients query failed: ${selError.message}`);
+  if (existing.length) return existing[0].id;
+  const { data: created, error: insError } = await supabase.from('clients').insert({ name: 'Client' }).select('id').single();
+  if (insError) throw new Error(`clients insert failed: ${insError.message}`);
+  return created.id;
+}
+
+// Read-only lookup for the wizard's General info step: whether this
+// financial year already has a cycle, so the ESRS version field can be
+// shown read-only (pre-filled) instead of editable. Never creates a row.
+export async function findCycleForFinancialYear(financialYear) {
   assertConfigured();
+  const { data, error } = await supabase
+    .from('cycles')
+    .select('id, esrs_version, impact_threshold, financial_threshold, stage')
+    .eq('financial_year', financialYear)
+    .maybeSingle();
+  if (error) throw new Error(`cycles query failed: ${error.message}`);
+  if (!data) return null;
+  return { id: data.id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
+}
+
+// Called when an assessment is actually created: finds the cycle for this
+// financial year, or creates one (with the default client, baseline
+// thresholds 3.0/3.0) if this is the year's first assessment.
+export async function getOrCreateCycleForFinancialYear({ financialYear, esrsVersion, createdBy }) {
+  assertConfigured();
+  const existing = await findCycleForFinancialYear(financialYear);
+  if (existing) return existing;
+
+  const clientId = await getOrCreateDefaultClient();
   const { data, error } = await supabase
     .from('cycles')
     .insert({
       client_id: clientId,
-      name,
+      name: `DMA ${financialYear}`,
       financial_year: financialYear,
       esrs_version: esrsVersion,
-      impact_threshold: impactThreshold,
-      financial_threshold: financialThreshold,
-      baseline_impact_threshold: impactThreshold,
-      baseline_financial_threshold: financialThreshold,
+      impact_threshold: 3.0,
+      financial_threshold: 3.0,
+      baseline_impact_threshold: 3.0,
+      baseline_financial_threshold: 3.0,
       created_by: createdBy,
     })
-    .select('id')
+    .select('id, esrs_version, impact_threshold, financial_threshold, stage')
     .single();
   if (error) throw new Error(`cycles insert failed: ${error.message}`);
-  return data.id;
+  return { id: data.id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
 }
 
 export async function startCalibration(cycleId) {
