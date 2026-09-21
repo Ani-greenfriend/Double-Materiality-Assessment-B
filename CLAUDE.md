@@ -1,7 +1,7 @@
 # Apus DMA — Consultant Console
 
 ## Identity
-The internal tool a sustainability consultant uses to run ESRS Double Materiality Assessments — cycles, expert surveys and live sessions, calibration, results and a Word report — used by the consultant and invited collaborators via magic-link login.
+The internal tool a sustainability consultant uses to run ESRS Double Materiality Assessments — cycles, expert surveys and live sessions, calibration, results and a PDF report — used by the consultant and invited collaborators via magic-link login.
 Tier: 3 — login required, data persists to Supabase, invite-only, one shared access level (D3+A2)
 Spec version governed: v2.0 — the version of docs/product-spec.md these rules were derived from.
 Position: Tool B of 2 in the greenfriend Double Materiality Assessment stack — shares the Supabase project with Apus DMA — Expert Survey (Tool A); this tool builds on the existing schema Tool A migrated.
@@ -39,7 +39,7 @@ npm run build
 React · Vite · Tailwind CSS · Netlify · Supabase. Deployment: GitHub → Netlify, auto-deploys from main. Netlify MCP is active — create the site, set environment variables, and deploy via MCP.
 
 ## Arms
-Export — browser only, no server function — Word (.docx) DMA report built by the report builder: white pages, tables for topics and stakeholders, graphs as images on white, footer with cycle, ESRS version, date and Provisional/Final (design intent: docs/product-spec.md Section 3).
+Export — browser only, no server function — PDF DMA report built by the report builder: white pages, tables for topics and stakeholders, graphs as images on white, footer with cycle, ESRS version, date, page number and Provisional/Final (design intent: docs/product-spec.md Section 3). Results keeps the prototype's PNG (chart image) and CSV (chart data) downloads; the report builder is the PDF export.
 
 ## Environment Variables
 VITE_SUPABASE_URL — Supabase: Project Settings → API → Project URL — Netlify env var
@@ -65,6 +65,7 @@ RLS: `authenticated` policies as built (docs/supabase-setup.md, spec Section 6);
 - Tool A's public survey depends on the anon policies and column grants on assessments, iros, clients, cycles and stakeholder_groups, and on six SECURITY DEFINER functions (lookup_invitation, mark_invitation_opened, get_draft, create_draft, save_progress, submit_survey_response) — anon has no direct table access to invitations, submissions, ratings or topic_justifications. Never change any of it, or the schema of submissions, ratings and topic_justifications, from this tool — changes go through Tool A.
 - calibration_history, threshold_changes and attendance_edit_log are append-only: never update or delete rows.
 - Never show invitee names, emails or titles in results tables or exports unless the builder ticks it in the report builder.
+- Prototype screens are copied, not rewritten: port each component verbatim from reference-prototype/ (the PR #3 branch claude/elegant-hypatia-vx86i7 also holds it, wired to Supabase). Change only data wiring, the renamed wording (Expert survey / Expert live session) and the v2.0 changes in docs/product-spec.md. Never restyle, simplify or rewrite a prototype screen; if unsure, ask the builder.
 
 ## Project Structure
 ```
@@ -81,7 +82,7 @@ No brand skill yet. These inline rules apply until one is added to the repo (the
 - Console: base #07070B · surface #100E15 · surface-2 #1A1820 · border #2A2830 — never white or Tailwind gray defaults
 - Accent #4C6FFF — never Tailwind blue defaults. Semantic: #5ED996 positive/Environmental/Calibrated, #D79A4C Material/risk/Governance, #9B7FE0 assessments-run stat only
 - Font: Inter (body), Jost (wordmark). Dark, focused, data-tool feel — distinct from Tool A's light theme.
-- Word report: white pages, dark text, one accent colour (default #1F9A63), Calibri with Arial fallback.
+- PDF report: white pages, dark text, one accent colour (default #1F9A63), standard sans-serif font.
 
 ## Business Rules
 - A cycle starts with the financial year; the ESRS version is pre-selected (2026 → esrs_2023_amended, 2027 or later → esrs_2026) and overridable. Assessments belong to a cycle.
@@ -98,7 +99,10 @@ No brand skill yet. These inline rules apply until one is added to the repo (the
 - Justification is per criterion or per topic per assessment.justification_mode and is required whenever a rating has a value.
 - Live session: participant list (name and expertise required) set by the owner, editable with soft removal and an edit log; "Save and pause" keeps ratings as drafts until Finish.
 - Invitations hold name, email and stakeholder group; each gets a personal link (Tool A's survey address for the assessment slug plus the invitation's link_code); links are copied and sent manually.
-- Silent stakeholders: groups of type 'silent' (Nature and ecosystems, Species and biodiversity, Future generations); cycle setup records whether they were considered; no per-IRO tag.
+- Silent stakeholders: groups of type 'silent' (Nature and ecosystems, Species and biodiversity, Future generations) offered only in stakeholder group selection; no wizard step, no per-IRO tag (the cycles.silent_stakeholders_* columns stay unused).
+- Shell: the prototype's collapsible left rail — Dashboard, Cycles, Stakeholders, Topics, Assessments, Calibrate & Results, Report; no top tab bar. The Dashboard keeps the prototype's six cards (Stakeholder selection, Topic selection, Assessment of impact topics, Assessment of financial topics, Calibration, Downloadable result) with live data, editable header and bell.
+- The prototype's assessment grid (QuantAssessmentGrid) is kept as "Enter expert responses": the consultant enters an expert's responses from an invitation; saved as a submitted expert_survey submission tied to that invitation with entered_by = the logged-in user (nullable column, approve with the builder before adding).
+- "Delete unfinished drafts" deletes draft submissions (and their ratings and justifications) only, in Calibrating or Signed-off cycles; never submitted rows.
 - Assessments snapshot topic_library into iros at creation (by perspective, ESRS version, client); re-editing a completed assessment's setup never resets its responses or status. Sub-topics follow the ESRS version; CSV upload flags unmatched codes, never drops them.
 - Stakeholder contact needs Name + Role; email optional, format-checked.
 
@@ -107,7 +111,7 @@ Out of scope — do not build:
 - Emailed links or any email sending
 - Weighting between the expert survey and the live session; a formal methodology change log
 - Per-sitting attendance for live sessions; file upload for approval minutes; automatic scheduled purge of drafts
-- Locked PDF export, PNG chart downloads, CSV export of raw ratings; editing or a second format for the Word report
+- An editable Word version of the report; CSV of the full raw ratings table; editing the report inside the tool
 - Tying calibration owner/moderator to login accounts; document search or knowledge base
 
 ## Reference Docs
