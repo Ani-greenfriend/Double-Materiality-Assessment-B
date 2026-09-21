@@ -114,7 +114,7 @@ export default function AssessmentReviewHub({
   const screens = [
     { key: 'welcome', label: 'Introduction' },
     { key: 'task', label: 'Rating Criteria' },
-    ...(mode === 'quantitative' ? [{ key: 'stakeholder', label: 'Stakeholder Group' }] : []),
+    ...(mode === 'expert_survey' ? [{ key: 'stakeholder', label: 'Stakeholder Group' }] : []),
     { key: 'topics', label: 'Topics' },
   ];
   const active = screens[activeIndex];

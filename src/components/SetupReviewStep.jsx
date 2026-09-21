@@ -238,7 +238,7 @@ export default function SetupReviewStep({
   mandatory, setMandatory,
   onBack, onCreate,
 }) {
-  const isQual = mode === 'qualitative';
+  const isQual = mode === 'expert_live_session';
   return (
     <div className="max-w-2xl">
       <button onClick={onBack} className="text-[11.5px] text-text-secondary mb-4">← Back to general info</button>
@@ -248,7 +248,7 @@ export default function SetupReviewStep({
           className="text-[11px] font-semibold rounded-full px-2.5 py-1 flex items-center gap-1.5"
           style={{ background: isQual ? 'rgba(76,111,255,0.16)' : 'rgba(94,217,150,0.16)', color: isQual ? '#4C6FFF' : '#5ED996' }}
         >
-          {isQual ? '🧭 Qualitative' : '📝 Quantitative'}
+          {isQual ? '🧭 Expert live session' : '📝 Expert survey'}
         </span>
       </div>
       <p className="text-[12px] text-text-secondary mb-6">This is what participants will see. Edit anything below before creating the {isQual ? 'expert assessment' : 'questionnaire'}.</p>

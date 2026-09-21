@@ -1,5 +1,5 @@
 export default function ExpertAssessmentCreated({ mode, surveyName, link, startDate, endDate, alreadyRun, onCopy, onPreview, onKickOff, onGoToOverview }) {
-  const isQuant = mode === 'quantitative';
+  const isQuant = mode === 'expert_survey';
   return (
     <div className="max-w-xl mx-auto text-center">
       <div className="bg-surface rounded-2xl p-10">

@@ -44,7 +44,7 @@ function TrashIcon() {
 // A survey with dates isn't "Active" just because it was created — it only goes
 // live once today falls inside the start/end window, and closes after.
 function computeStatus(a) {
-  if (a.status) return a.status; // qualitative live sessions store a real terminal status directly
+  if (a.status) return a.status; // expert live sessions store a real terminal status directly
   if (!a.startDate) return 'Active';
   const today = new Date().toISOString().split('T')[0];
   if (today < a.startDate) return 'Scheduled';
@@ -68,7 +68,7 @@ export default function AssessmentOverview({ assessments, onNew, onEdit, onPrevi
           Assessment
         </h2>
       </div>
-      <p className="text-[12px] text-text-secondary mb-6">Every survey you've set up for this project, quantitative and qualitative, impact and financial.</p>
+      <p className="text-[12px] text-text-secondary mb-6">Every survey you've set up for this project, Expert survey and Expert live session, impact and financial.</p>
 
       <div className="bg-surface rounded-2xl p-5">
         <p className="font-semibold text-[14px] mb-4">Assessment overview</p>

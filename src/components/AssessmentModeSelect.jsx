@@ -2,24 +2,24 @@ import DmaMascot from './DmaMascot';
 
 const MODES = [
   {
-    key: 'quantitative',
+    key: 'expert_survey',
     icon: '📋',
     color: '#4C6FFF',
-    title: 'Quantitative',
+    title: 'Expert survey',
     subtitle: 'Stakeholder questionnaire',
     description: 'Every criterion (Scale, Scope, Irremediability, Likelihood, Magnitude) as its own quick multiple-choice question — clear enough that stakeholders can fill it in independently via a link, no facilitation needed.',
     useWhen: 'You need the most defensible, audit-ready result — every criterion is captured individually, with a clear methodology version and override logic. Better suited to larger or more complex companies, where the extra rigor is worth the time it takes.',
     footer: '🔗 Generates a shareable link once set up.',
-    caveat: '*The quantitative assessment results still need to be validated by experts.',
+    caveat: '*Expert survey results still need to be validated by experts.',
   },
   {
-    key: 'qualitative',
+    key: 'expert_live_session',
     icon: '🧭',
     color: '#5ED996',
-    title: 'Qualitative',
-    subtitle: 'Expert live session',
+    title: 'Expert live session',
+    subtitle: 'Facilitated live session',
     description: 'A simplified, single-slider version rated holistically per topic — done together with a small group of experts, where a facilitator can help calibrate consistently in real time.',
-    useWhen: 'A holistic expert judgment matters more than a fully broken-down score — smaller companies, or a quick first pass before a deeper quantitative round. The follow-up Calibration step reconciles differing views into a final number.',
+    useWhen: 'A holistic expert judgment matters more than a fully broken-down score — smaller companies, or a quick first pass before a deeper Expert survey round. The follow-up Calibration step reconciles differing views into a final number.',
     footer: '🎙️ No survey link needed — run it live, in the room.',
     caveat: null,
   },
@@ -54,7 +54,7 @@ export default function AssessmentModeSelect({ onSelect }) {
               <div className="flex items-center gap-3 mb-4">
                 <span
                   className="w-11 h-11 rounded-xl flex items-center justify-center text-[20px] shrink-0"
-                  style={{ background: m.key === 'quantitative' ? 'linear-gradient(135deg, #7C9BFF, #4C6FFF)' : 'linear-gradient(135deg, #5ED996, #2FA88A)', boxShadow: '0 6px 14px -4px rgba(0,0,0,0.4)' }}
+                  style={{ background: m.key === 'expert_survey' ? 'linear-gradient(135deg, #7C9BFF, #4C6FFF)' : 'linear-gradient(135deg, #5ED996, #2FA88A)', boxShadow: '0 6px 14px -4px rgba(0,0,0,0.4)' }}
                 >
                   {m.icon}
                 </span>

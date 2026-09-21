@@ -11,7 +11,7 @@ function slugify(s) {
 }
 
 export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, value, onChange, onProceed, onBack }) {
-  const isQual = mode === 'qualitative';
+  const isQual = mode === 'expert_live_session';
   const meta = value;
   const [slugTouched, setSlugTouched] = useState(Boolean(meta.slug));
   const [copied, setCopied] = useState(false);

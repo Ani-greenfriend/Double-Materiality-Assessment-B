@@ -71,8 +71,8 @@ export default function RecipientsScreen({ mode, stakeholders, stakeholderMap, o
     people: included.filter((p) => p.groupName === g.name),
   }));
 
-  const heading = mode === 'qualitative' ? 'Who participates' : 'Who receives the questionnaire';
-  const subheading = mode === 'qualitative'
+  const heading = mode === 'expert_live_session' ? 'Who participates' : 'Who receives the questionnaire';
+  const subheading = mode === 'expert_live_session'
     ? 'The named contacts below come from the stakeholder groups you chose for this session. Drag anyone you don\u2019t want in the room down to Excluded.'
     : 'These are the detailed contacts behind the stakeholder groups you chose. Drag anyone who shouldn\u2019t receive the link down to Excluded — this list is for your own planning and export, since the link itself works for anyone who has it.';
 
