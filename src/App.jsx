@@ -288,6 +288,7 @@ export default function App() {
               userId={session.user.id}
               onChanged={reloadCyclesAndAssessments}
               onViewResults={(a) => { setAssessmentId(a.id); setCrInitialSub('results'); setTab('calibrate-results'); }}
+              onGoToStakeholders={() => { setTab('stakeholders'); setOpenGroupId(null); }}
             />
           )}
           {tab === 'report' && <ReportTab />}

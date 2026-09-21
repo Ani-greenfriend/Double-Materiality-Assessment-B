@@ -1,4 +1,4 @@
-export default function ExpertAssessmentCreated({ mode, surveyName, invitations = [], startDate, endDate, alreadyRun, onCopyInvitation, onPreview, onKickOff, onGoToOverview }) {
+export default function ExpertAssessmentCreated({ mode, surveyName, invitations = [], startDate, endDate, alreadyRun, participantCount = 0, hasStakeholderGroups = true, onCopyInvitation, onPreview, onKickOff, onGoToRecipients, onGoToStakeholders, onGoToOverview }) {
   const isQuant = mode === 'expert_survey';
   return (
     <div className="max-w-xl mx-auto text-center">
@@ -66,7 +66,20 @@ export default function ExpertAssessmentCreated({ mode, surveyName, invitations 
           </>
         )}
 
-        {!isQuant && !alreadyRun && (
+        {!isQuant && !alreadyRun && participantCount === 0 && (
+          <div className="text-left rounded-xl p-4 mb-3" style={{ background: 'rgba(215,154,76,0.1)', border: '1px solid rgba(215,154,76,0.3)' }}>
+            <p className="text-[12.5px] font-semibold mb-1" style={{ color: '#D79A4C' }}>Add who participates first</p>
+            <p className="text-[11.5px] text-text-secondary mb-3">This session has no participants yet — kicking it off needs at least one.</p>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={onGoToRecipients} className="text-[12px] font-semibold rounded-lg px-3.5 py-2" style={{ background: '#4C6FFF', color: '#07070B' }}>Back to Recipients</button>
+              {!hasStakeholderGroups && (
+                <button onClick={onGoToStakeholders} className="text-[12px] font-semibold rounded-lg px-3.5 py-2 border border-border-apus">Go to Stakeholders</button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isQuant && !alreadyRun && participantCount > 0 && (
           <button
             onClick={onKickOff}
             className="w-full text-[13px] font-semibold rounded-xl px-4 py-3"

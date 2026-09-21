@@ -207,6 +207,7 @@ biodiversity, Future generations (`type = 'silent'`, custom entries allowed).
 | assessment_id | uuid, FK → assessments | `on delete cascade` |
 | name, email | text | **never exposed to anon** |
 | stakeholder_group_id | uuid, FK → stakeholder_groups | the group the consultant *expects* — not binding, "About you" is never pre-filled |
+| stakeholder_member_id | uuid, FK → stakeholder_members, nullable | **new, migration `v2_add_stakeholder_member_id`** — links to the master map entry this invitee was chosen from (or created as) on Recipients; `on delete set null` (deleting the stakeholder never breaks the invitation) |
 | link_code | text | unique, unguessable — the personal link's secret |
 | status | text | `invited` \| `opened` \| `saved` \| `submitted`, default `invited` |
 | sent_at, opened_at, last_saved_at, submitted_at, anonymised_at | timestamptz | nullable |
@@ -260,10 +261,14 @@ biodiversity, Future generations (`type = 'silent'`, custom entries allowed).
 Unique on `(submission_id, iro_id)` — one topic justification per topic per
 submission.
 
-### live_sessions, live_session_participants, attendance_edit_log — New. Owned by Tool B (Tier 3, live facilitation). This tool never reads or writes these.
-See product-spec-tool-b-consultant-console.md Section 5 for full field
-definitions; created here as part of the shared migration, RLS restricted to
-`authenticated` only.
+### live_sessions, live_session_participants, attendance_edit_log — Owned by Tool B (Tier 3, live facilitation).
+See product-spec.md Section 5 for full field definitions; created here as
+part of the shared migration, RLS restricted to `authenticated` only.
+`live_session_participants.stakeholder_member_id` (uuid, FK →
+stakeholder_members, nullable, `on delete set null`) — **new, migration
+`v2_add_stakeholder_member_id`** — same purpose as `invitations`' column
+above: links a participant to the master map entry they were chosen from
+or created as on the "Who participates" page.
 
 ### calibrations — Changed. Owned by Tool B.
 | Column | Type | Notes |

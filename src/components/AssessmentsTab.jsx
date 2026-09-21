@@ -37,7 +37,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults }) {
+export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +51,6 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   const [welcomeText, setWelcomeText] = useState('');
   const [taskText, setTaskText] = useState('');
   const [stakeholdersChoice, setStakeholdersChoice] = useState(DEFAULT_STAKEHOLDERS);
-  const [participantsChoice, setParticipantsChoice] = useState([]);
   const [topicOverrides, setTopicOverrides] = useState({});
   const [mandatory, setMandatory] = useState(false);
   const [justificationMode, setJustificationMode] = useState('per_criterion');
@@ -71,6 +70,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   const [activeIros, setActiveIros] = useState([]);
   const [liveSession, setLiveSession] = useState(null);
   const [sessionProgress, setSessionProgress] = useState(null);
+  const [activeParticipantCount, setActiveParticipantCount] = useState(0);
 
   const reloadAssessments = useCallback(() => {
     fetchAssessmentsForOverview()
@@ -112,7 +112,6 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     setWelcomeText('');
     setTaskText('');
     setStakeholdersChoice(DEFAULT_STAKEHOLDERS);
-    setParticipantsChoice([]);
     setTopicOverrides({});
     setMandatory(false);
     setJustificationMode('per_criterion');
@@ -254,7 +253,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         name: p.name,
         email: p.email,
         expertise: [],
-        groupId: stakeholderMap.find((g) => g.name === p.groupName)?.id ?? null,
+        groupId: p.groupId ?? null,
+        stakeholderMemberId: p.stakeholderMemberId ?? null,
       }));
 
       if (assessmentMode === 'expert_survey') {
@@ -265,6 +265,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       } else {
         const { liveSession: ls } = await fetchLiveSessionWithParticipants(activeAssessment.id);
         await addParticipantsFromRecipients(ls.id, people, userId);
+        const { participants } = await fetchLiveSessionWithParticipants(activeAssessment.id);
+        setActiveParticipantCount(participants.filter((p) => !p.removed_at).length);
         setLiveSession(ls);
       }
       reloadAssessments();
@@ -287,13 +289,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   // for an existing assessment, without going through the setup wizard.
   function openRecipientsDirect(assessment) {
     setError('');
-    const names = (persp) => stakeholderMap.filter((g) => g.perspectives.includes(persp)).map((g) => g.name);
-    const pf = assessment.perspectiveFilter || 'full';
-    setStakeholdersChoice({
-      impact: pf === 'financial' ? [] : names('impact'),
-      financial: pf === 'impact' ? [] : names('financial'),
-    });
     setAssessmentMode(assessment.type);
+    setPerspectiveFilter(assessment.perspectiveFilter || 'full');
     setActiveAssessment(assessment);
     setRecipientsBackTarget('overview');
     setFlowStep('recipients');
@@ -322,7 +319,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       const active = participants.filter((p) => !p.removed_at);
       if (active.length === 0) {
         openRecipientsDirect(assessment);
-        setError('No one has signed up for this session yet — add participants before kicking it off.');
+        setError('Add who participates first — this session has no participants yet.');
         return;
       }
       const { iros } = await fetchDashboard(assessment.id);
@@ -424,7 +421,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   if (loading) return <p className="text-[13px] text-text-secondary">Loading…</p>;
 
   const errorBanner = error && <p className="text-[12px] text-badge-amber mb-4">{error}</p>;
-  const showBreadcrumb = ['mode', 'perspective', 'survey-details', 'review', 'recipients'].includes(flowStep);
+  const showBreadcrumb = ['mode', 'perspective', 'survey-details', 'review', 'recipients', 'expert-created'].includes(flowStep);
 
   return (
     <div>
@@ -432,6 +429,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       {showBreadcrumb && (
         <WizardBreadcrumb
           flowStep={flowStep}
+          mode={assessmentMode}
           onJump={(step) => setFlowStep(step)}
         />
       )}
@@ -478,8 +476,6 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           welcomeText={welcomeText} setWelcomeText={setWelcomeText}
           taskText={taskText} setTaskText={setTaskText}
           stakeholders={stakeholdersChoice} setStakeholders={setStakeholdersChoice}
-          participants={participantsChoice} setParticipants={setParticipantsChoice}
-          stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap}
           topicOverrides={topicOverrides} setTopicOverrides={setTopicOverrides} onDeleteTopic={handleDeleteTopic}
           mandatory={mandatory} setMandatory={setMandatory}
           justificationMode={justificationMode} setJustificationMode={setJustificationMode}
@@ -491,11 +487,12 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       {flowStep === 'recipients' && (
         <RecipientsScreen
           mode={assessmentMode}
-          stakeholders={stakeholdersChoice}
+          perspectiveFilter={perspectiveFilter || 'full'}
           stakeholderMap={stakeholderMap}
+          setStakeholderMap={setStakeholderMap}
           onBack={() => setFlowStep(recipientsBackTarget)}
           onContinue={handleRecipientsContinue}
-          onGoToStakeholders={() => setError('Add more stakeholders from the Stakeholders tab, then come back and continue.')}
+          onGoToStakeholders={() => onGoToStakeholders?.()}
         />
       )}
 
@@ -507,9 +504,13 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           startDate={surveyMeta.startDate}
           endDate={surveyMeta.endDate}
           alreadyRun={false}
+          participantCount={activeParticipantCount}
+          hasStakeholderGroups={stakeholderMap.some((g) => g.perspectives.includes('impact') || g.perspectives.includes('financial'))}
           onCopyInvitation={handleCopyInvitation}
           onPreview={() => openReviewHub(activeAssessment)}
           onKickOff={() => enterLiveSession(activeAssessment)}
+          onGoToRecipients={() => openRecipientsDirect(activeAssessment)}
+          onGoToStakeholders={() => onGoToStakeholders?.()}
           onGoToOverview={() => { reloadAssessments(); setFlowStep('overview'); }}
         />
       )}

@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 15 (threshold Apply flow actually persists and logs, so the header and matrix can never drift; unrated topics now show in the Results bar chart)
+**Last updated:** 2026-09-21 — session 2, part 16 (spec v2.0 amended 9 merged; Group A of the builder's preview-review fixes: Recipients rebuilt around the master stakeholder map, Kick off guard, live session Review step decluttered, step nav on every wizard screen, financial year dropdown)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,102 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 16 (2026-09-21) — spec v2.0 amended 9 merged; Group A of the builder's preview-review fixes.**
+Builder uploaded an amended CLAUDE.md/product-spec.md to main (v2.0 amended
+9) and asked to merge it, then work through 8 numbered fixes from testing
+the deploy preview, in two groups, committing after each. Merged
+`origin/main` first: only CLAUDE.md and docs/product-spec.md conflicted
+(resolved by taking main's version, per instruction); PROGRESS.md and
+docs/supabase-setup.md had no conflicts, kept as-is. Also removed a stray
+duplicate `product-spec-v1.2-prototype-reference.md` that landed at repo
+root on main (identical to the existing `docs/` copy) — CLAUDE.md's own
+Project Structure says root holds only CLAUDE.md and PROGRESS.md.
+
+Amended 9's biggest changes: Cycles-derived stage banner/global sign-off/
+"require both sources" are gone from Calibrate & Results (sign-off is
+per-IRO again, "as in the prototype"); thresholds are editable *any time*
+in the Results tab, not just a "Calibrating" stage (the stage concept
+itself is retired from the interface — `cycles.stage` stays an unused
+column); a new **Responses** screen; and a much more detailed "New
+assessment" differences list. Before touching code, asked the builder two
+scoping questions raised by reading the merged spec carefully rather than
+guessing: (1) the spec's Calibrate detail panel text describes a clickable
+EBITDA-band selector, which conflicts with last round's explicit "make it
+explanation-only" instruction — builder confirmed **keep explanation-only**,
+treating the spec's wording as a broad restore-the-prototype pass, not a
+deliberate re-reversal; (2) the new Responses screen is large enough to be
+its own step — builder chose **build it now**, in Group B.
+
+**Group A — five items, one commit-worthy checkpoint:**
+1. **Kick off guard.** `ExpertAssessmentCreated.jsx` now takes
+   `participantCount`/`hasStakeholderGroups` — when a live session has zero
+   participants, the Kick off button is replaced with "Add who participates
+   first" plus a "Back to Recipients" button, and (only when the whole
+   stakeholder map has no groups at all) a "Go to Stakeholders" button.
+   `AssessmentsTab.jsx` tracks `activeParticipantCount`, set right after
+   Recipients writes participants. `enterLiveSession`'s existing no-
+   participants redirect (for re-entering an existing session later) kept,
+   wording aligned to "Add who participates first."
+2. **Recipients ("Who participates") rebuilt around the live master map.**
+   The real bug behind "the two existing groups and their people are
+   missing": the old `stakeholders` prop was a one-time snapshot copied
+   into wizard state at the Perspective step, taken before
+   `stakeholderMap` had necessarily finished its async load — a race, not
+   a design gap. Fixed by having `RecipientsScreen.jsx` read
+   `stakeholderMap` directly every render, filtered by `perspectiveFilter`
+   (passed straight from the wizard, no snapshot), so it can never be
+   stale. The prototype's layout is kept exactly (grouped-by-stakeholder-
+   group headers, drag to Included/Excluded, CSV download, "+ Add more
+   stakeholders" banner) — new is an "Add someone" panel: pick a group
+   (perspective-limited, silent groups included, shown with their marker),
+   then either pick an existing member from a dropdown or add a new one
+   with the Stakeholders module's own add-contact form (name, role,
+   company, email, E/S/G tags, expertise, consent checkbox + data
+   statement) — a new person is written straight into `stakeholderMap`
+   (via `setStakeholderMap`, same persistence path Stakeholders itself
+   uses) and appears in Stakeholders too, immediately.
+3. **`stakeholder_member_id`.** New nullable FK column on `invitations`
+   and `live_session_participants` (migration
+   `v2_add_stakeholder_member_id`, `on delete set null`), confirmed via
+   `pg_policies` that `authenticated` already had the needed
+   INSERT/UPDATE before adding — no RLS change needed. Threaded through
+   `createInvitation`/`createInvitationsFromRecipients`/`addParticipant`/
+   `addParticipantsFromRecipients` and the two fetch functions.
+4. **Live session Review & customise decluttered.** Removed the
+   `ParticipantListCard` (a free-text, non-map-backed "expected
+   participants" list) from `SetupReviewStep.jsx` entirely for Expert live
+   session — participants are chosen only on Recipients now, one page
+   before Kick off, per spec. The survey mode's `StakeholderCard` (self-
+   identify group *options* for Tool A's About you screen — a different
+   feature from named recipients) is untouched, since the spec only calls
+   out the live-session section for removal. Cleaned up the now-dead
+   `participantsChoice` state chain in `AssessmentsTab.jsx`.
+5. **Step navigation on every wizard screen, including the last.**
+   `WizardBreadcrumb.jsx`'s step list now includes a final `expert-created`
+   step, labelled "Kick off" or "Created" depending on mode; shown (and
+   the earlier steps clickable) all the way through the Created/Kick off
+   screen, not just up to Recipients. Recipients' Continue button already
+   disabled with nothing included — added the missing "why" text under it,
+   matching the guard built for Kick off.
+6. **Financial year dropdown.** `SurveySetupStep.jsx`'s year field is now
+   a `<select>` of 2022–2027 instead of a free `<input type="number">`;
+   the existing `esrsVersionForYear()` pre-select rule (`>= 2027 →
+   esrs_2026`, else `esrs_2023_amended`) already matched the amended
+   spec's 2022–2027 wording exactly, so it needed no change.
+
+**Known, disclosed limitations from this group** (not blocking, not asked
+for explicitly): clicking an earlier breadcrumb step after arriving at
+Recipients via the overview's direct shortcut (not the full wizard) can
+show a step with stale `surveyMeta`, since that shortcut only sets
+`assessmentMode`/`perspectiveFilter`, not the rest of wizard state; "Go to
+Stakeholders" is a real tab switch (`App.jsx`'s `onGoToStakeholders`), and
+since `AssessmentsTab` unmounts when the tab changes, there's no auto-
+return banner — the builder gets back to Recipients via the already-built
+Assessment overview shortcut (the people-icon button) instead.
+
+`npm run build` and a full `npx oxlint src` clean throughout — same three
+pre-existing prototype warnings on record, nothing new.
+
 **Part 15 (2026-09-21) — real threshold Apply flow; unrated topics shown in the bar chart.**
 Builder asked for two things: (1) make sure the thresholds shown in the
 Calibrate & Results header ("overview") always match the Matrix's, and

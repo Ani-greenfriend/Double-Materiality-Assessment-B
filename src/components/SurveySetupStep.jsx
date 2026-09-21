@@ -33,12 +33,14 @@ function FinancialYearCard({ meta, set, cycleForYear, onFinancialYearChange }) {
   return (
     <div className="bg-surface rounded-2xl p-5 mb-5">
       <p className="text-[11px] text-text-secondary mb-1.5">WHICH FINANCIAL YEAR IS THIS ASSESSMENT FOR?</p>
-      <input
-        type="number"
+      <select
         value={meta.financialYear || ''}
         onChange={(e) => handleYearChange(e.target.value)}
         className="w-full bg-surface-2 rounded-lg px-3 py-2.5 text-[12.5px] outline-none mb-4"
-      />
+      >
+        <option value="" disabled>Choose a financial year…</option>
+        {[2022, 2023, 2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
+      </select>
       <p className="text-[11px] text-text-secondary mb-1.5">ESRS VERSION</p>
       {readOnly ? (
         <p className="text-[12.5px] bg-surface-2 rounded-lg px-3 py-2.5">

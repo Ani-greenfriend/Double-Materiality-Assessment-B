@@ -60,69 +60,6 @@ function EditableCard({ title, icon, accent, value, onChange, minHeight = 100 })
   );
 }
 
-function ParticipantListCard({ participants, setParticipants, stakeholderMap, setStakeholderMap }) {
-  const [draft, setDraft] = useState({ name: '', title: '', topic: '' });
-  const activeGroupNames = stakeholderMap.filter((g) => g.perspectives.length > 0).map((g) => g.name);
-
-  function add() {
-    if (!draft.name.trim()) return;
-    setParticipants((prev) => [...prev, draft]);
-
-    // Saved back to the master Stakeholder map when the topic matches an
-    // existing group, so this person is there next time too — not just for
-    // this one assessment. Typing a topic that doesn't match anything just
-    // stays local to this assessment; it doesn't silently create a new group.
-    const matchedGroup = stakeholderMap.find((g) => g.name.toLowerCase() === draft.topic.trim().toLowerCase());
-    if (matchedGroup && draft.name.trim()) {
-      setStakeholderMap((prev) => prev.map((g) => (
-        g.id === matchedGroup.id
-          ? { ...g, members: [...g.members, { id: crypto.randomUUID(), name: draft.name, title: draft.title, company: '', email: '', pillar: 'S' }] }
-          : g
-      )));
-    }
-    setDraft({ name: '', title: '', topic: '' });
-  }
-  function remove(i) {
-    setParticipants((prev) => prev.filter((_, idx) => idx !== i));
-  }
-
-  return (
-    <div className="rounded-2xl p-5 mb-4" style={{ background: 'linear-gradient(160deg, #D79A4C12, var(--color-surface))', borderLeft: '3px solid #D79A4C' }}>
-      <p className="text-[12.5px] font-semibold mb-1 flex items-center gap-2"><span className="text-[15px]">🧑‍🤝‍🧑</span>Expected participants</p>
-      <p className="text-[11px] text-text-secondary mb-3">
-        Optional — helps the facilitator know who's in the room and what they cover. Match the topic to an existing stakeholder group and this person is saved to your master map too, ready for next time.
-      </p>
-
-      {participants.length > 0 && (
-        <div className="flex flex-col gap-1.5 mb-3">
-          {participants.map((p, i) => (
-            <div key={i} className="flex items-center justify-between bg-surface-2 rounded-lg px-3 py-2">
-              <span className="text-[12px]">
-                <b>{p.name}</b>{p.title && ` · ${p.title}`}{p.topic && ` · covers ${p.topic}`}
-              </span>
-              <button onClick={() => remove(i)} className="text-text-secondary hover:text-text-primary">×</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-2">
-        <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Name" className="bg-surface-2 rounded-lg px-3 py-2 text-[12px] outline-none" />
-        <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Title" className="bg-surface-2 rounded-lg px-3 py-2 text-[12px] outline-none" />
-        <input
-          value={draft.topic} onChange={(e) => setDraft({ ...draft, topic: e.target.value })}
-          placeholder="Expert topic" list="stakeholder-group-suggestions"
-          className="bg-surface-2 rounded-lg px-3 py-2 text-[12px] outline-none"
-        />
-        <datalist id="stakeholder-group-suggestions">
-          {activeGroupNames.map((name) => <option key={name} value={name} />)}
-        </datalist>
-      </div>
-      <button onClick={add} className="text-[11.5px] border border-border-apus rounded-lg px-3 py-1.5 mt-2">+ Add participant</button>
-    </div>
-  );
-}
-
 function StakeholderCard({ stakeholders, setStakeholders, perspectiveFilter }) {
   const [newImpact, setNewImpact] = useState('');
   const [newFinancial, setNewFinancial] = useState('');
@@ -243,8 +180,6 @@ export default function SetupReviewStep({
   welcomeText, setWelcomeText,
   taskText, setTaskText,
   stakeholders, setStakeholders,
-  participants, setParticipants,
-  stakeholderMap, setStakeholderMap,
   topicOverrides, setTopicOverrides, onDeleteTopic,
   mandatory, setMandatory,
   justificationMode, setJustificationMode,
@@ -267,9 +202,12 @@ export default function SetupReviewStep({
 
       <EditableCard title="Introduction" icon="👋" accent="#5ED996" value={welcomeText} onChange={setWelcomeText} />
       <EditableCard title="Rating Criteria" icon="📋" accent="#4C6FFF" value={taskText} onChange={setTaskText} />
-      {isQual
-        ? <ParticipantListCard participants={participants} setParticipants={setParticipants} stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap} />
-        : <StakeholderCard stakeholders={stakeholders} setStakeholders={setStakeholders} perspectiveFilter={perspectiveFilter} />}
+      {/* Section 8, New assessment, difference 3: for an Expert live
+          session, participants are chosen only on the Recipients ("Who
+          participates") page, one page before Kick off — no stakeholder
+          section here. The survey mode's StakeholderCard (self-identify
+          group options, unrelated to named recipients) is unaffected. */}
+      {!isQual && <StakeholderCard stakeholders={stakeholders} setStakeholders={setStakeholders} perspectiveFilter={perspectiveFilter} />}
       <TopicsCard title="Assessment" iros={iros} overrides={topicOverrides} setOverrides={setTopicOverrides} onDeleteTopic={onDeleteTopic} />
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: 'linear-gradient(160deg, #4C6FFF12, var(--color-surface))', borderLeft: '3px solid #4C6FFF' }}>

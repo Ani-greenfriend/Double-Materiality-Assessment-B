@@ -450,7 +450,7 @@ export async function fetchInvitations(assessmentId) {
   assertConfigured();
   const { data, error } = await supabase
     .from('invitations')
-    .select('id, assessment_id, name, email, stakeholder_group_id, link_code, status, sent_at, opened_at, submitted_at, anonymised_at, created_at, stakeholder_groups ( name )')
+    .select('id, assessment_id, name, email, stakeholder_group_id, stakeholder_member_id, link_code, status, sent_at, opened_at, submitted_at, anonymised_at, created_at, stakeholder_groups ( name )')
     .eq('assessment_id', assessmentId)
     .order('created_at', { ascending: true });
   if (error) throw new Error(`invitations query failed: ${error.message}`);
@@ -460,6 +460,7 @@ export async function fetchInvitations(assessmentId) {
     name: i.name,
     email: i.email,
     stakeholderGroupId: i.stakeholder_group_id,
+    stakeholderMemberId: i.stakeholder_member_id,
     groupName: i.stakeholder_groups?.name ?? null,
     linkCode: i.link_code,
     status: i.status,
@@ -475,11 +476,11 @@ function generateLinkCode() {
   return crypto.randomUUID().replace(/-/g, '');
 }
 
-export async function createInvitation({ assessmentId, name, email, stakeholderGroupId }) {
+export async function createInvitation({ assessmentId, name, email, stakeholderGroupId, stakeholderMemberId }) {
   assertConfigured();
   const { error } = await supabase
     .from('invitations')
-    .insert({ assessment_id: assessmentId, name, email, stakeholder_group_id: stakeholderGroupId, link_code: generateLinkCode() });
+    .insert({ assessment_id: assessmentId, name, email, stakeholder_group_id: stakeholderGroupId, stakeholder_member_id: stakeholderMemberId || null, link_code: generateLinkCode() });
   if (error) throw new Error(`invitations insert failed: ${error.message}`);
 }
 
@@ -530,7 +531,7 @@ export async function fetchLiveSessionWithParticipants(assessmentId) {
   const liveSession = await ensureLiveSession(assessmentId, null);
   const { data: participants, error } = await supabase
     .from('live_session_participants')
-    .select('id, live_session_id, name, expertise, represents_group_id, removed_at, removed_reason')
+    .select('id, live_session_id, name, expertise, represents_group_id, stakeholder_member_id, removed_at, removed_reason')
     .eq('live_session_id', liveSession.id)
     .order('name', { ascending: true });
   if (error) throw new Error(`live_session_participants query failed: ${error.message}`);
@@ -543,11 +544,11 @@ export async function setLiveSessionFacilitator(liveSessionId, facilitator) {
   if (error) throw new Error(`live_sessions update failed: ${error.message}`);
 }
 
-export async function addParticipant({ liveSessionId, name, expertise, representsGroupId, changedBy }) {
+export async function addParticipant({ liveSessionId, name, expertise, representsGroupId, stakeholderMemberId, changedBy }) {
   assertConfigured();
   const { data, error } = await supabase
     .from('live_session_participants')
-    .insert({ live_session_id: liveSessionId, name, expertise, represents_group_id: representsGroupId || null })
+    .insert({ live_session_id: liveSessionId, name, expertise, represents_group_id: representsGroupId || null, stakeholder_member_id: stakeholderMemberId || null })
     .select('id')
     .single();
   if (error) throw new Error(`live_session_participants insert failed: ${error.message}`);
@@ -1080,7 +1081,7 @@ export async function createInvitationsFromRecipients(assessmentId, people) {
   const withEmail = people.filter((p) => p.email && !existingEmails.has(p.email));
   const skipped = people.filter((p) => !p.email).map((p) => p.name);
   for (const p of withEmail) {
-    await createInvitation({ assessmentId, name: p.name, email: p.email, stakeholderGroupId: p.groupId ?? null });
+    await createInvitation({ assessmentId, name: p.name, email: p.email, stakeholderGroupId: p.groupId ?? null, stakeholderMemberId: p.stakeholderMemberId ?? null });
   }
   return { created: withEmail.length, skipped };
 }
@@ -1098,7 +1099,7 @@ export async function addParticipantsFromRecipients(liveSessionId, people, chang
   const existingNames = new Set(existing.map((p) => p.name));
 
   for (const p of people.filter((p) => !existingNames.has(p.name))) {
-    await addParticipant({ liveSessionId, name: p.name, expertise: p.expertise ?? [], representsGroupId: p.groupId ?? null, changedBy });
+    await addParticipant({ liveSessionId, name: p.name, expertise: p.expertise ?? [], representsGroupId: p.groupId ?? null, stakeholderMemberId: p.stakeholderMemberId ?? null, changedBy });
   }
 }
 
