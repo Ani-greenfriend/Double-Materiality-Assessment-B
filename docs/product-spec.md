@@ -11,7 +11,7 @@
 >
 > **CLAUDE.md must be regenerated:** the previous Consultant Console CLAUDE.md marks `ratings` as a protected, read-only table and describes an older design. Under v2.0 this tool **writes** live-session submissions and ratings into the shared `submissions` and `ratings` tables. Re-run the Project Governor on this v2.0 spec before building.
 >
-> **What changed from v1.2 (summary):** the two assessment types are renamed **Expert survey** and **Expert live session**; work is organised into **cycles** per client and financial year; the cycle starts with the financial year, which pre-selects the ESRS version; survey experts are invited individually (an **invitation list**); live sessions get an owner-managed **participant list** and **save and pause**; all responses land in **one combined ratings table** with source, who and justification; **justifications** are collected per criterion or per topic; **silent stakeholders** (nature and others who cannot speak for themselves) are supported through representatives; calibration and results merge into one **Calibrate & Results workspace** with **two thresholds** (impact and financial) and clear stages; scoring rules follow the simplified ESRS logic; a **Word report builder** replaces the PDF/PNG/CSV export panel.
+> **What changed from v1.2 (summary):** the two assessment types are renamed **Expert survey** and **Expert live session**; work is organised into **cycles** per client and financial year; the cycle starts with the financial year, which pre-selects the ESRS version; survey experts are invited individually (an **invitation list**); live sessions get an owner-managed **participant list** and **save and pause**; all responses land in **one combined ratings table** with source, who and justification; **justifications** are collected per criterion or per topic; **silent stakeholders** (nature and others who cannot speak for themselves) are supported through representatives; calibration and results merge into one **Calibrate & Results workspace** with **two thresholds** (impact and financial) and clear stages; scoring rules follow the simplified ESRS logic; a **PDF report builder** replaces the PDF/PNG/CSV export panel.
 >
 > **Prototype note:** `reference-prototype/` remains authoritative for the look, copy and interaction of screens that already exist and are unchanged (Review Hub, existing wizard steps, live session rating controls) and for exact scoring arithmetic where this spec does not change it. New screens in this version (cycle setup, invitations, participants, Calibrate & Results workspace, report builder, silent stakeholders prompt) have no prototype: Claude Code builds them in the same visual language. Where the prototype and this spec disagree on behaviour, **this spec wins**.
 
@@ -21,13 +21,13 @@
 
 **Tool name:** Apus DMA — Consultant Console
 
-**What it does:** The private working tool a sustainability consultant uses to run ESRS Double Materiality Assessments for a client. She creates a **cycle** (client, financial year, ESRS version, thresholds), maintains a master **stakeholder map** (including silent stakeholders such as nature) and a master **topics library** of Impacts, Risks and Opportunities, and runs two kinds of assessment: an **Expert survey** (invited experts answer through the Expert Survey tool via personal links) and an **Expert live session** (the consultant rates topics with a group and records the participants). All ratings and justifications land in one combined table. She then reviews and **calibrates** results, sets the impact and financial materiality thresholds, signs off the cycle, and produces a Word report.
+**What it does:** The private working tool a sustainability consultant uses to run ESRS Double Materiality Assessments for a client. She creates a **cycle** (client, financial year, ESRS version, thresholds), maintains a master **stakeholder map** (including silent stakeholders such as nature) and a master **topics library** of Impacts, Risks and Opportunities, and runs two kinds of assessment: an **Expert survey** (invited experts answer through the Expert Survey tool via personal links) and an **Expert live session** (the consultant rates topics with a group and records the participants). All ratings and justifications land in one combined table. She then reviews and **calibrates** results, sets the impact and financial materiality thresholds, signs off the cycle, and produces a PDF report.
 
 **Who uses it:** Independent CSRD/ESRS sustainability consultants (built around greenfriend's own practice) and invited collaborators, all with the same access level.
 
 **Why it exists:** Replaces a spreadsheet-and-slide-deck double materiality workflow with one guided tool that keeps raw expert input, justifications, calibration decisions and thresholds together as audit-defensible evidence, and lets both assessment types feed one result.
 
-**Build status:** Iteration — the previous version (v1.2) documented a prototype where assessments, ratings and calibrations lived in browser memory, and a first database-backed build (session 1) delivered login, a simplified Results view, Calibration and a read-only Stakeholders view. This build reorganises the tool around cycles, the two renamed assessment types, invitations, live-session participants, justifications, silent stakeholders, a merged Calibrate & Results workspace, two thresholds and a Word report. Most of the workflow (wizard, topics library, live session, report) is not yet built. Only demo data exists; there is no real response data.
+**Build status:** Iteration — the previous version (v1.2) documented a prototype where assessments, ratings and calibrations lived in browser memory, and a first database-backed build (session 1) delivered login, a simplified Results view, Calibration and a read-only Stakeholders view. This build reorganises the tool around cycles, the two renamed assessment types, invitations, live-session participants, justifications, silent stakeholders, a merged Calibrate & Results workspace, two thresholds and a PDF report. Most of the workflow (wizard, topics library, live session, report) is not yet built. Only demo data exists; there is no real response data.
 
 ---
 
@@ -105,9 +105,9 @@
 
 | Detail | Answer |
 |--------|--------|
-| Format | Word document (.docx), built in the browser. No server function. Replaces the earlier CSV / PNG / PDF export panel. |
+| Format | **PDF** DMA report, built in the browser (no server function) by the report builder. The Results section also **keeps** the prototype's **PNG** download of each chart image and **CSV** download of the chart data, built in the browser. |
 | What is exported | A configurable **DMA report** with six sections: (1) Cover and basis, (2) Process and methodology, (3) Engagement, (4) Topics and results, (5) Calibration and sign-off, (6) Appendix. Built by the report builder in Section 8. |
-| PDF design intent | Not applicable — the output is Word, not PDF. **Word design intent (required before build):** A professional, well-structured, compact document on **white pages**. Cover page with two optional logo slots (the consultant's own logo and the client's logo) and the cycle basis. Headings and body in a standard font (Calibri, falling back to Arial) so the file looks the same on any computer, dark text, **one accent colour** for headings and table header rows. Graphs (bar chart, heatmaps, matrix) are drawn in the browser and placed as **images on a white background**. **Topics and stakeholders appear in tables.** Every page has a footer with the cycle name, ESRS version, export date and a **Provisional** label (replaced by **Final** only after the cycle is signed off). Keep it compressed — no decorative elements, no long explanatory prose beyond the methodology section. |
+| PDF design intent | **Required before build.** A professional, well-structured, compact document on **white pages**. Cover page with two optional logo slots (the consultant's own logo and the client's logo) and the cycle basis. A standard sans-serif font, dark text, **one accent colour** for headings and table header rows. Graphs (bar chart, heatmaps, matrix) are drawn in the browser and placed as **images on a white background**. **Topics and stakeholders appear in tables**, and tables that run over a page repeat their header row. Every page has a footer with the cycle name, ESRS version, export date, page number and a **Provisional** label (replaced by **Final** only after the cycle is signed off). Keep it compressed — no decorative elements, no long explanatory prose beyond the methodology section. |
 
 ### Email Arm
 
@@ -160,7 +160,7 @@
 | Tool | Tier | Role in the stack |
 |------|------|------------------|
 | Apus DMA — Expert Survey | 2 | Public, link-based survey; writes expert survey submissions and ratings |
-| Apus DMA — Consultant Console (this spec) | 3 | Internal, login-only: cycles, assessments, invitations, live sessions, calibration, results, Word report |
+| Apus DMA — Consultant Console (this spec) | 3 | Internal, login-only: cycles, assessments, invitations, live sessions, calibration, results, PDF report |
 
 > **Build order:** Tool A builds first and carries the shared migration; this tool builds second, against the schema documented in `docs/supabase-setup.md`. Each tool has its own spec, repo, CLAUDE.md, PROGRESS.md and Netlify site.
 
@@ -185,7 +185,7 @@
 | stage | Cycle stage | Text — `collecting`, `calibrating`, `signed_off` | Consultant | Yes |
 | impact_threshold, financial_threshold | The two materiality thresholds | Number, default 3.0 each | Consultant | Yes |
 | baseline_impact_threshold, baseline_financial_threshold | Thresholds recorded at cycle setup | Number | Automatic | Yes |
-| silent_stakeholders_considered, silent_stakeholders_note | Whether silent stakeholders were considered, and the reasoning | Yes/No + text | Consultant (prompt during cycle setup) | Yes for the flag; note optional |
+| silent_stakeholders_considered, silent_stakeholders_note | Retained columns, not collected in the v2.0 interface (silent stakeholders are handled through group selection only) | Yes/No + text | Not asked | No |
 | require_both_sources | Require both survey and live session before sign-off | Yes/No, default No | Consultant | Yes |
 | justification_mode | Justification per criterion or per topic | Text — `per_criterion` (recommended default) or `per_topic` | Consultant, per assessment | Yes |
 | mandatory | Every criterion must be answered or skipped | Yes/No | Consultant, per assessment | Yes |
@@ -215,7 +215,7 @@
 | stakeholder_groups | The master stakeholder map | id, name, type (`impact` / `financial` / `silent`), perspectives, order — silent presets: Nature and ecosystems, Species and biodiversity, Future generations (custom entries allowed) |
 | stakeholder_members | Named contacts within a group | id, group_id, name, title / role, company, email (optional, format-checked), pillars (E / S / G), expertise |
 | invitations | One row per invited expert of an expert survey | id, assessment_id, name, email, stakeholder_group_id, link_code, status, sent_at, opened_at, last_saved_at, submitted_at, anonymised_at |
-| submissions | One row per expert response (survey) or per live session result, draft or submitted | id, assessment_id, source, invitation_id (nullable), live_session_id (nullable), status (`draft` / `submitted`), stakeholder_group, perspective, expertise_topics, expertise_explanation, title, basis_for_representation, overall_comment, consent_given_at, current_topic_index, last_saved_at, submitted_at |
+| submissions | One row per expert response (survey) or per live session result, draft or submitted | id, assessment_id, source, entered_by (nullable — the logged-in user when the consultant enters an expert's responses), invitation_id (nullable), live_session_id (nullable), status (`draft` / `submitted`), stakeholder_group, perspective, expertise_topics, expertise_explanation, title, basis_for_representation, overall_comment, consent_given_at, current_topic_index, last_saved_at, submitted_at |
 | ratings | One row per (IRO × criterion) per submission; value empty means skipped. criterion_key is `scale`, `scope`, `irreversibility`, `likelihood` or `magnitude` — for a risk or opportunity the `likelihood` row is the financial likelihood (there is no `financialLikelihood` key) | id, submission_id, assessment_id, iro_id, criterion_key, value, justification |
 | topic_justifications | One justification per IRO per submission when the mode is per topic | id, submission_id, iro_id, justification |
 | live_sessions | One expert live session run in this tool | id, assessment_id, status (`planned` / `paused` / `finished`), facilitator, current_topic_index, started_at, last_saved_at, finished_at |
@@ -227,7 +227,7 @@
 
 **Retired by the shared migration (performed in Tool A's build):** `session_comments` (folded into `submissions.overall_comment`), `assessor_ratings` and its scheduled sync job (replaced by the combined ratings view), the `increment_respondents` function, and the `assessments.respondents_done` / `respondents_total` columns (counts are derived from invitations and submissions), and the old `participants` table (replaced by `live_session_participants`).
 
-**File storage:** Yes — the client's logo (uploaded once per client, shown at the top of every screen of Tool A's survey and on the report cover) and the consultant's own logo (report cover). Stored in Supabase Storage, with the URL saved on `clients.logo_url` and `practice_settings.consultant_logo_url`. Not retrievable by the public beyond the client logo needed to render the survey. The Word report itself is **not** stored — it is built in the browser on demand.
+**File storage:** Yes — the client's logo (uploaded once per client, shown at the top of every screen of Tool A's survey and on the report cover) and the consultant's own logo (report cover). Stored in Supabase Storage, with the URL saved on `clients.logo_url` and `practice_settings.consultant_logo_url`. Not retrievable by the public beyond the client logo needed to render the survey. The PDF report itself is **not** stored — it is built in the browser on demand.
 
 **Derived or calculated data:** Yes — severity, impact and financial scores, material yes/no, discrepancy and source-gap flags, override flags, topic-level roll-ups, response counts and completeness checks are computed on read (Section 9), not stored. The real build decides whether to compute in a database view or in the frontend; the frontend port of `reference-prototype/src/lib/calc.js` (updated per Section 9) is the default.
 
@@ -266,9 +266,9 @@
 | stakeholder_members | Authenticated user | All rows | Yes | Yes | Yes |
 | invitations | Authenticated user | All rows | Yes | Yes | Only before the invitee has opened it |
 | invitations | Unauthenticated (anon) | No direct access — only through Tool A's six link-code functions | No direct access | No direct access | No |
-| submissions | Authenticated user | All rows | Yes (live sessions) | Yes (status changes, live session drafts, anonymising the optional title) | No |
+| submissions | Authenticated user | All rows | Yes (live sessions) | Yes (status changes, live session drafts, anonymising the optional title) | Only draft rows, and only in a cycle that is Calibrating or Signed off ("Delete unfinished drafts") — never submitted rows |
 | submissions | Unauthenticated (anon) | No direct access — only through Tool A's six link-code functions | No direct access | No direct access | No |
-| ratings, topic_justifications | Authenticated user | All rows | Yes (live sessions) | Only while the submission is a draft | No |
+| ratings, topic_justifications | Authenticated user | All rows | Yes (live sessions) | Only while the submission is a draft | Only rows of a draft submission, and only in a cycle that is Calibrating or Signed off — never rows of submitted responses |
 | ratings, topic_justifications | Unauthenticated (anon) | No direct access — only through Tool A's six link-code functions | No direct access | No direct access | No |
 | live_sessions, live_session_participants | Authenticated user | All rows | Yes | Yes | Only before the session has started (participants are otherwise removed softly) |
 | attendance_edit_log | Authenticated user | All rows | Yes | No | No |
@@ -311,6 +311,13 @@
 
 The console uses a dark theme (Section 10). Every screen except Login requires a signed-in user. Screens marked *(existing)* keep their look and behaviour from the reference prototype unless noted.
 
+### App shell and navigation
+
+- **Purpose:** One frame for the whole console, ported from the reference prototype.
+- **What is visible:** The prototype's **collapsible left-hand navigation rail** (logo, icon-and-label buttons, its styling) with these items in order: **Dashboard, Cycles, Stakeholders, Topics, Assessments, Calibrate & Results, Report**. The signed-in email and Sign out sit in the top area. The Dashboard shows the prototype's six process cards — Stakeholder selection, Topic selection, Assessment of impact topics, Assessment of financial topics, Calibration, Downloadable result — with real progress, each opening its area (the two assessment cards open Assessments filtered by perspective; Calibration opens Calibrate & Results on the Calibrate tab; Downloadable result opens the Report builder).
+- **User actions:** Move between areas; collapse the rail.
+- **What happens next:** Each item opens its screen below inside this shell. There is no separate top tab bar.
+
 ### Login
 
 - **Purpose:** Let invited users in.
@@ -343,13 +350,13 @@ The console uses a dark theme (Section 10). Every screen except Login requires a
 
 - **Purpose:** Manage cycles and the assessments inside them.
 - **What is visible:** Cycles with client, financial year, ESRS version, stage (Collecting / Calibrating / Signed off) and thresholds; assessments inside each cycle with type (Expert survey / Expert live session), status, response counts (invited, opened, saved, submitted for surveys; participants and session status for live sessions) and a completeness indicator; the stage actions **Start calibration**, **Sign off cycle** and **Revoke sign-off**; **Delete unfinished drafts** (manual purge, available once the cycle is in Calibrating or Signed off).
-- **User actions:** Open, edit, delete (only before any response exists), start calibration, sign off, revoke, purge drafts.
+- **User actions:** Open, edit, delete (only before any response exists), start calibration, sign off, revoke, purge drafts (**Delete unfinished drafts** removes draft submissions and their ratings and justifications only; submitted responses are never deleted).
 - **What happens next:** Stage changes update the labels in the Calibrate & Results workspace. **Sign off cycle** asks for the approver's name, role, date and a minutes reference, records the logged-in user as "recorded by", and is blocked when the cycle's "require both sources" setting is on and either the survey or the live session has no submitted data.
 
 ### New cycle (first step of any new assessment work)
 
 - **Purpose:** Set the basis for the whole DMA round.
-- **What is visible:** Step 1 — **"Which financial year is this assessment for?"** Step 2 — **ESRS version**, pre-selected from the year (2026 → Current standards, ESRS 2023 as amended; 2027 or later → Simplified standards, ESRS 2026) with a one-line plain-language explanation of each, overridable. Step 3 — client (choose or create, with logo upload). Step 4 — cycle name and the two thresholds (impact and financial, default 3.0 each), recorded as the **baseline**. Step 5 — **silent stakeholders prompt**: "Are any silent stakeholders (for example nature) affected by this company's activities? If so, invite a representative." with a Yes/No, a free-text note, and a link to the Stakeholders screen; the answer is stored on the cycle for the record and does not block progress.
+- **What is visible:** Step 1 — **"Which financial year is this assessment for?"** Step 2 — **ESRS version**, pre-selected from the year (2026 → Current standards, ESRS 2023 as amended; 2027 or later → Simplified standards, ESRS 2026) with a one-line plain-language explanation of each, overridable. Step 3 — client (choose or create, with logo upload). Step 4 — cycle name and the two thresholds (impact and financial, default 3.0 each), recorded as the **baseline**. There is **no silent stakeholders step** in this wizard: silent groups (Nature and ecosystems, Species and biodiversity, Future generations) appear only as options in stakeholder group selection (Stakeholders, Invitations, and Tool A's About you).
 - **User actions:** Answer each step; create the cycle.
 - **What happens next:** Opens the cycle, ready for its first assessment.
 
@@ -366,6 +373,13 @@ The console uses a dark theme (Section 10). Every screen except Login requires a
 - **What is visible:** A table with name, email, stakeholder group (silent stakeholder groups included), status (Invited / Opened / Saved / Submitted), a **Copy personal link** button per row (the link is Tool A's site address plus `/survey/[assessment slug]/[link code]`), a **Mark as sent** toggle, and counts per stakeholder group (invited versus submitted) with a flag where the group an expert chose in Tool A differs from the group invited. An "Add from stakeholder map" shortcut and manual entry. The **consent checkbox and data statement** on the add form.
 - **User actions:** Add, edit and remove invitations (removal only before the invitee has opened the link); copy a link; mark as sent; anonymise an invitation on a deletion request.
 - **What happens next:** The consultant sends each link manually. Nothing is emailed by the tool.
+
+### Enter expert responses (expert survey) — the restored assessment grid
+
+- **Purpose:** Let the consultant enter an expert's responses herself, for an expert who will not use the personal link (for example after an interview). This is the prototype's assessment grid (`QuantAssessmentGrid`), kept, with the "quantitative" wording changed to Expert survey and the setup decisions applied.
+- **What is visible:** Opened from an invitation in the Invitations list (**Enter responses**). The prototype's grid layout: every topic of the assessment with its applicable criteria (Section 9 table), a 0–5 rating or Skip per criterion, and a **justification** per criterion or per topic according to the assessment's justification mode (required once a rating has a value). The same **About you** details Tool A asks — expertise (E1–G1), expertise explanation, stakeholder group and perspective, optional title — and a confirmation that the responses come from the expert's own input.
+- **User actions:** Fill in, save as a draft, submit.
+- **What happens next:** Submitting writes one submitted `submissions` row (source expert survey, tied to that invitation) with its ratings and justifications, exactly like a response through Tool A, plus who entered it (`entered_by`, the logged-in user), so an auditor can tell a consultant-entered response from a self-submitted one. The invitation moves to Submitted.
 
 ### Participants (expert live session)
 
@@ -402,14 +416,15 @@ The console uses a dark theme (Section 10). Every screen except Login requires a
   2. **Results** — the topic summary (one card per ESRS topic in use: IRO count, rated count, average impact and financial score, MATERIAL badge), the **bar chart** of every scored IRO (colour-coded by ESRS pillar, sorted high to low), a compact table of material topics, and the **threshold controls**. Thresholds are editable **only here and only in stage Calibrating**; a banner says so. Changing one requires an explicit **Apply** with a reason, which appends a row to the threshold change log. In stages Collecting and Signed off the threshold controls are read-only with an explanation.
   3. **Matrix** — the two heatmaps (Impact: severity × likelihood; Financial: magnitude × likelihood, numbered 1–5 scales, shaded higher-materiality zone) and the impact × financial materiality matrix, with points colour-coded by ESRS pillar and shape-coded by type. Thresholds shown are the cycle's stored thresholds; they cannot be changed here.
 - **User actions:** Filter, open rows, adjust, reset, mark reviewed, edit thresholds (Results tab, Calibrating only), switch tabs.
+- **Downloads:** each chart in the Results and Matrix tabs keeps the prototype's **PNG** download (image on a white background), and the chart data keeps its **CSV** download. The PDF report is separate (Report builder).
 - **What happens next:** Every change updates all three tabs immediately from the calibrated value where one exists, otherwise the calculated one, with a "calibrated" or "calculated" marker on each point. Results are labelled **Provisional** until the cycle is signed off. Nothing is hidden while data is incomplete — only submitted responses count.
 
 ### Report builder
 
-- **Purpose:** Produce the DMA report as a Word document.
-- **What is visible:** A four-step flow. **Step 1 — Preset:** *Audit pack* (all six sections) or *Client report* (sections 1, 3, 4 and 5; sections 2 and 6 optional). **Step 2 — Sections** (tick or untick each): (1) **Cover and basis** — the two optional logo slots (the consultant's and the client's), client, financial year, ESRS version, cycle, dates, Provisional or Final label; (2) **Process and methodology** — steps followed, scoring rules, methodology version, both thresholds with their baseline and change log; (3) **Engagement** — a table of stakeholder groups (invited versus responded), including silent stakeholders with who represents them and the basis for representation, expertise coverage E1–G1, and live session dates and attendees; (4) **Topics and results** — the graphs as images on a white background plus the topic table (type, score by source, calibrated value, material yes/no); (5) **Calibration and sign-off** — every calibration change with old value, new value, reason, who and when, then the approver, role, date and minutes reference; (6) **Appendix** — all ratings with justifications in a table, and experts' overall comments. **Step 3 — Options:** personal data **off by default** (expertise and stakeholder group only; names and titles included only if ticked); justifications (in full / only for flagged topics / excluded); scope (all topics, material only, or one ESRS topic); an optional free-text note per section. **Step 4 — Preview and download** as a Word file.
+- **Purpose:** Produce the DMA report as a PDF document.
+- **What is visible:** A four-step flow. **Step 1 — Preset:** *Audit pack* (all six sections) or *Client report* (sections 1, 3, 4 and 5; sections 2 and 6 optional). **Step 2 — Sections** (tick or untick each): (1) **Cover and basis** — the two optional logo slots (the consultant's and the client's), client, financial year, ESRS version, cycle, dates, Provisional or Final label; (2) **Process and methodology** — steps followed, scoring rules, methodology version, both thresholds with their baseline and change log; (3) **Engagement** — a table of stakeholder groups (invited versus responded), including silent stakeholders with who represents them and the basis for representation, expertise coverage E1–G1, and live session dates and attendees; (4) **Topics and results** — the graphs as images on a white background plus the topic table (type, score by source, calibrated value, material yes/no); (5) **Calibration and sign-off** — every calibration change with old value, new value, reason, who and when, then the approver, role, date and minutes reference; (6) **Appendix** — all ratings with justifications in a table, and experts' overall comments. **Step 3 — Options:** personal data **off by default** (expertise and stakeholder group only; names and titles included only if ticked); justifications (in full / only for flagged topics / excluded); scope (all topics, material only, or one ESRS topic); an optional free-text note per section. **Step 4 — Preview and download** as a PDF file.
 - **User actions:** Choose preset, sections and options; preview; download.
-- **What happens next:** The .docx is built in the browser and downloaded. A **Provisional** footer stamp runs on every page until the cycle is signed off; Final appears only after sign-off. For a locked copy the consultant uses Word's own "Save as PDF".
+- **What happens next:** The PDF is built in the browser and downloaded. A **Provisional** footer stamp runs on every page until the cycle is signed off; Final appears only after sign-off.
 
 ---
 
@@ -475,7 +490,7 @@ The console uses a dark theme (Section 10). Every screen except Login requires a
 - **Font:** Inter (body), Jost (wordmark)
 - **Logo:** Apus swift mark; the client logo and consultant logo are uploaded for Tool A and the report.
 
-**Word report:** white pages, dark text, **one accent colour** for headings and table header rows (default `#1F9A63`, the Expert Survey green, unless a greenfriend brand colour is supplied — see Section 15), Calibri with an Arial fallback, graphs on white backgrounds, topics and stakeholders in tables, professional and compact.
+**PDF report:** white pages, dark text, **one accent colour** for headings and table header rows (default `#1F9A63`, the Expert Survey green, unless a greenfriend brand colour is supplied — see Section 15), a standard sans-serif font, graphs on white backgrounds, topics and stakeholders in tables, professional and compact.
 
 **Visual feel:** Console — dark, focused and data-heavy. Report — professional and corporate.
 
@@ -489,7 +504,7 @@ The console uses a dark theme (Section 10). Every screen except Login requires a
 |---------|--------------------------|-------------|-------------------|
 | Supabase | Database, Auth (magic link), file storage (logos) | Anon / publishable key (public, browser-safe) | Netlify environment variables |
 
-No other external service is used. The Word report is built in the browser with a Word-generation library chosen by Claude Code (no key). The service role key exists in the project but has **no use case here** — do not wire it into anything; flag to the builder first if one appears.
+No other external service is used. The PDF report is built in the browser with a PDF-generation library chosen by Claude Code (no key). The service role key exists in the project but has **no use case here** — do not wire it into anything; flag to the builder first if one appears.
 
 **Credentials readiness:**
 
@@ -511,10 +526,10 @@ No other external service is used. The Word report is built in the browser with 
 | Weighting between the expert survey and the live session | Live session counts as one assessor; a weighting setting needs a methodology decision |
 | A formal methodology change log | The methodology version tag is enough for v1 |
 | Per-sitting attendance for live sessions | One editable attendee list with an edit log is used instead |
-| Locked PDF export and PNG chart downloads | Replaced by the Word report; Word's own "Save as PDF" covers a locked copy |
-| CSV export of raw ratings | The report appendix table covers it; add if needed |
+| Editable Word version of the report | The PDF is the final form; add a Word export later if the consultant needs to edit the text |
+| CSV export of the full raw ratings table | The report appendix table covers it; the chart-data CSV in Results is kept |
 | File upload for approval minutes | A reference field is used instead |
-| Word report editing inside the tool, or a second report format | The consultant edits the downloaded Word file |
+| Report editing inside the tool, or a second report format | The PDF is generated from the stored data on demand |
 | Automatic scheduled purge of drafts | Manual purge action instead |
 | Tying calibration owner and moderator to login accounts | Names are recorded as text |
 | Document search or knowledge base | Out of framework scope — advanced build |
@@ -527,7 +542,7 @@ No other external service is used. The Word report is built in the browser with 
 |---|---------------|-----------------|-------|
 | 1 | Login works and is invite-only | Magic link signs in an invited user; an uninvited email cannot create an account; self-signup is off | [ ] |
 | 2 | New cycle starts with the financial year | Step 1 asks the financial year; the ESRS version is pre-selected (2026 → 2023 as amended, 2027+ → 2026), overridable; thresholds default 3.0/3.0 and are stored as baseline | [ ] |
-| 3 | Silent stakeholders prompt appears | The cycle setup asks the question, stores the answer and note, and does not block progress | [ ] |
+| 3 | Silent stakeholders appear as group options only | The New cycle wizard has no silent stakeholders step; the three silent groups are selectable in Stakeholders, Invitations and Tool A's About you | [ ] |
 | 4 | Stakeholders module supports silent stakeholders | Silent group type with the three presets, custom entries allowed, guidance text shown, consent checkbox on the add-contact form | [ ] |
 | 5 | Topics library respects ESRS version and flags | Entries carry version, time horizon (risks and opportunities) and the human rights flag; sub-topic list follows the version; custom sub-topic allowed under ESRS 2026; CSV flags unmatched codes | [ ] |
 | 6 | Assessment types are renamed everywhere | UI and stored values use Expert survey / Expert live session (`expert_survey` / `expert_live_session`); no "quantitative" or "qualitative" remains | [ ] |
@@ -545,11 +560,13 @@ No other external service is used. The Word report is built in the browser with 
 | 18 | Stages and labels work | Banner shows the stage; results show Provisional until sign-off, then Final | [ ] |
 | 19 | Sign-off works | Records approver name, role, date, minutes reference and the logged-in user; locks edits and blocks new ratings; revoke returns to Calibrating and is logged; "require both sources" blocks sign-off when one source is missing | [ ] |
 | 20 | Results content is correct | Topic summary, bar chart (pillar colours), material topics table, both heatmaps and the matrix render from effective values | [ ] |
-| 21 | Report builder produces the Word file | Four steps work; presets set the right sections; the .docx has white pages, tables for topics and stakeholders, graphs as images, logo slots, and a footer with cycle, ESRS version, date and Provisional or Final | [ ] |
+| 21 | Report builder produces the PDF file | Four steps work; presets set the right sections; the PDF has white pages, tables for topics and stakeholders, graphs as images, logo slots, and a footer with cycle, ESRS version, date, page number and Provisional or Final | [ ] |
 | 22 | Report protects personal data by default | Names and titles are absent unless explicitly ticked; silent stakeholders appear with their representatives and basis | [ ] |
 | 23 | GDPR forms are complete | Consent checkbox and data statement on the invitation, participant and stakeholder contact forms; anonymising a person clears name and email and keeps ratings intact | [ ] |
 | 24 | Security holds | With the anon key alone no personal data, invitation, participant or calibration record can be read; RLS is enabled on every table | [ ] |
 | 25 | Tool deploys and is accessible at its Netlify URL | Live URL loads correctly on desktop after login | [ ] |
+| 26 | Manual entry of expert responses works | From an invitation, Enter responses opens the restored grid with the Section 9 criteria, justifications per the assessment's mode and the About you details; submitting creates a submitted response tied to the invitation with `entered_by` set, and the invitation shows Submitted | [ ] |
+| 27 | Results downloads work | Each chart downloads as a PNG on a white background and its data as CSV; the PDF report is separate | [ ] |
 
 ---
 
@@ -601,8 +618,9 @@ No other external service is used. The Word report is built in the browser with 
 | The simplified ESRS delegated act was adopted on 3 July 2026 but may still be in its scrutiny period: check the act text for the topic and sub-topic list, time-horizon wording and top-down rules before locking the ESRS 2026 library | Builder + Claude Code, at build time | No — the library is version-tagged so it can be updated |
 | Show a sample export to the assurance provider and ask what evidence they would want added | Builder | No — before the first real client cycle |
 | Edge-case scoring rule: skipped criteria excluded from averages; an assessor who skipped every criterion of an axis is excluded from that axis. Confirm this is acceptable | Builder | No — default applies |
-| Accent colour for the Word report: use `#1F9A63` or a greenfriend brand colour? | Builder | No — default `#1F9A63` |
+| Accent colour for the PDF report: use `#1F9A63` or a greenfriend brand colour? | Builder | No — default `#1F9A63` |
 | Can one representative cover several silent stakeholders, or one each? | Builder | No — the model allows both |
+| Adding the nullable `entered_by` column to the shared `submissions` table is an additive change to a table Tool A also uses (Tool A's link-code functions are unaffected). Approve before it is applied | Builder | No — approve at build time |
 | How does this tool know Tool A's site address for building personal links (no environment variable or setting is defined for it yet)? | Builder + Claude Code, at build time | No — resolve during the build |
 | Before a second client is onboarded, the public key can still read Tool A's display tables in full (assessments, iros, clients, stakeholder groups). Route these reads through link-code functions to keep clients' topics separate | Builder + Claude Code | No — before a second client |
 | Should the expert survey's "require both sources before sign-off" default stay off? | Builder | No — default off |
@@ -618,8 +636,11 @@ No other external service is used. The Word report is built in the browser with 
 | v1.0 | 2026-09-10 | Initial build — documents the working prototype's full consultant workflow (dashboard, wizard for both assessment modes, live session, calibration, results) |
 | v1.1 | 2026-09-11 | Consolidated Preview into one Review Hub; added assessment deletion |
 | v1.2 | 2026-09-16 | Master Stakeholders and Topics modules replacing per-assessment CSV upload; sign-off and calibration history; session notes; redesigned Dashboard and Results |
-| v2.0 | 2026-09-20 | Assessment types renamed **Expert survey** and **Expert live session**. Work organised into **cycles** per client, starting with the financial year, which pre-selects the ESRS version (2023 as amended or 2026). **Invitation list** (name, email, group) with personal links; **live session participants** (name and expertise, editable, with an edit log) and **Save and pause**. All responses in one combined ratings table with source, who and justification; **justification** per criterion or per topic. **Silent stakeholders** (nature and others) supported through representatives and a cycle-setup prompt. Merged **Calibrate & Results workspace** with three tabs, **two thresholds** (impact and financial) controlled by stage, Provisional/Final labels and cycle-level sign-off with approver, role, date and minutes reference. Scoring updated: actual impacts and potential human rights impacts need no likelihood; live session counts as one assessor; source-gap flag; methodology v2. **Word report builder** (six sections, two presets, logo slots) replaces the CSV/PNG/PDF export panel. Consent forms added for every form that adds a named person; GDPR applies. |
+| v2.0 | 2026-09-20 | Assessment types renamed **Expert survey** and **Expert live session**. Work organised into **cycles** per client, starting with the financial year, which pre-selects the ESRS version (2023 as amended or 2026). **Invitation list** (name, email, group) with personal links; **live session participants** (name and expertise, editable, with an edit log) and **Save and pause**. All responses in one combined ratings table with source, who and justification; **justification** per criterion or per topic. **Silent stakeholders** (nature and others) supported through representatives and a cycle-setup prompt. Merged **Calibrate & Results workspace** with three tabs, **two thresholds** (impact and financial) controlled by stage, Provisional/Final labels and cycle-level sign-off with approver, role, date and minutes reference. Scoring updated: actual impacts and potential human rights impacts need no likelihood; live session counts as one assessor; source-gap flag; methodology v2. **PDF report builder** (six sections, two presets, logo slots) replaces the CSV/PNG/PDF export panel. Consent forms added for every form that adds a named person; GDPR applies. |
 | v2.0 (amended) | 2026-09-20 | Documentation aligned with the build, no scope change: Tool A's public access to invitations, submissions, ratings and topic justifications is through six link-code functions (anon has no direct table access); `financialLikelihood` retired as a criterion key; personal link format recorded; two open items added. |
+| v2.0 (amended 2) | 2026-09-21 | Documentation aligned with decisions taken during the build, no scope change: the app shell and left-hand navigation are specified (Dashboard, Cycles, Stakeholders, Topics, Assessments, Calibrate & Results, Report); the silent stakeholders step is removed from the New cycle wizard; "Delete unfinished drafts" is allowed for draft rows only. |
+| v2.0 (amended 3) | 2026-09-21 | Documentation aligned with builder decisions, no scope change: the assessment grid (`QuantAssessmentGrid`) is kept as **Enter expert responses**, with expert survey wording and a new `entered_by` field; the Results section keeps PNG and CSV downloads (the report itself was still a Word document at this point; see amended 4). |
+| v2.0 (amended 4) | 2026-09-21 | Report format changed from Word (.docx) to **PDF**, no other scope change: the report builder produces a PDF (with page numbers and a Provisional or Final footer on every page); an editable Word version is deferred. Earlier rows that say "Word" describe the report before this change. |
 
 ---
 
