@@ -306,11 +306,6 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  {currentAssessment?.cycle?.stage && (
-                    <span className="text-[10.5px] font-semibold rounded-full px-2 py-0.5 border border-border-apus text-text-secondary uppercase tracking-wide">
-                      {currentAssessment.cycle.stage.replace('_', ' ')} · {currentAssessment.cycle.stage === 'signed_off' ? 'Final' : 'Provisional'}
-                    </span>
-                  )}
                 </div>
               )}
               {assessments.length === 0 ? (
@@ -319,9 +314,10 @@ export default function App() {
                 <CalibrateResultsTab
                   iros={iros}
                   thresholds={thresholds}
-                  cycleId={currentAssessment?.cycle?.id ?? null}
+                  cycle={cycles.find((c) => c.id === currentAssessment?.cycle?.id) ?? null}
+                  userId={session.user.id}
                   locked={currentAssessment?.cycle?.stage !== 'calibrating'}
-                  onChanged={reload}
+                  onChanged={() => { reload(); reloadCyclesAndAssessments(); }}
                   initialSub={crInitialSub}
                 />
               )}

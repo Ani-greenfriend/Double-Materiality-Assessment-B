@@ -289,6 +289,12 @@ export async function revokeCycleSignOff(cycleId) {
   if (error) throw new Error(`cycles update failed: ${error.message}`);
 }
 
+export async function setRequireBothSources(cycleId, value) {
+  assertConfigured();
+  const { error } = await supabase.from('cycles').update({ require_both_sources: value }).eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
+}
+
 // RLS-gated: only succeeds when no response exists anywhere in the cycle
 // (see docs/supabase-setup.md — "authenticated delete cycles without responses").
 export async function deleteCycle(cycleId) {
