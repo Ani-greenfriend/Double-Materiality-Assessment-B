@@ -190,7 +190,7 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, l
 
       {sub === 'results' && <ResultsScreen iros={iros} thresholds={thresholds} />}
       {sub === 'calibrate' && (
-        <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} locked={locked} onChanged={onChanged} />
+        <CalibrationTab iros={iros} thresholds={thresholds} cycle={cycle} cycleId={cycle?.id ?? null} userId={userId} locked={locked} onChanged={onChanged} />
       )}
     </div>
   );

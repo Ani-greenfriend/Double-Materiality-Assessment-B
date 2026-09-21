@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { aggregateIro, hasImpactAxis, MAGNITUDE_BANDS, CALC_METHODOLOGY_VERSION } from '../lib/calc';
 import { PILLAR_COLOR, TYPE_LABEL, TYPE_COLOR, pillarFor } from '../lib/topics';
-import { saveCalibrationAdjustment, resetCalibrationToCalculated, setReviewedWithOwner, updateCalibrationFields } from '../lib/data';
+import { saveCalibrationAdjustment, resetCalibrationToCalculated, setReviewedWithOwner, updateCalibrationFields, signOffCycle, revokeCycleSignOff } from '../lib/data';
 import DmaMascot from './DmaMascot';
 
 function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
-export default function CalibrationTab({ iros, thresholds, cycleId, locked, onChanged }) {
+export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userId, locked, onChanged }) {
   const [openId, setOpenId] = useState(null);
 
   const flagged = iros.filter((iro) => {
@@ -57,6 +57,10 @@ export default function CalibrationTab({ iros, thresholds, cycleId, locked, onCh
           />
         ))}
       </div>
+
+      {cycle && cycle.stage !== 'collecting' && (
+        <CalibrationSignOff cycle={cycle} userId={userId} onChanged={onChanged} />
+      )}
     </div>
   );
 }
@@ -115,10 +119,6 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
 
   async function toggleReviewedWithOwner() {
     await run(() => setReviewedWithOwner({ iroId: iro.id, cycleId, calibration: cal, reviewed: !isReviewedWithOwner }));
-  }
-
-  async function setBandValue(value) {
-    await run(() => updateCalibrationFields({ iroId: iro.id, cycleId, calibration: cal, patch: { band_value: value } }));
   }
 
   async function setField(field, value) {
@@ -184,12 +184,13 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
 
           {!hasImpactAxis(iro.iroType) && (
             <div className="mb-3.5">
-              <p className="text-[10.5px] text-text-secondary mb-1.5">MAGNITUDE BAND</p>
-              <div className="flex gap-1.5 flex-wrap">
+              <p className="text-[10.5px] text-text-secondary mb-1.5">WHAT THE MAGNITUDE SCALE MEANS</p>
+              <p className="text-[11px] text-text-secondary mb-1.5">Magnitude is rated 1–5 during the survey or session, not chosen here — this is reference only, for context while calibrating.</p>
+              <div className="flex flex-col gap-1 bg-app-black rounded-lg px-3 py-2.5">
                 {MAGNITUDE_BANDS.map((b) => (
-                  <button key={b.value} onClick={() => setBandValue(b.value)} disabled={busy || locked} className={`text-[11px] rounded-md px-2.5 py-1.5 disabled:opacity-40 ${cal?.band_value === b.value ? 'bg-emerald text-app-black font-semibold' : 'border border-border-apus text-text-secondary'}`}>
-                    {b.label} · {b.value}
-                  </button>
+                  <p key={b.value} className="text-[11px] text-text-secondary">
+                    <b className="text-text-primary">{b.value}</b> — {b.label}
+                  </p>
                 ))}
               </div>
             </div>
@@ -244,6 +245,106 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A sign-off section within the Calibration screen itself — round-level, the
+// same action the Calibrate & Results header offers, using the same (non-
+// retired) cycle fields and functions; calibrations.signed_off_by/_at were
+// dropped in the v2.0 migration and are never written here or anywhere else.
+function CalibrationSignOff({ cycle, userId, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [signingOff, setSigningOff] = useState(false);
+  const [approverName, setApproverName] = useState(cycle.approverName ?? '');
+  const [approverRole, setApproverRole] = useState(cycle.approverRole ?? '');
+  const [minutesReference, setMinutesReference] = useState(cycle.minutesReference ?? '');
+
+  const missingSources = cycle.requireBothSources
+    ? ['expert_survey', 'expert_live_session'].filter((s) => !cycle.submittedSources.has(s))
+    : [];
+
+  async function run(fn) {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmSignOff() {
+    if (!approverName.trim() || !approverRole.trim()) return;
+    await run(async () => {
+      await signOffCycle({ cycleId: cycle.id, approverName: approverName.trim(), approverRole: approverRole.trim(), minutesReference: minutesReference.trim(), recordedBy: userId });
+      setSigningOff(false);
+    });
+  }
+
+  async function handleRevoke() {
+    if (window.confirm('Revoke sign-off? Results return to Provisional.')) {
+      await run(() => revokeCycleSignOff(cycle.id));
+    }
+  }
+
+  if (cycle.stage === 'signed_off') {
+    return (
+      <div className="rounded-xl px-4 py-3.5 mt-3 flex items-center justify-between flex-wrap gap-2" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
+        <p className="text-[12px]" style={{ color: '#5ED996' }}>
+          ✓ Signed off by <b>{cycle.approverName}</b>{cycle.approverRole ? `, ${cycle.approverRole}` : ''}
+          {cycle.minutesReference ? ` · Minutes: ${cycle.minutesReference}` : ''}
+        </p>
+        <button onClick={handleRevoke} disabled={busy} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40 shrink-0">Revoke sign-off</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-surface border border-border-apus rounded-xl p-4 mt-3">
+      <p className="text-[12.5px] font-semibold mb-1">Sign-off</p>
+      {!signingOff ? (
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-[11.5px] text-text-secondary">Once the group is done calibrating, record who signed off — results become Final.</p>
+          <button onClick={() => setSigningOff(true)} disabled={busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40 shrink-0" style={{ background: '#5ED996', color: '#07070B' }}>Sign off</button>
+        </div>
+      ) : (
+        <div>
+          {missingSources.length > 0 && (
+            <p className="text-[11.5px] mb-3" style={{ color: '#D79A4C' }}>
+              "Require both sources" is on, and {missingSources.map((s) => (s === 'expert_survey' ? 'Expert survey' : 'Expert live session')).join(' and ')} {missingSources.length === 1 ? 'has' : 'have'} no submitted data yet — sign-off is blocked until it does.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <p className="text-[10.5px] text-text-secondary mb-1">APPROVER NAME</p>
+              <input value={approverName} onChange={(e) => setApproverName(e.target.value)} className="w-full bg-surface-2 rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+            </div>
+            <div>
+              <p className="text-[10.5px] text-text-secondary mb-1">APPROVER ROLE</p>
+              <input value={approverRole} onChange={(e) => setApproverRole(e.target.value)} className="w-full bg-surface-2 rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+            </div>
+          </div>
+          <p className="text-[10.5px] text-text-secondary mb-1">MINUTES REFERENCE (optional)</p>
+          <input value={minutesReference} onChange={(e) => setMinutesReference(e.target.value)} className="w-full bg-surface-2 rounded-lg px-3 py-2 text-[12.5px] outline-none mb-3" />
+          {error && <p className="text-[11.5px] text-badge-amber mb-2">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirmSignOff}
+              disabled={busy || !approverName.trim() || !approverRole.trim() || missingSources.length > 0}
+              className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40"
+              style={{ background: '#5ED996', color: '#07070B' }}
+            >
+              Confirm sign-off
+            </button>
+            <button onClick={() => setSigningOff(false)} className="text-[12px] text-text-secondary px-3 py-1.5">Cancel</button>
+          </div>
         </div>
       )}
     </div>

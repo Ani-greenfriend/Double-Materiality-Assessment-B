@@ -11,6 +11,17 @@ function pillarColor(topicId) {
   return PILLAR_COLOR[pillarOf(topicId)]?.text ?? '#8B8B98';
 }
 
+// Topic Matrix quadrant fills, keyed to CLAUDE.md's existing brand palette —
+// not new colors, just the accent (#4C6FFF), the delete/negative red
+// (#E0645A) doing double duty as "financial" pink, and the purple already
+// reserved for assessments-run stats (#9B7FE0) reused for "material on both."
+const MATERIAL_QUADRANT_COLOR = {
+  none: 'rgba(139,139,152,0.08)',
+  impact: 'rgba(76,111,255,0.14)',
+  financial: 'rgba(224,100,90,0.14)',
+  both: 'rgba(155,127,224,0.16)',
+};
+
 function downloadCsv(filename, rows) {
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -500,13 +511,25 @@ function Matrix({ topics, impactTh, financialTh, onHover, onPin, svgRef }) {
 
   return (
     <div>
+      <div className="flex items-center gap-4 flex-wrap mb-2">
+        {[
+          ['Not material', MATERIAL_QUADRANT_COLOR.none],
+          ['Material — Impact only', MATERIAL_QUADRANT_COLOR.impact],
+          ['Material — Financial only', MATERIAL_QUADRANT_COLOR.financial],
+          ['Material — Both', MATERIAL_QUADRANT_COLOR.both],
+        ].map(([label, color]) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <span className="rounded-sm block shrink-0" style={{ width: 11, height: 11, background: color }} />
+            <span className="text-[10.5px] font-medium text-text-secondary">{label}</span>
+          </div>
+        ))}
+      </div>
       <div className="relative">
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W} / ${H}`, height: 'auto', display: 'block' }}>
-        <rect x={M} y={10} width={ix - M} height={fy - 10} fill="#100E15" />
-        <rect x={ix} y={10} width={M + plotW - ix} height={fy - 10} fill="rgba(76,111,255,0.06)" />
-        <rect x={M} y={fy} width={ix - M} height={H - 34 - fy} fill="rgba(76,111,255,0.06)" />
-        <rect x={ix} y={fy} width={M + plotW - ix} height={H - 34 - fy} fill="rgba(215,154,76,0.14)" />
-        <text x={M + plotW - 4} y={22} textAnchor="end" fontSize="9" fontWeight="700" fill="#D79A4C">MATERIAL ZONE</text>
+        <rect x={M} y={10} width={ix - M} height={fy - 10} fill={MATERIAL_QUADRANT_COLOR.financial} />
+        <rect x={ix} y={10} width={M + plotW - ix} height={fy - 10} fill={MATERIAL_QUADRANT_COLOR.both} />
+        <rect x={M} y={fy} width={ix - M} height={H - 34 - fy} fill={MATERIAL_QUADRANT_COLOR.none} />
+        <rect x={ix} y={fy} width={M + plotW - ix} height={H - 34 - fy} fill={MATERIAL_QUADRANT_COLOR.impact} />
         <line x1={ix} y1={10} x2={ix} y2={H - 34} stroke="#2A2830" strokeDasharray="3 2" />
         <line x1={M} y1={fy} x2={M + plotW} y2={fy} stroke="#2A2830" strokeDasharray="3 2" />
         {[0, 1, 2, 3, 4, 5].map((v) => (

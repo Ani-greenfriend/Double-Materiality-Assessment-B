@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 11 (post-step-3 builder feedback round: silent-stakeholder sort, deletable topics, Recipients/Participants quick access, no-participants kick-off guard, Results rebuilt)
+**Last updated:** 2026-09-21 — session 2, part 12 (Results matrix recoloured to a real material-quadrant legend, Calibration's EBITDA selector replaced with explanation text, a sign-off section added inside Calibrate)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,66 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 12 (2026-09-21) — Results matrix colours, Calibration's EBITDA selector, a Calibrate sign-off section.**
+Builder sent an image of the live deploy preview's topic matrix as a colour
+reference, plus three more direct asks. All four done:
+
+1. **Topic Matrix quadrants recoloured, with a real legend.** The matrix's
+   background used a faint, two-tone "MATERIAL ZONE" highlight (`ResultsScreen.jsx`'s
+   `Matrix` component) — not four distinct, legible colours. Replaced with a
+   `MATERIAL_QUADRANT_COLOR` map (Not material / Material — Impact only /
+   Material — Financial only / Material — Both) drawn entirely from
+   CLAUDE.md's existing brand palette (no new colours introduced): the accent
+   `#4C6FFF` for Impact-only, the app's existing delete/negative red
+   `#E0645A` for Financial-only, the purple already reserved for
+   assessments-run stats `#9B7FE0` for Both, and `#8B8B98` (text-secondary)
+   for Not material. Added a colour-swatch legend row above the chart
+   (mirroring the reference image's layout) — the E/S/G dot legend and the
+   always-visible per-topic labels next to each point were already correct
+   and untouched (confirmed by re-reading the ported `Matrix`/`Heatmap` code
+   before changing anything: topic labels were already rendered next to
+   every point with real collision avoidance, not hover-only, and E/S/G was
+   already dot-colour-coded with its own legend — only the quadrant fill
+   colours and the missing material-state legend were the actual gap).
+2. **Calibration's EBITDA band selector is now explanation-only.**
+   `CalibrationTab.jsx`'s per-IRO "MAGNITUDE BAND" control was five
+   clickable buttons that let the consultant pick a specific EBITDA-%
+   band and write it to `calibrations.band_value` — this let the UI set a
+   value redundant with (and potentially contradicting) the magnitude
+   already rated 1–5 during the survey/session. Replaced with a read-only
+   reference panel listing what each of the five levels means as a share
+   of EBITDA, with a line explaining that magnitude comes from the rating,
+   not this screen. Removed the now-unused `setBandValue` handler; the
+   `band_value` column itself is untouched (not read anywhere else in the
+   UI right now, so effectively unused going forward — flagged below
+   rather than dropped from the schema, since that's a bigger call than
+   this round covers).
+3. **Calibration → Results reactivity — verified, not changed.** Checked
+   the actual data flow before assuming a fix was needed: `CalibrationTab`'s
+   `onChanged` already bubbles to `App.jsx`'s `reload()`
+   (`fetchDashboard(assessmentId)`), which re-fetches `iros` — the same
+   `iros` array `ResultsScreen` reads via `agg.effectiveValue`. A saved
+   calibration already reaches Results on the next render with no code
+   change required.
+4. **A sign-off section inside the Calibration tab itself.** Added
+   `CalibrationSignOff` (new, local to `CalibrationTab.jsx`) at the bottom
+   of the row list, shown whenever `cycle.stage !== 'collecting'`: the same
+   approver name/role/minutes-reference form and "Require both sources"
+   block as the Calibrate & Results header's `WorkspaceHeader`, using the
+   same non-retired `signOffCycle`/`revokeCycleSignOff` functions and
+   cycle-level fields — **not** a revival of
+   `calibrations.signed_off_by`/`signed_off_at`, which stay retired per
+   CLAUDE.md and are never referenced. Once signed off, shows a compact
+   "✓ Signed off by NAME, ROLE · Minutes: REF" card with Revoke, matching
+   the header's own summary. `CalibrateResultsTab.jsx` now passes `cycle`
+   and `userId` through to `CalibrationTab` (both already available there
+   for `WorkspaceHeader`, so no new prop threading up the tree was needed).
+
+`npm run build` and a full `npx oxlint src` clean — only the three
+pre-existing prototype warnings already on record (`ResultsScreen.jsx`'s
+unused `shapeB`, `SetupReviewStep.jsx`'s unused `surveyName`,
+`StakeholderModule.jsx`'s unused `PerspectiveTag`), nothing new.
+
 **Part 11 (2026-09-21) — post-step-3 builder feedback: five direct fixes.**
 The builder sent five concrete asks in one message after seeing PR #5's
 deploy preview, ahead of any step-4 go-ahead. All five done, each its own
@@ -720,6 +780,7 @@ schema — every new field the flow needed already existed).
 - New assessment's draft auto-save (row created and kept in sync from the moment mode+perspective are picked, so abandoning the wizard never loses progress — Section 8) is not implemented; the assessment row is created once, at the end of the wizard
 - Before inviting any real expert, the builder gets a short GDPR check (business reason: audit traceability; anonymise-on-request approach). Does not block the build
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
+- **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
