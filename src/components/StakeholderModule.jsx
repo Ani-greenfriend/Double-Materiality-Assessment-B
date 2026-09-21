@@ -20,6 +20,11 @@ function isValidEmail(v) { return !v || EMAIL_RE.test(v); }
 // form that adds a named person — this is the stakeholder contact form.
 const DATA_STATEMENT = "The details you enter about this person are stored securely and used only to organise and document this materiality assessment. Their answers can be connected to them through their invitation or the session attendee list. They may be shared with the client company and its auditor. They can request deletion or anonymisation at any time by contacting: anikalerch@greenfriend.org.";
 
+// Spec v2.0 amended 5: silent stakeholders are ordinary entries in this same
+// list (type 'silent'), not a separate screen — impact perspective only, a
+// small marker on the row, and this explanation on hover.
+const SILENT_EXPLANATION = "Cannot speak for itself. ESRS allows a proxy — for example an ecologist, a nature NGO or a scientific study. Consider whether this party is affected by the company's activities and, if so, add a representative here.";
+
 function PerspectiveTag({ type }) {
   const style = type === 'impact'
     ? { color: '#5ED996', bg: 'rgba(94,217,150,0.14)' }
@@ -84,6 +89,15 @@ function GroupRow({ g, onOpenGroup, onRename, onRemove, onSetBoth, editingId, se
           <span className="text-[10px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: '#4C6FFF' }}>+ add contacts →</span>
         </button>
       )}
+      {g.type === 'silent' && (
+        <span
+          className="text-[9px] font-semibold rounded-full px-1.5 py-0.5 shrink-0 cursor-help"
+          style={{ color: '#5ED996', background: 'rgba(94,217,150,0.14)' }}
+          title={SILENT_EXPLANATION}
+        >
+          Silent stakeholder
+        </span>
+      )}
       {both && <span className="text-[9px] font-semibold rounded-full px-1.5 py-0.5 shrink-0" style={{ color: '#ACACB8', background: 'rgba(139,139,152,0.16)' }}>Both</span>}
       {g.members.length > 0 ? (
         <button type="button" onClick={() => onOpenGroup(g.id)} className="text-[12px] font-bold rounded-full px-3 py-1 shrink-0" style={{ background: 'rgba(76,111,255,0.18)', color: '#7C9BFF' }} title={`${g.members.length} named contact${g.members.length === 1 ? '' : 's'} — click to view`}>
@@ -94,7 +108,7 @@ function GroupRow({ g, onOpenGroup, onRename, onRemove, onSetBoth, editingId, se
           + Add stakeholders
         </button>
       )}
-      {!both && (
+      {!both && g.type !== 'silent' && (
         <button type="button" onClick={() => onSetBoth(g.id)} className="text-[10px] font-semibold rounded-full px-2 py-0.5 shrink-0 border border-border-apus text-text-secondary hover:text-text-primary hover:border-[#8B8B98]" title="Assign to both perspectives">
           + Both
         </button>
@@ -126,6 +140,9 @@ function Section({ title, icon, accentColor, accentBg, perspective, groups, setG
     setGroups((prev) => {
       const dragged = prev.find((g) => g.id === id);
       if (!dragged) return prev;
+      // Silent stakeholders are impact perspective only — dropping one onto
+      // Financial is a no-op, not a silent downgrade to nothing.
+      if (perspective === 'financial' && dragged.type === 'silent') return prev;
       const newPerspectives = perspective === null ? [] : Array.from(new Set([...dragged.perspectives, perspective]));
       const withoutDragged = prev.filter((g) => g.id !== id);
       const updated = { ...dragged, perspectives: newPerspectives };
@@ -177,7 +194,7 @@ function Section({ title, icon, accentColor, accentBg, perspective, groups, setG
             {filtered.map((g) => (
               <GroupRow
                 key={g.id} g={g} onOpenGroup={onOpenGroup} onRename={onRename} onRemove={onRemove}
-                onSetBoth={(id) => setGroups((prev) => prev.map((x) => (x.id === id ? { ...x, perspectives: ['impact', 'financial'] } : x)))}
+                onSetBoth={(id) => setGroups((prev) => prev.map((x) => (x.id === id && x.type !== 'silent' ? { ...x, perspectives: ['impact', 'financial'] } : x)))}
                 editingId={editingId} setEditingId={setEditingId}
                 isDragOver={dragOverId === g.id} setDragOverId={setDragOverId}
                 onRowDrop={(draggedId, targetId) => reassign(draggedId, targetId)}
@@ -194,16 +211,23 @@ function GroupList({ groups, setGroups, onOpenGroup }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPerspectives, setNewPerspectives] = useState([]);
+  const [newSilent, setNewSilent] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
   function togglePerspective(p) {
     setNewPerspectives((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   }
 
+  function toggleSilent(checked) {
+    setNewSilent(checked);
+    // Silent stakeholders are impact perspective only.
+    if (checked) setNewPerspectives((prev) => prev.filter((p) => p !== 'financial'));
+  }
+
   function addGroup() {
     if (!newName.trim()) return;
-    setGroups((prev) => [...prev, { id: crypto.randomUUID(), name: newName, perspectives: newPerspectives, members: [] }]);
-    setNewName(''); setNewPerspectives([]); setAdding(false);
+    setGroups((prev) => [...prev, { id: crypto.randomUUID(), name: newName, perspectives: newPerspectives, type: newSilent ? 'silent' : null, members: [] }]);
+    setNewName(''); setNewPerspectives([]); setNewSilent(false); setAdding(false);
   }
 
   return (
@@ -233,7 +257,7 @@ function GroupList({ groups, setGroups, onOpenGroup }) {
           />
           <p className="text-[10.5px] text-text-secondary mb-2">PERSPECTIVE — optional, leave blank to add it straight to the generic pool instead</p>
           <div className="flex gap-2 mb-3">
-            {['impact', 'financial'].map((p) => (
+            {['impact', 'financial'].filter((p) => !(newSilent && p === 'financial')).map((p) => (
               <button
                 key={p}
                 onClick={() => togglePerspective(p)}
@@ -251,6 +275,10 @@ function GroupList({ groups, setGroups, onOpenGroup }) {
           {newPerspectives.length === 2 && (
             <p className="text-[10.5px] mb-3" style={{ color: '#ACACB8' }}>This group will appear in both columns below, shown with a blended colour so it's easy to spot at a glance.</p>
           )}
+          <label className="flex items-start gap-2 cursor-pointer mb-3">
+            <input type="checkbox" checked={newSilent} onChange={(e) => toggleSilent(e.target.checked)} className="mt-0.5" />
+            <span className="text-[11.5px]">This is a silent stakeholder (cannot speak for itself — nature, ecosystems, future generations…) — impact perspective only</span>
+          </label>
           <div className="flex gap-2">
             <button type="button" onClick={addGroup} disabled={!newName.trim()} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>Save</button>
             <button type="button" onClick={() => setAdding(false)} className="text-[12px] text-text-secondary">Cancel</button>

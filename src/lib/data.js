@@ -785,22 +785,24 @@ export async function setReviewedWithOwner({ iroId, cycleId, calibration, review
 // Stakeholders — StakeholderModule.jsx (ported verbatim from
 // reference-prototype/) — the Impact/Financial perspectives + generic pool.
 // Loaded/saved as one nested array, matching the shape the component already
-// expects: [{ id, name, perspectives, members: [{ id, name, title, company,
-// email, pillars, expertise }] }]. "title" in the component === "role" in the
-// DB (the prototype's own field naming, kept verbatim per the Hard Rule).
+// expects: [{ id, name, perspectives, type, members: [{ id, name, title,
+// company, email, pillars, expertise }] }]. "title" in the component ===
+// "role" in the DB (the prototype's own field naming, kept verbatim per the
+// Hard Rule). `type` is `null` for an ordinary group or `'silent'` for a
+// silent stakeholder — an ordinary entry in the same list, per spec v2.0
+// amended 5: no separate scope, silent groups sit in the generic pool like
+// any other suggestion until dragged into Impact.
 //
-// Scoped to non-silent groups only (`type is null or != 'silent'`) — silent
-// presets and custom silent groups (below) are a deliberately separate scope
-// so this full-collection sync (which upserts everything present and deletes
-// everything absent) never touches or deletes them.
+// A plain full-collection sync over the whole table — upserts everything
+// present, deletes everything absent — since silent groups are no longer a
+// protected subset that needs shielding from it.
 // ---------------------------------------------------------------------------
 
 export async function loadStakeholderMapForModule() {
   assertConfigured();
   const { data: groups, error: gErr } = await supabase
     .from('stakeholder_groups')
-    .select('id, name, perspectives, order')
-    .or('type.is.null,type.neq.silent')
+    .select('id, name, perspectives, type, order')
     .order('order', { ascending: true });
   if (gErr) throw new Error(`stakeholder_groups query failed: ${gErr.message}`);
 
@@ -819,6 +821,7 @@ export async function loadStakeholderMapForModule() {
     id: g.id,
     name: g.name,
     perspectives: g.perspectives || [],
+    type: g.type,
     members: members
       .filter((m) => m.group_id === g.id)
       .map((m) => ({
@@ -835,7 +838,7 @@ export async function loadStakeholderMapForModule() {
 
 export async function saveStakeholderMapForModule(map) {
   assertConfigured();
-  const groupRows = map.map((g, index) => ({ id: g.id, name: g.name, perspectives: g.perspectives, type: null, order: index }));
+  const groupRows = map.map((g, index) => ({ id: g.id, name: g.name, perspectives: g.perspectives, type: g.type || null, order: index }));
   const memberRows = map.flatMap((g) =>
     g.members.map((m) => ({
       id: m.id,
@@ -859,92 +862,18 @@ export async function saveStakeholderMapForModule(map) {
   }
 
   const groupIds = groupRows.map((g) => g.id);
-  const delGroupsQuery = supabase.from('stakeholder_groups').delete().or('type.is.null,type.neq.silent');
+  const delGroupsQuery = supabase.from('stakeholder_groups').delete();
   const { error: delGroupsErr } = groupIds.length
     ? await delGroupsQuery.not('id', 'in', `(${groupIds.join(',')})`)
-    : await delGroupsQuery;
+    : await delGroupsQuery.neq('id', '00000000-0000-0000-0000-000000000000');
   if (delGroupsErr) throw new Error(`stakeholder_groups delete failed: ${delGroupsErr.message}`);
 
-  // Members are deleted by explicit id, scoped to groups in this map — never
-  // a blanket "not in" over the whole table, so a silent group's members
-  // (out of scope for this sync entirely) can never be caught by it.
-  if (groupIds.length) {
-    const { data: existingMembers, error: exErr } = await supabase
-      .from('stakeholder_members')
-      .select('id')
-      .in('group_id', groupIds);
-    if (exErr) throw new Error(`stakeholder_members query failed: ${exErr.message}`);
-    const keepIds = new Set(memberRows.map((m) => m.id));
-    const toDelete = existingMembers.filter((m) => !keepIds.has(m.id)).map((m) => m.id);
-    if (toDelete.length) {
-      const { error: delErr } = await supabase.from('stakeholder_members').delete().in('id', toDelete);
-      if (delErr) throw new Error(`stakeholder_members delete failed: ${delErr.message}`);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Silent stakeholders — a small, separate scope (the three presets plus any
-// custom groups the consultant adds). Simple CRUD rather than a full sync,
-// since this list is short and never drag-reordered like the module above.
-// ---------------------------------------------------------------------------
-
-const SILENT_PRESETS = ['Nature and ecosystems', 'Species and biodiversity', 'Future generations'];
-
-export async function loadSilentStakeholderGroups() {
-  assertConfigured();
-  const { data: groups, error: gErr } = await supabase
-    .from('stakeholder_groups')
-    .select('id, name, order')
-    .eq('type', 'silent')
-    .order('order', { ascending: true });
-  if (gErr) throw new Error(`stakeholder_groups query failed: ${gErr.message}`);
-
-  const groupIds = groups.map((g) => g.id);
-  let members = [];
-  if (groupIds.length) {
-    const { data, error: mErr } = await supabase
-      .from('stakeholder_members')
-      .select('id, group_id, name, role, company, email, pillars, expertise')
-      .in('group_id', groupIds);
-    if (mErr) throw new Error(`stakeholder_members query failed: ${mErr.message}`);
-    members = data;
-  }
-
-  return groups.map((g) => ({
-    id: g.id,
-    name: g.name,
-    isCustom: !SILENT_PRESETS.includes(g.name),
-    members: members
-      .filter((m) => m.group_id === g.id)
-      .map((m) => ({ id: m.id, name: m.name, role: m.role, company: m.company || '', email: m.email || '', pillars: m.pillars || [], expertise: m.expertise || '' })),
-  }));
-}
-
-export async function addSilentStakeholderGroup(name) {
-  assertConfigured();
-  const { error } = await supabase.from('stakeholder_groups').insert({ name, type: 'silent', perspectives: [] });
-  if (error) throw new Error(`stakeholder_groups insert failed: ${error.message}`);
-}
-
-export async function removeSilentStakeholderGroup(id) {
-  assertConfigured();
-  const { error } = await supabase.from('stakeholder_groups').delete().eq('id', id);
-  if (error) throw new Error(`stakeholder_groups delete failed: ${error.message}`);
-}
-
-export async function addSilentStakeholderMember({ groupId, name, role, company, email, pillars, expertise }) {
-  assertConfigured();
-  const { error } = await supabase
-    .from('stakeholder_members')
-    .insert({ group_id: groupId, name, role, company: company || null, email: email || null, pillars: pillars || [], expertise: expertise || null });
-  if (error) throw new Error(`stakeholder_members insert failed: ${error.message}`);
-}
-
-export async function removeSilentStakeholderMember(id) {
-  assertConfigured();
-  const { error } = await supabase.from('stakeholder_members').delete().eq('id', id);
-  if (error) throw new Error(`stakeholder_members delete failed: ${error.message}`);
+  const memberIds = memberRows.map((m) => m.id);
+  const delMembersQuery = supabase.from('stakeholder_members').delete();
+  const { error: delMembersErr } = memberIds.length
+    ? await delMembersQuery.not('id', 'in', `(${memberIds.join(',')})`)
+    : await delMembersQuery.neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delMembersErr) throw new Error(`stakeholder_members delete failed: ${delMembersErr.message}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 8 (prototype-UI restore, step 2 verification)
+**Last updated:** 2026-09-21 — session 2, part 9 (prototype-UI restore, step 2 correction: silent stakeholders)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -31,6 +31,37 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 9 (2026-09-21) — Step 2 correction: silent stakeholders are ordinary entries.**
+Builder corrected the previous part's approach (spec v2.0 amended 5 — main
+doesn't have this revision pushed yet, but the builder's chat instruction
+was explicit and complete enough to build from directly): remove the
+separate `SilentStakeholdersPanel.jsx` entirely. Silent stakeholders are now
+ordinary rows in `StakeholderModule.jsx`'s own list — the three presets sit
+in the generic pool like any other suggestion (they already existed in the
+DB with `type = 'silent'`, `perspectives = []`, from earlier session work,
+so no re-seeding needed once the load query stopped filtering them out),
+draggable into Impact only (never Financial). Data layer simplified back to
+one plain, unscoped full-collection sync over the whole `stakeholder_groups`/
+`stakeholder_members` tables (`loadStakeholderMapForModule`/
+`saveStakeholderMapForModule` now carry `type` through instead of forcing
+it null and filtering it out — the "protect a scoped subset" complexity
+from Part 7 is gone along with the reason for it). Component changes, all
+category (c): a `type` field on the group model; a small "Silent
+stakeholder" badge on the row with the exact hover explanation text the
+builder gave ("Cannot speak for itself. ESRS allows a proxy — for example
+an ecologist, a nature NGO or a scientific study. Consider whether this
+party is affected by the company's activities and, if so, add a
+representative here." — via the native `title` attribute, mirroring
+`DragHandle`'s own existing hover-tooltip pattern in this same file); "+
+Both" hidden and the Financial-section drop/reassign path blocked for
+`type === 'silent'` groups, so they can only ever carry the impact
+perspective; a "This is a silent stakeholder…" checkbox on the "+ Add
+group" form that also hides the Financial toggle while checked. Everything
+else in the file — stat cards, two-step explainer, drag/reorder, generic
+pool, contact form and table, bottom banner — untouched. `npm run build`
+and `npx oxlint` clean (same pre-existing `PerspectiveTag` unused-warning
+as before, confirmed present in the prototype's own file too).
+
 **Part 8 (2026-09-21) — Step 2 verification against the v1.2 prototype reference doc.**
 Builder asked for confirmation, against docs/product-spec-v1.2-prototype-reference.md
 Section 8, that every prototype-era feature (not just v2.0 additions) is
