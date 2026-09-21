@@ -222,12 +222,12 @@ export async function findCycleForFinancialYear(financialYear) {
   assertConfigured();
   const { data, error } = await supabase
     .from('cycles')
-    .select('id, esrs_version, impact_threshold, financial_threshold, stage')
+    .select('id, client_id, esrs_version, impact_threshold, financial_threshold, stage')
     .eq('financial_year', financialYear)
     .maybeSingle();
   if (error) throw new Error(`cycles query failed: ${error.message}`);
   if (!data) return null;
-  return { id: data.id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
+  return { id: data.id, clientId: data.client_id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
 }
 
 // Called when an assessment is actually created: finds the cycle for this
@@ -252,10 +252,10 @@ export async function getOrCreateCycleForFinancialYear({ financialYear, esrsVers
       baseline_financial_threshold: 3.0,
       created_by: createdBy,
     })
-    .select('id, esrs_version, impact_threshold, financial_threshold, stage')
+    .select('id, client_id, esrs_version, impact_threshold, financial_threshold, stage')
     .single();
   if (error) throw new Error(`cycles insert failed: ${error.message}`);
-  return { id: data.id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
+  return { id: data.id, clientId: data.client_id, esrsVersion: data.esrs_version, impactThreshold: data.impact_threshold, financialThreshold: data.financial_threshold, stage: data.stage };
 }
 
 export async function startCalibration(cycleId) {
@@ -1208,4 +1208,58 @@ export async function finishLiveSession({ assessmentId, liveSessionId, submissio
     .update({ status: 'finished', finished_at: new Date().toISOString() })
     .eq('id', liveSessionId);
   if (lsError) throw new Error(`live_sessions update failed: ${lsError.message}`);
+}
+
+// ---- Assessment overview — the prototype's AssessmentOverview.jsx table.
+// Everything that screen needs directly off assessments, plus a respondents
+// summary (survey: submitted/total invitations; live session: its status). ----
+
+export async function fetchAssessmentsForOverview() {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('assessments')
+    .select('id, cycle_id, name, slug, type, perspective_filter, justification_mode, description, start_date, end_date, welcome_text, task_text, mandatory, created_at, cycles ( financial_year, esrs_version, stage )')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`assessments query failed: ${error.message}`);
+  if (!data.length) return [];
+
+  const ids = data.map((a) => a.id);
+  const [invRes, lsRes] = await Promise.all([
+    supabase.from('invitations').select('assessment_id, status').in('assessment_id', ids),
+    supabase.from('live_sessions').select('assessment_id, status').in('assessment_id', ids),
+  ]);
+  if (invRes.error) throw new Error(`invitations query failed: ${invRes.error.message}`);
+  if (lsRes.error) throw new Error(`live_sessions query failed: ${lsRes.error.message}`);
+
+  return data.map((a) => {
+    const ownInvitations = invRes.data.filter((i) => i.assessment_id === a.id);
+    const submitted = ownInvitations.filter((i) => i.status === 'submitted').length;
+    const liveSession = lsRes.data.find((s) => s.assessment_id === a.id);
+    return {
+      id: a.id,
+      cycleId: a.cycle_id,
+      name: a.name,
+      slug: a.slug,
+      type: a.type,
+      perspectiveFilter: a.perspective_filter,
+      justificationMode: a.justification_mode,
+      description: a.description,
+      startDate: a.start_date,
+      endDate: a.end_date,
+      welcomeText: a.welcome_text,
+      taskText: a.task_text,
+      mandatory: a.mandatory,
+      createdAt: a.created_at,
+      financialYear: a.cycles?.financial_year ?? null,
+      esrsVersion: a.cycles?.esrs_version ?? null,
+      cycleStage: a.cycles?.stage ?? null,
+      respondents: a.type === 'expert_survey' ? `${submitted}/${ownInvitations.length}` : (liveSession ? liveSession.status : 'not started'),
+      // AssessmentOverview.jsx's computeStatus() treats a truthy `status` as
+      // a real terminal state and skips its own date-based logic — only
+      // give it one for a finished live session; everything else falls
+      // through to Scheduled/Active/Closed there, exactly as the prototype
+      // computes it for a survey.
+      status: a.type === 'expert_live_session' && liveSession?.status === 'finished' ? 'Completed' : undefined,
+    };
+  });
 }

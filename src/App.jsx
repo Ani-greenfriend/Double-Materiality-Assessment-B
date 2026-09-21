@@ -282,7 +282,14 @@ export default function App() {
           {tab === 'topics' && (
             <TopicsTab clients={clients} currentUserEmail={session.user.email} onGoNext={() => setTab('assessments')} />
           )}
-          {tab === 'assessments' && <AssessmentsTab perspective={assessmentsPerspective} />}
+          {tab === 'assessments' && (
+            <AssessmentsTab
+              perspective={assessmentsPerspective}
+              userId={session.user.id}
+              onChanged={reloadCyclesAndAssessments}
+              onViewResults={(a) => { setAssessmentId(a.id); setCrInitialSub('results'); setTab('calibrate-results'); }}
+            />
+          )}
           {tab === 'report' && <ReportTab />}
           {tab === 'calibrate-results' && (
             <div>
