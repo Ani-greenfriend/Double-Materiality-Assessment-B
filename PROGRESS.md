@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 13 (Step 4 start: Calibration's per-topic sign-off wording matches the prototype; shared topic/material filters flagged, not yet built)
+**Last updated:** 2026-09-21 — session 2, part 14 (Step 4 finished: E/S/G and material filters shared between Results and Calibrate)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,36 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 14 (2026-09-21) — Step 4 finished: E/S/G and material filters shared between Results and Calibrate.**
+Builder picked option (a) from part 13's three choices: lift the filter
+state out of `ResultsScreen.jsx` and share it with `CalibrationTab.jsx`.
+Done:
+- `ResultsScreen.jsx`: `activeCats`/`showMaterial`/`showNotMaterial` are no
+  longer local `useState` — they're props now (adaptation (f), added to
+  the file's header comment alongside (a)-(e)). Removed the E/S/G and
+  Material/Not material checkboxes from its own JSX (the Impact/Financial
+  threshold number inputs, which are unrelated and out of scope, stay
+  exactly where they were).
+- `CalibrateResultsTab.jsx`: owns the shared state now, plus a new
+  `FilterBar` component rendered once, above the Results/Calibrate
+  sub-tab switch — so it's visible and in effect regardless of which
+  sub-tab is open, and switching tabs never resets it (it's the parent's
+  state, not either child's). Passes `activeCats`/`showMaterial`/
+  `showNotMaterial` into both `ResultsScreen` and `CalibrationTab`.
+- `CalibrationTab.jsx`: had zero topic/material filtering before this —
+  now filters its row list the same way the Matrix chart always has
+  (`activeCats.includes(pillarFor(iro.topic))` and
+  `agg.isMaterial ? showMaterial : showNotMaterial`), with a "No topics
+  match the current filters" empty state distinct from the existing
+  "This assessment has no IROs yet" one (the latter still checks the
+  *unfiltered* `iros.length`, so it never fires just because a filter
+  hides everything).
+
+`npm run build` and a full `npx oxlint src` clean — same three
+pre-existing prototype warnings as every part this session, nothing new.
+This closes step 4 — both pieces PROGRESS.md was tracking (the
+`CalibrationScreen.jsx` port, part 13, and these shared filters) are done.
+
 **Part 13 (2026-09-21) — Step 4 start: per-topic sign-off wording, and what's still open.**
 Builder said "move ahead" into Step 4 (port `CalibrationScreen.jsx` from the
 prototype + persistent filters, per part 11's handoff notes). Read the
@@ -674,7 +704,7 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Step 2 — Stakeholders full admin and Topics with CSV upload (+ correction: silent stakeholders as ordinary entries)
 - [x] Step 3 — Full assessment flow verbatim (Assessment overview, Mode/Perspective/General info/Review/Recipients/Created, Review Hub, Intro/Questionnaire), Cycles removed from the interface, stage controls moved into Calibrate & Results
 - [x] Results tab rebuilt from the prototype (bar chart, impact/financial heatmaps, topic matrix, CSV/PNG export) — done in part 11 as a direct builder fix, ahead of step 4 proper
-- [ ] Step 4 — remaining scope: `CalibrationTab.jsx` still needs porting from the prototype's `CalibrationScreen.jsx` (currently its session-1 shape), plus persistent filters (assessment source, ESRS topic, material only) shared across the Calibrate/Results tabs
+- [x] Step 4 — `CalibrationTab.jsx` confirmed at parity with the prototype's `CalibrationScreen.jsx` structure (part 13), its per-topic sign-off wording matched (part 13), and E/S/G + material/not-material filters shared between Results and Calibrate via `CalibrateResultsTab.jsx`'s new `FilterBar` (part 14) — assessment-source filtering already existed via the picker above the tab in App.jsx
 - [ ] Step 5 — PDF report builder (old step 6)
 - [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
@@ -829,35 +859,16 @@ schema — every new field the flow needed already existed).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-builder said "move ahead" into step 4 (part 13). Done: `CalibrationTab.jsx`'s
-per-topic `reviewed_with_owner` control now reads as a sign-off ("✓ Signed
-off" / "✓ Sign off this result" / "Revoke"), matching the prototype's own
-wording, by explicit builder decision after a flagged conflict with
-CLAUDE.md's retired-columns rule (see part 13 above for the full
-reasoning — do not resurrect `calibrations.signed_off_by`/`signed_off_at`).
-Comparing line-by-line against reference-prototype/'s `CalibrationScreen.jsx`
-showed the rest of the "port from the prototype" work was already done in
-an earlier session (same accordion/owner/moderator/history/adjust/reset
-structure, just wired to real Supabase instead of local state) — nothing
-else to port there.
-
-**Open — needs a builder decision before starting:** the "persistent
-filters (ESRS topic, material only) across tabs" part of step 4. Today
-those filters live as `useState` inside `ResultsScreen.jsx` (a verbatim
-prototype port) and only affect its own Matrix chart; `CalibrationTab.jsx`
-has no topic/material filter at all. Sharing them means lifting that state
-out of the ported file into `CalibrateResultsTab.jsx` — real surgery on a
-file that's supposed to stay byte-identical to reference-prototype/ outside
-the data-wiring boundary, so flagged rather than guessed at. Options to put
-to the builder: (a) lift the filter state up and pass it into `ResultsScreen`
-as props (still "data wiring," but touches the ported file's internals more
-than any change so far), (b) add a *separate*, new filter bar in
-`CalibrateResultsTab.jsx` that scopes the `iros` array before it reaches
-either tab (no internal change to `ResultsScreen.jsx`, but then Results'
-own Matrix filters would double up with it), or (c) leave Results' filter
-local (matches the prototype) and only add a topic/material filter to
-Calibration, not truly "shared" but closing the actual functional gap
-(Calibration has zero filtering today).
+Step 4 is done (parts 13-14) — `CalibrationTab.jsx` matches the prototype's
+structure, its per-topic sign-off wording matches (via `reviewed_with_owner`,
+not the retired columns), and E/S/G + material/not-material filters are
+shared between Results and Calibrate through `CalibrateResultsTab.jsx`'s
+`FilterBar`. Next up per the original plan is **Step 5 — the PDF report
+builder** (docs/product-spec.md Section 3, CLAUDE.md's Arms section: white
+pages, tables for topics/stakeholders, chart images on white, footer with
+round/ESRS version/date/page number/Provisional-or-Final). Nothing built
+here yet — `ReportTab.jsx` is still a stub. Needs the builder's go-ahead
+before starting, per the standing "stop after each round" instruction.
 
 Known simplifications from step 3 still worth revisiting if there's time:
 E1–G1 expertise for participants added via Recipients (currently empty,

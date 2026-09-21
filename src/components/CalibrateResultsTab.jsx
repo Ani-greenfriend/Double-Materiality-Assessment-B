@@ -155,14 +155,40 @@ function WorkspaceHeader({ cycle, userId, onChanged }) {
   );
 }
 
+// The E/S/G and material/not-material filters used to live only inside
+// ResultsScreen.jsx's Matrix — now owned here instead, so the same
+// selection stays in effect when switching from Results to Calibrate,
+// per the builder's direct request for filters shared across the
+// workspace, not just one chart.
+function FilterBar({ activeCats, setActiveCats, showMaterial, setShowMaterial, showNotMaterial, setShowNotMaterial }) {
+  return (
+    <div className="flex gap-3 mb-5 flex-wrap items-center">
+      <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Filter</span>
+      {['E', 'S', 'G'].map((c) => (
+        <label key={c} className="text-[12px] font-medium flex items-center gap-1.5">
+          <input type="checkbox" checked={activeCats.includes(c)} onChange={() => setActiveCats((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])} />
+          {c}
+        </label>
+      ))}
+      <label className="text-[12px] font-medium flex items-center gap-1.5">
+        <input type="checkbox" checked={showMaterial} onChange={() => setShowMaterial((v) => !v)} /> Material
+      </label>
+      <label className="text-[12px] font-medium flex items-center gap-1.5">
+        <input type="checkbox" checked={showNotMaterial} onChange={() => setShowNotMaterial((v) => !v)} /> Not material
+      </label>
+    </div>
+  );
+}
+
 // Section 8: "calibration and results merge into one Calibrate & Results
-// workspace". This wraps the existing Results/Calibration screens (still
-// their session-1 shape — the full redesigned workspace with the Matrix
-// tab and persistent filters is separate, later work) under one nav
-// destination with an internal switcher, so the nav item count matches
-// the spec's six process steps.
+// workspace". This wraps the existing Results/Calibration screens under one
+// nav destination with an internal switcher and a shared filter bar, so the
+// nav item count matches the spec's six process steps.
 export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, locked, onChanged, initialSub = 'results' }) {
   const [sub, setSub] = useState(initialSub);
+  const [activeCats, setActiveCats] = useState(['E', 'S', 'G']);
+  const [showMaterial, setShowMaterial] = useState(true);
+  const [showNotMaterial, setShowNotMaterial] = useState(true);
 
   return (
     <div>
@@ -188,9 +214,11 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, l
         ))}
       </div>
 
-      {sub === 'results' && <ResultsScreen iros={iros} thresholds={thresholds} />}
+      <FilterBar activeCats={activeCats} setActiveCats={setActiveCats} showMaterial={showMaterial} setShowMaterial={setShowMaterial} showNotMaterial={showNotMaterial} setShowNotMaterial={setShowNotMaterial} />
+
+      {sub === 'results' && <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} />}
       {sub === 'calibrate' && (
-        <CalibrationTab iros={iros} thresholds={thresholds} cycle={cycle} cycleId={cycle?.id ?? null} userId={userId} locked={locked} onChanged={onChanged} />
+        <CalibrationTab iros={iros} thresholds={thresholds} cycle={cycle} cycleId={cycle?.id ?? null} userId={userId} locked={locked} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} />
       )}
     </div>
   );

@@ -8,10 +8,20 @@ function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
-export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userId, locked, onChanged }) {
+export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userId, locked, onChanged, activeCats, showMaterial, showNotMaterial }) {
   const [openId, setOpenId] = useState(null);
 
-  const flagged = iros.filter((iro) => {
+  // The E/S/G and material/not-material filters are shared with Results
+  // (CalibrateResultsTab.jsx owns the state) — same selection, same
+  // criteria: a topic clears the filter if its own agg.isMaterial matches.
+  const scopedIros = !activeCats
+    ? iros
+    : iros.filter((iro) => {
+        const agg = aggregateIro(iro, thresholds);
+        return activeCats.includes(pillarFor(iro.topic)) && (agg.isMaterial ? showMaterial : showNotMaterial);
+      });
+
+  const flagged = scopedIros.filter((iro) => {
     const agg = aggregateIro(iro, thresholds);
     return agg.overrideTriggered || agg.discrepancy;
   });
@@ -35,7 +45,7 @@ export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userI
       </DmaMascot>
 
       <p className="text-[12px] text-text-secondary mb-1">This step is done together with leadership or subject-matter experts — review the calculated results and adjust only where the group agrees it's needed.</p>
-      <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {iros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
+      <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {scopedIros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
       {locked && (
         <p className="text-[12px] mb-5" style={{ color: '#D79A4C' }}>
           Calibration is editable only in the Calibrating stage — this round is not in that stage, so adjustments are read-only here.
@@ -43,8 +53,11 @@ export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userI
       )}
       {!locked && <div className="mb-5" />}
 
+      {scopedIros.length === 0 ? (
+        <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No topics match the current filters.</div>
+      ) : (
       <div className="flex flex-col gap-2 bg-surface rounded-2xl p-2">
-        {iros.map((iro) => (
+        {scopedIros.map((iro) => (
           <CalibrationRow
             key={iro.id}
             iro={iro}
@@ -57,6 +70,7 @@ export default function CalibrationTab({ iros, thresholds, cycle, cycleId, userI
           />
         ))}
       </div>
+      )}
 
       {cycle && cycle.stage !== 'collecting' && (
         <CalibrationSignOff cycle={cycle} userId={userId} onChanged={onChanged} />

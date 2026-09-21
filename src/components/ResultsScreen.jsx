@@ -94,13 +94,14 @@ async function exportChartsAsPng(charts) {
 // a criterion key in v2.0 (a risk/opportunity's likelihood IS `likelihood`,
 // same key as an impact IRO's); (e) PDF export dropped per CLAUDE.md's Arms
 // section ("Results keeps the prototype's PNG and CSV downloads; the
-// report builder is the PDF export") — CSV and PNG only.
-export default function ResultsScreen({ iros, thresholds }) {
+// report builder is the PDF export") — CSV and PNG only; (f) the E/S/G and
+// material/not-material filters moved from local state to props —
+// CalibrateResultsTab.jsx now owns them so the same filter selection
+// applies to the Calibrate tab too, per the builder's direct request for
+// filters shared across the workspace, not just this screen.
+export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial }) {
   const [impactTh, setImpactTh] = useState(thresholds?.impact ?? 3.0);
   const [financialTh, setFinancialTh] = useState(thresholds?.financial ?? 3.0);
-  const [activeCats, setActiveCats] = useState(['E', 'S', 'G']);
-  const [showMaterial, setShowMaterial] = useState(true);
-  const [showNotMaterial, setShowNotMaterial] = useState(true);
   const [hoverTopic, setHoverTopic] = useState(null);
   const [pinned, setPinned] = useState(null);
   const [downloadSections, setDownloadSections] = useState({ bar: true, heatmaps: true, matrix: true });
@@ -272,19 +273,7 @@ export default function ResultsScreen({ iros, thresholds }) {
         {unratedCount > 0 && <span> {unratedCount} topic{unratedCount === 1 ? '' : 's'} not shown yet — no ratings recorded {unratedCount === 1 ? 'for it' : 'for them'} yet.</span>}
       </p>
       <div className="flex gap-3 mb-3 flex-wrap items-center">
-        {['E', 'S', 'G'].map((c) => (
-          <label key={c} className="text-[12px] font-medium flex items-center gap-1.5">
-            <input type="checkbox" checked={activeCats.includes(c)} onChange={() => setActiveCats((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])} />
-            {c}
-          </label>
-        ))}
-        <label className="text-[12px] font-medium flex items-center gap-1.5">
-          <input type="checkbox" checked={showMaterial} onChange={() => setShowMaterial((v) => !v)} /> Material
-        </label>
-        <label className="text-[12px] font-medium flex items-center gap-1.5">
-          <input type="checkbox" checked={showNotMaterial} onChange={() => setShowNotMaterial((v) => !v)} /> Not material
-        </label>
-        <span className="text-[12px] font-semibold ml-auto">Impact threshold</span>
+        <span className="text-[12px] font-semibold">Impact threshold</span>
         <input type="number" step="0.1" min="1" max="5" value={impactTh} onChange={(e) => setImpactTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
         <span className="text-[12px] font-semibold">Financial threshold</span>
         <input type="number" step="0.1" min="1" max="5" value={financialTh} onChange={(e) => setFinancialTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
