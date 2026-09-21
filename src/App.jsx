@@ -10,21 +10,23 @@ import Dashboard from './components/Dashboard';
 import StakeholdersTab from './components/StakeholdersTab';
 import TopicsTab from './components/TopicsTab';
 import AssessmentsTab from './components/AssessmentsTab';
+import ResponsesTab from './components/ResponsesTab';
 import CalibrateResultsTab from './components/CalibrateResultsTab';
 import ReportTab from './components/ReportTab';
-import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
+import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, ResponsesIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
 
 // Nav item set and order per product-spec.md Section 8 "App shell and
-// navigation" (v2.0 amended 6): Dashboard, Stakeholders, Topics, Assessments,
-// Calibrate & Results, Report — no Cycles item; cycles exist only in the
-// database now, never in the interface. Sidebar mechanics (collapsible
-// rail, logo, icon+label buttons, its styling) are ported from
+// navigation" (v2.0 amended 9): Dashboard, Stakeholders, Topics, Assessments,
+// Responses, Calibrate & Results, Report — no Cycles item; cycles exist only
+// in the database now, never in the interface. Sidebar mechanics
+// (collapsible rail, logo, icon+label buttons, its styling) are ported from
 // reference-prototype/'s App.jsx as-is; there is no separate top tab bar.
 const TABS = [
   { key: 'dashboard', label: 'Dashboard', Icon: DashboardIcon },
   { key: 'stakeholders', label: 'Stakeholders', Icon: StakeholderIcon },
   { key: 'topics', label: 'Topics', Icon: TopicsIcon },
   { key: 'assessments', label: 'Assessments', Icon: AssessmentIcon },
+  { key: 'responses', label: 'Responses', Icon: ResponsesIcon },
   { key: 'calibrate-results', label: 'Calibrate & Results', Icon: CalibrationIcon },
   { key: 'report', label: 'Report', Icon: ReportIcon },
 ];
@@ -52,6 +54,12 @@ export default function App() {
 
   const [assessmentsPerspective, setAssessmentsPerspective] = useState(null);
   const [crInitialSub, setCrInitialSub] = useState('results');
+
+  // Responses' "Invitations" / "Resume session" links jump into the
+  // Assessments tab for one specific assessment, without a wizard step to
+  // land on — AssessmentsTab consumes this once its own assessment list has
+  // loaded, then clears it.
+  const [assessmentsDeepLink, setAssessmentsDeepLink] = useState(null);
 
   // Lifted out of StakeholdersTab so the sidebar nav click can reset it —
   // otherwise clicking "Stakeholders" while inside a specific group's detail
@@ -289,6 +297,17 @@ export default function App() {
               onChanged={reloadCyclesAndAssessments}
               onViewResults={(a) => { setAssessmentId(a.id); setCrInitialSub('results'); setTab('calibrate-results'); }}
               onGoToStakeholders={() => { setTab('stakeholders'); setOpenGroupId(null); }}
+              deepLink={assessmentsDeepLink}
+              onDeepLinkHandled={() => setAssessmentsDeepLink(null)}
+            />
+          )}
+          {tab === 'responses' && (
+            <ResponsesTab
+              cycles={cycles}
+              onOpenInvitations={(a) => { setAssessmentsDeepLink({ assessmentId: a.id, action: 'recipients' }); setTab('assessments'); }}
+              onResumeSession={(a) => { setAssessmentsDeepLink({ assessmentId: a.id, action: 'kickoff' }); setTab('assessments'); }}
+              onOpenCalibrate={() => { setCrInitialSub('calibrate'); setTab('calibrate-results'); }}
+              onChanged={reloadCyclesAndAssessments}
             />
           )}
           {tab === 'report' && <ReportTab />}
@@ -317,7 +336,6 @@ export default function App() {
                   thresholds={thresholds}
                   cycle={cycles.find((c) => c.id === currentAssessment?.cycle?.id) ?? null}
                   userId={session.user.id}
-                  locked={currentAssessment?.cycle?.stage !== 'calibrating'}
                   onChanged={() => { reload(); reloadCyclesAndAssessments(); }}
                   initialSub={crInitialSub}
                 />

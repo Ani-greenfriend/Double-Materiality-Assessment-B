@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 16 (spec v2.0 amended 9 merged; Group A of the builder's preview-review fixes: Recipients rebuilt around the master stakeholder map, Kick off guard, live session Review step decluttered, step nav on every wizard screen, financial year dropdown)
+**Last updated:** 2026-09-21 — session 2, part 17 (Group B: no more stage banner/global sign-off in Calibrate & Results, per-IRO sign-off restored, thresholds editable any time, the new Responses screen built, a real anon-access security hole caught and fixed on the new views)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,104 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 17 (2026-09-21) — Group B: Calibrate & Results simplified, per-IRO sign-off, the new Responses screen.**
+
+**Group B.7 — Calibrate & Results.**
+- **Removed entirely** from `CalibrateResultsTab.jsx`'s `WorkspaceHeader`:
+  the stage badge (Collecting/Calibrating/Signed off), Start calibration,
+  the global Sign off form (approver name/role/minutes reference), Revoke,
+  Require both sources, and Delete unfinished drafts (moved to Responses,
+  see B.8). The header is now purely informational: client, financial
+  year, ESRS version, thresholds, and a Provisional/Final badge computed
+  from `iros.every(iro => iro.calibration?.reviewed_with_owner)` — never
+  `cycles.stage`, which stays an unused column per spec.
+- **`CalibrationTab.jsx`**: deleted the round-level `CalibrationSignOff`
+  component added last round (now superseded — the spec restored real
+  per-IRO sign-off instead, "as in the prototype"). Removed the `locked`
+  prop everywhere ("Calibration is always available" — no more stage-gated
+  read-only state); same for `ResultsScreen.jsx`'s threshold inputs
+  ("editable at any time... via Apply with a reason"). Added a "N of M
+  IROs signed off" count line.
+- **Per-IRO sign-off now genuinely records who.** The existing
+  `reviewed_with_owner`/`_at` fields recorded *that* and *when* someone
+  signed off, but never *who* — the spec's "Sign off and Revoke record the
+  logged-in user and time" wasn't actually true yet. Added
+  `calibrations.reviewed_with_owner_by` (new nullable FK → auth.users,
+  migration `v2_add_reviewed_with_owner_by`) — **not** the retired
+  `signed_off_by`/`signed_off_at` columns CLAUDE.md forbids; this is a
+  distinctly-named column doing the same job the spec asks for.
+  `setReviewedWithOwner` now takes `changedBy` and writes it;
+  `saveCalibrationAdjustment`/`resetCalibrationToCalculated` now also
+  clear all three `reviewed_with_owner*` fields, matching "editing a
+  signed-off IRO clears its sign-off."
+- **`submissions`/`ratings`/`topic_justifications` DELETE RLS replaced**
+  (migration `v2_delete_drafts_by_assessment_status`) — the old policies
+  gated on `cycles.stage IN ('calibrating','signed_off')`; the new ones
+  gate on the *assessment* being Closed (`expert_survey` past its
+  `end_date`) or Completed (`expert_live_session` with
+  `live_sessions.status = 'finished'`), matching spec exactly and never
+  touching the retired stage column. `purgeUnfinishedDrafts` (data.js) now
+  takes an `assessmentId`, not a `cycleId`.
+
+**Group B.8 — the Responses screen, built for real.**
+New nav item (`Dashboard, Stakeholders, Topics, Assessments, Responses,
+Calibrate & Results, Report`), new `ResponsesTab.jsx`, new `ResponsesIcon`.
+Financial year selector + filters (source/ESRS topic/stakeholder
+group/perspective) with Reset; two source panels (Expert survey: status,
+engagement-rate bar, Invited/Opened/Saved draft/Submitted, link to
+Invitations, Delete unfinished drafts; Expert live session: status,
+attendance-rate bar, session progress, Expected/Attended/Topics
+rated/Sessions, link to resume); Engagement by stakeholder group (bar +
+count per group, silent marker, "No response yet"/"Complete"); an IRO
+ratings table grouped by ESRS topic with survey/session/combined score
+bars (threshold marked), a material/flag badge, and CSV download; a detail
+side panel per IRO (three scores, the flag with a plain-language
+explanation, comments and justifications filterable by All/Survey/Session
+with a "Reveal name" control and CSV, "Open in Calibrate"). No expertise-
+coverage view, per spec.
+
+Reused rather than duplicated: `calc.js`'s `aggregateIro` already computed
+`surveyAvg`/`sessionAvg`/`sourceBasis`/`sourceGap` (built earlier for
+Calibrate's own detail panel) — the IRO table's three score columns and
+its flags are the same numbers, not a second scoring path. Added
+`fetchResponsesData(cycleId)`, `fetchIroComments(iroId)`,
+`fetchInvitationName(id)` to data.js.
+
+**New database objects, per spec Section 5**: three new read-only views —
+`assessment_progress`, `group_engagement`, `iro_comments` (migration
+`v2_responses_screen_views`). **Found and fixed a real security issue
+while building them**: Supabase's default public-schema privileges grant
+`anon` SELECT on any newly created view, and a plain (non-`security_invoker`)
+view owned by `postgres` evaluates RLS using the *owner's* privileges — a
+superuser that bypasses RLS entirely — so without a fix, `anon` could have
+read every row through these views regardless of the underlying tables'
+RLS (which explicitly deny anon on `submissions`/`ratings`/
+`topic_justifications`). Fixed immediately with a follow-up migration
+(`v2_responses_views_revoke_anon_and_security_invoker`): revoked anon's
+SELECT and set `security_invoker = true` on all three. While checking
+this, confirmed the pre-existing `combined_ratings` view already had
+`security_invoker = true` set (so it was never actually exploitable
+despite also carrying a stray anon SELECT grant) — flagged to the builder
+as a minor, non-urgent cleanup, not a live hole.
+
+**Disclosed simplifications, not silently dropped:**
+- `iro_comments` covers per-criterion and per-topic justifications only — a
+  submission's `overall_comment` isn't tied to one IRO and isn't surfaced
+  in the Responses IRO detail panel this round.
+- The IRO ratings table's download is CSV only, not PNG — it's a plain
+  HTML table, not an SVG chart like Results/Matrix, and rasterizing an
+  arbitrary DOM table would need a new dependency (html2canvas or
+  similar); CSV covers the same data.
+- "Attended" (live session) = active/non-removed participants; "Expected"
+  = everyone ever added, removed or not. There's no per-sitting attendance
+  concept (CLAUDE.md lists it out of scope), so this is the closest
+  buildable proxy from data that already exists.
+- "Open in Calibrate" switches to the Calibrate tab but doesn't scroll to
+  or auto-open the specific IRO's row yet.
+
+`npm run build` and a full `npx oxlint src` clean throughout — same three
+pre-existing prototype warnings on record, nothing new.
+
 **Part 16 (2026-09-21) — spec v2.0 amended 9 merged; Group A of the builder's preview-review fixes.**
 Builder uploaded an amended CLAUDE.md/product-spec.md to main (v2.0 amended
 9) and asked to merge it, then work through 8 numbered fixes from testing
@@ -851,6 +949,7 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Step 3 — Full assessment flow verbatim (Assessment overview, Mode/Perspective/General info/Review/Recipients/Created, Review Hub, Intro/Questionnaire), Cycles removed from the interface, stage controls moved into Calibrate & Results
 - [x] Results tab rebuilt from the prototype (bar chart, impact/financial heatmaps, topic matrix, CSV/PNG export) — done in part 11 as a direct builder fix, ahead of step 4 proper
 - [x] Step 4 — `CalibrationTab.jsx` confirmed at parity with the prototype's `CalibrationScreen.jsx` structure (part 13), its per-topic sign-off wording matched (part 13), and E/S/G + material/not-material filters shared between Results and Calibrate via `CalibrateResultsTab.jsx`'s new `FilterBar` (part 14) — assessment-source filtering already existed via the picker above the tab in App.jsx
+- [x] Spec v2.0 amended 9 — Calibrate & Results has no stage banner/global sign-off (per-IRO sign-off restored, genuinely records who via `reviewed_with_owner_by`), thresholds editable any time, and the new Responses screen is built (part 17, Group B) — known gaps: overall comments not shown per-IRO, IRO table has no PNG export, "Open in Calibrate" doesn't deep-link to the row
 - [ ] Step 5 — PDF report builder (old step 6)
 - [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
@@ -1005,22 +1104,27 @@ schema — every new field the flow needed already existed).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-Step 4 is done (parts 13-14) — `CalibrationTab.jsx` matches the prototype's
-structure, its per-topic sign-off wording matches (via `reviewed_with_owner`,
-not the retired columns), and E/S/G + material/not-material filters are
-shared between Results and Calibrate through `CalibrateResultsTab.jsx`'s
-`FilterBar`. Next up per the original plan is **Step 5 — the PDF report
-builder** (docs/product-spec.md Section 3, CLAUDE.md's Arms section: white
-pages, tables for topics/stakeholders, chart images on white, footer with
-round/ESRS version/date/page number/Provisional-or-Final). Nothing built
-here yet — `ReportTab.jsx` is still a stub. Needs the builder's go-ahead
-before starting, per the standing "stop after each round" instruction.
+Spec v2.0 amended 9 is fully merged and built against (part 16-17, Groups
+A and B of the builder's preview-review fixes). Calibrate & Results is now
+stage-free (per-IRO sign-off, thresholds editable any time); the Responses
+screen exists for the first time. Next up per the original plan is
+**Step 5 — the PDF report builder** (docs/product-spec.md Section 3,
+Section 8 "Report builder": four-step flow — preset, sections, options,
+preview/download; white pages, tables for topics/stakeholders, chart
+images on white, footer with round/ESRS version/date/page
+number/Provisional-or-Final). Nothing built here yet — `ReportTab.jsx` is
+still a stub. Needs the builder's go-ahead before starting, per the
+standing "stop after each round" instruction.
 
-Known simplifications from step 3 still worth revisiting if there's time:
-E1–G1 expertise for participants added via Recipients (currently empty,
-editable after), Review Hub's stakeholder-chip-removal persistence.
-(Recipients re-invite dedup was resolved in part 11 as a side effect of
-the quick-access shortcut.)
+Known simplifications worth revisiting if there's time: E1–G1 expertise
+for participants added via Recipients (currently empty, editable after),
+Review Hub's stakeholder-chip-removal persistence, Responses' IRO detail
+panel doesn't show a submission's overall comment (only per-criterion/
+per-topic justifications), the IRO ratings table has CSV but no PNG
+export, "Open in Calibrate" switches tabs but doesn't scroll to the
+specific IRO row, and the pre-existing `combined_ratings` view carries a
+stray (harmless, since `security_invoker=true` already blocks it via RLS)
+anon SELECT grant that could be revoked for cleanliness.
 
 Hard Rule to hold the line on throughout every remaining step: copy each
 prototype component verbatim (check with `diff` against

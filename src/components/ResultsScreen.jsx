@@ -101,17 +101,17 @@ async function exportChartsAsPng(charts) {
 // applies to the Calibrate tab too, per the builder's direct request for
 // filters shared across the workspace, not just this screen; (g) the
 // threshold number inputs are wired to a real Apply-with-reason flow
-// (CLAUDE.md Business Rules: "Editable only in stage Calibrating... via
-// Apply with a reason logged to threshold_changes; read-only otherwise")
-// instead of being a disconnected local preview — the prototype's own
-// inputs never persisted anywhere, which is exactly why they could drift
-// from the Calibrate & Results header's display; now both always read the
-// same cycle-stored value, and the only way they differ is a live,
-// unapplied edit in progress; (h) scoredIros no longer drops IROs with no
+// (CLAUDE.md Business Rules: "editable at any time... via Apply with a
+// reason logged to threshold_changes") instead of being a disconnected
+// local preview — the prototype's own inputs never persisted anywhere,
+// which is exactly why they could drift from the Calibrate & Results
+// header's display; now both always read the same cycle-stored value, and
+// the only way they differ is a live, unapplied edit in progress;
+// (h) scoredIros no longer drops IROs with no
 // score — every topic shows in the primary bar chart, unrated ones
 // included, per the builder's direct request; an unrated bar renders at
 // 0 width with a "–" label instead of being hidden.
-export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, locked, onChanged }) {
+export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, onChanged }) {
   const [impactTh, setImpactTh] = useState(thresholds?.impact ?? 3.0);
   const [financialTh, setFinancialTh] = useState(thresholds?.financial ?? 3.0);
   const [thresholdReason, setThresholdReason] = useState('');
@@ -321,9 +321,9 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         Each dot is one ESRS topic, colour-coded by pillar. <b className="text-text-primary">Hover or click a dot</b> to see exactly which IROs sit behind it, in the panel on the right.
         {unratedCount > 0 && <span> {unratedCount} topic{unratedCount === 1 ? '' : 's'} not shown yet — no ratings recorded {unratedCount === 1 ? 'for it' : 'for them'} yet.</span>}
       </p>
-      {!cycle || locked ? (
+      {!cycle ? (
         <p className="text-[12px] text-text-secondary mb-3">
-          Impact threshold <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b> — same as the Calibrate &amp; Results header above; editable only in the Calibrating stage.
+          Impact threshold <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b>
         </p>
       ) : (
         <div className="mb-3">

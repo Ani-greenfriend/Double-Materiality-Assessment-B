@@ -37,7 +37,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders }) {
+export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -333,6 +333,19 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       setError(err.message);
     }
   }
+
+  // The Responses screen's "Invitations"/"Resume session" links jump here
+  // for one specific assessment, without going through the overview first.
+  useEffect(() => {
+    if (!deepLink || !assessments.length) return;
+    const a = assessments.find((x) => x.id === deepLink.assessmentId);
+    if (a) {
+      if (deepLink.action === 'recipients') openRecipientsDirect(a);
+      else if (deepLink.action === 'kickoff') enterLiveSession(a);
+    }
+    onDeepLinkHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink, assessments]);
 
   // ---- Review Hub ----
 

@@ -84,6 +84,15 @@ export function AssessmentIcon({ size = 18 }) {
   );
 }
 
+export function ResponsesIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M21 12a8 8 0 01-11.5 7.2L4 20l1.2-4.2A8 8 0 1121 12z" />
+      <path d="M8 11h8M8 14h5" />
+    </svg>
+  );
+}
+
 export function ReportIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">

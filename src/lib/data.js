@@ -336,13 +336,15 @@ export async function deleteAssessment(assessmentId) {
 // Deletes every DRAFT submission across a cycle's assessments (ratings and
 // topic_justifications cascade automatically). RLS-gated to draft rows in a
 // Calibrating or Signed off cycle only — submitted rows are never touched.
-export async function purgeUnfinishedDrafts(cycleId) {
+// Section 8, Responses screen: "Delete unfinished drafts on the Expert
+// survey panel... available once the assessment is Closed or Completed" —
+// per-assessment now, not per-round; RLS enforces the same Closed/
+// Completed condition server-side (migration
+// v2_delete_drafts_by_assessment_status), so this only ever succeeds when
+// it should regardless of what the UI thinks the status is.
+export async function purgeUnfinishedDrafts(assessmentId) {
   assertConfigured();
-  const { data: assessments, error: aError } = await supabase.from('assessments').select('id').eq('cycle_id', cycleId);
-  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
-  const assessmentIds = assessments.map((a) => a.id);
-  if (!assessmentIds.length) return;
-  const { error } = await supabase.from('submissions').delete().eq('status', 'draft').in('assessment_id', assessmentIds);
+  const { error } = await supabase.from('submissions').delete().eq('status', 'draft').eq('assessment_id', assessmentId);
   if (error) throw new Error(`submissions delete failed: ${error.message}`);
 }
 
@@ -607,7 +609,7 @@ export async function fetchDashboard(assessmentId) {
 
   const { data: calRows, error: calError } = await supabase
     .from('calibrations')
-    .select('id, cycle_id, iro_id, owner, moderator, calibrated_value, notes, band_value, reviewed_with_owner, reviewed_with_owner_at, calibrated_at')
+    .select('id, cycle_id, iro_id, owner, moderator, calibrated_value, notes, band_value, reviewed_with_owner, reviewed_with_owner_at, reviewed_with_owner_by, calibrated_at')
     .in('iro_id', iroIds);
   if (calError) throw new Error(`calibrations query failed: ${calError.message}`);
 
@@ -697,7 +699,7 @@ export async function fetchCycleIros(cycleId) {
 
   const { data: calRows, error: calError } = await supabase
     .from('calibrations')
-    .select('id, cycle_id, iro_id, owner, moderator, calibrated_value, notes, band_value, reviewed_with_owner, reviewed_with_owner_at, calibrated_at')
+    .select('id, cycle_id, iro_id, owner, moderator, calibrated_value, notes, band_value, reviewed_with_owner, reviewed_with_owner_at, reviewed_with_owner_by, calibrated_at')
     .eq('cycle_id', cycleId);
   if (calError) throw new Error(`calibrations query failed: ${calError.message}`);
 
@@ -735,6 +737,65 @@ export async function fetchCycleIros(cycleId) {
   }
 
   return { iros, calibrations };
+}
+
+// ---- Responses screen (Section 8) — assessment_progress, group_engagement
+// and iro_comments are the three new read-only views this screen reads
+// from, plus fetchCycleIros (above) for the IRO ratings table's per-source
+// scores, which calc.js's aggregateIro already breaks out (surveyAvg,
+// sessionAvg, sourceBasis, sourceGap) — no separate scoring logic needed
+// here. ----
+
+export async function fetchResponsesData(cycleId) {
+  assertConfigured();
+  const { data: assessments, error: aError } = await supabase
+    .from('assessments')
+    .select('id, name, type, slug, perspective_filter, status, start_date, end_date')
+    .eq('cycle_id', cycleId);
+  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
+  const assessmentIds = assessments.map((a) => a.id);
+
+  if (!assessmentIds.length) {
+    return { assessments: [], progress: [], groupEngagement: [], iros: [], calibrations: {} };
+  }
+
+  const [progressRes, groupEngRes, cycleIros] = await Promise.all([
+    supabase.from('assessment_progress').select('*').in('assessment_id', assessmentIds),
+    supabase.from('group_engagement').select('*').in('assessment_id', assessmentIds),
+    fetchCycleIros(cycleId),
+  ]);
+  if (progressRes.error) throw new Error(`assessment_progress query failed: ${progressRes.error.message}`);
+  if (groupEngRes.error) throw new Error(`group_engagement query failed: ${groupEngRes.error.message}`);
+
+  return {
+    assessments: assessments.map((a) => ({
+      id: a.id, name: a.name, type: a.type, slug: a.slug,
+      perspectiveFilter: a.perspective_filter, status: a.status, startDate: a.start_date, endDate: a.end_date,
+    })),
+    progress: progressRes.data,
+    groupEngagement: groupEngRes.data,
+    ...cycleIros,
+  };
+}
+
+// Lazy per-IRO fetch for the detail panel — every submitted per-criterion
+// or per-topic justification tied to this IRO, source/group/expertise only
+// (never the invitee's name — that's a separate opt-in lookup below).
+export async function fetchIroComments(iroId) {
+  assertConfigured();
+  const { data, error } = await supabase.from('iro_comments').select('*').eq('iro_id', iroId).order('commented_at', { ascending: false });
+  if (error) throw new Error(`iro_comments query failed: ${error.message}`);
+  return data;
+}
+
+// "Reveal name" — only meaningful for a survey comment (one named
+// invitee); a live session's rating comes from the whole group, not one
+// person, so there's no single name to reveal there.
+export async function fetchInvitationName(invitationId) {
+  assertConfigured();
+  const { data, error } = await supabase.from('invitations').select('name').eq('id', invitationId).single();
+  if (error) throw new Error(`invitations query failed: ${error.message}`);
+  return data.name;
 }
 
 // ---- Stakeholders: master map + who actually participated in this assessment ----
@@ -786,13 +847,16 @@ async function ensureCalibrationRow(iroId, cycleId, calibration) {
   return data.id;
 }
 
+// Editing a signed-off IRO clears its sign-off (Section 8, Calibrate tab) —
+// the number it approved no longer holds, so reviewed_with_owner resets
+// alongside the calibrated value in the same update.
 export async function saveCalibrationAdjustment({ iroId, cycleId, calibration, fromValue, toValue, notes, changedBy }) {
   assertConfigured();
   const calibrationId = await ensureCalibrationRow(iroId, cycleId, calibration);
 
   const { error: updateError } = await supabase
     .from('calibrations')
-    .update({ calibrated_value: toValue, notes, calibrated_at: new Date().toISOString() })
+    .update({ calibrated_value: toValue, notes, calibrated_at: new Date().toISOString(), reviewed_with_owner: false, reviewed_with_owner_at: null, reviewed_with_owner_by: null })
     .eq('id', calibrationId);
   if (updateError) throw new Error(`calibrations update failed: ${updateError.message}`);
 
@@ -810,7 +874,7 @@ export async function resetCalibrationToCalculated({ iroId, cycleId, calibration
 
   const { error: updateError } = await supabase
     .from('calibrations')
-    .update({ calibrated_value: null })
+    .update({ calibrated_value: null, reviewed_with_owner: false, reviewed_with_owner_at: null, reviewed_with_owner_by: null })
     .eq('id', calibrationId);
   if (updateError) throw new Error(`calibrations update failed: ${updateError.message}`);
 
@@ -833,12 +897,20 @@ export async function updateCalibrationFields({ iroId, cycleId, calibration, pat
 // "Reviewed with owner" is a tick with a date per topic (Section 9) — it is
 // not a sign-off; sign-off is cycle-level (Cycles and assessments overview,
 // not built yet) and calibrations no longer carry their own sign-off columns.
-export async function setReviewedWithOwner({ iroId, cycleId, calibration, reviewed }) {
+// The per-IRO Sign off / Revoke action (Section 8, Calibrate tab: "sign-off
+// records the logged-in user and the time, and editing a signed-off IRO
+// clears its sign-off"). Uses reviewed_with_owner/_at/_by — never the
+// retired calibrations.signed_off_by/signed_off_at columns.
+export async function setReviewedWithOwner({ iroId, cycleId, calibration, reviewed, changedBy }) {
   assertConfigured();
   const calibrationId = await ensureCalibrationRow(iroId, cycleId, calibration);
   const { error } = await supabase
     .from('calibrations')
-    .update({ reviewed_with_owner: reviewed, reviewed_with_owner_at: reviewed ? new Date().toISOString() : null })
+    .update({
+      reviewed_with_owner: reviewed,
+      reviewed_with_owner_at: reviewed ? new Date().toISOString() : null,
+      reviewed_with_owner_by: reviewed ? changedBy : null,
+    })
     .eq('id', calibrationId);
   if (error) throw new Error(`calibrations update failed: ${error.message}`);
   return calibrationId;

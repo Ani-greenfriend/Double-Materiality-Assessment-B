@@ -281,18 +281,67 @@ or created as on the "Who participates" page.
 | band_value | integer | nullable, 1–5 |
 | reviewed_with_owner | bool | **new**, default `false` |
 | reviewed_with_owner_at | timestamptz | **new**, nullable |
+| reviewed_with_owner_by | uuid, FK → auth.users, nullable | **new, migration `v2_add_reviewed_with_owner_by`** — spec v2.0 amended 9: "Sign off and Revoke record the logged-in user and time; editing clears it." `reviewed_with_owner`/`_at`/`_by` together *are* Sign off/Revoke now (the UI reads "Sign off"/"Revoke", not "Reviewed with owner") — never the retired `signed_off_by`/`signed_off_at` below. `saveCalibrationAdjustment`/`resetCalibrationToCalculated` clear all three when a signed-off IRO is edited. |
 | calibrated_at | timestamptz | nullable |
 
-**Retired columns:** `signed_off_by`, `signed_off_at` (sign-off now lives on
-`cycles`, one record per cycle rather than per calibration).
+**Retired columns:** `signed_off_by`, `signed_off_at` — never reference (CLAUDE.md). Cycle-level sign-off (`cycles.approver_name`/`approver_role`/`minutes_reference`/`signed_off_at`/`signed_off_recorded_by`) is also no longer read or written by this tool's UI as of amended 9 — no global stage banner or cycle-level sign-off in Calibrate & Results; those `cycles` columns stay in the schema, unused, same treatment as `cycles.stage`. `startCalibration`/`signOffCycle`/`revokeCycleSignOff`/`setRequireBothSources` (data.js) are dead code now — kept, not deleted, in case a future admin/report flow needs the same primitives.
 
 ### calibration_history — Unchanged. Owned by Tool B. Append-only.
 
-### combined_ratings — New view (not a table). Owned by Tool B, `authenticated`-only.
+### combined_ratings — Owned by Tool B, `authenticated`-only (confirmed `security_invoker=true` already set — RLS on the underlying tables is evaluated as the querying user, not the view owner, so the stray `anon` SELECT grant this view also carries can't actually read anything through it).
 One row per **submitted** rating: `submission_id`, `cycle_id`, `assessment_id`,
 `source`, `iro_id`, `criterion_key`, `value`, `justification` (the criterion's,
 or the topic's when the mode is per topic, via `coalesce`), `stakeholder_group`,
 `perspective`, `expertise_topics`, `invitation_id`, `live_session_id`.
+
+### assessment_progress, group_engagement, iro_comments — New views. Owned by Tool B, `authenticated`-only. Section 8, Responses screen.
+Added via migration `v2_responses_screen_views`, hardened by
+`v2_responses_views_revoke_anon_and_security_invoker` — Supabase's default
+public-schema privileges grant `anon` SELECT on any newly created view, and
+a plain (non-`security_invoker`) view owned by `postgres` evaluates RLS
+using the *owner's* privileges (a superuser, which bypasses RLS
+entirely) — meaning without both fixes, `anon` could have read every row
+in these views regardless of the underlying tables' RLS. Both migrations
+explicitly set `security_invoker = true` and revoke `anon`'s SELECT; the
+RLS matrix below only lists these three (and `combined_ratings`) under
+"Authenticated user" — no anon row — which now matches the live grants.
+
+- **assessment_progress** — raw counts only, one row per assessment:
+  `assessment_id`, `cycle_id`, `type`, `status`, `start_date`, `end_date`,
+  `invited_count`, `opened_count`, `saved_draft_count`, `submitted_count`
+  (survey), `live_session_id`, `live_session_status`,
+  `current_topic_index`, `expected_count`, `attended_count` (live
+  session — `expected` = every participant ever added, `attended` = still
+  active/non-removed; there's no per-sitting attendance, per CLAUDE.md's
+  out-of-scope list, so this is the closest buildable proxy), `total_topics`,
+  `topics_rated_count`. Status-label mapping (Draft/Scheduled/Active/
+  Closed/Completed) stays a frontend concern, same as Assessment overview's
+  existing `computeStatus()` — this view only supplies the ingredients.
+- **group_engagement** — survey-side only (`invited`/`submitted` are
+  invitation concepts): `assessment_id`, `stakeholder_group_id`,
+  `group_name`, `group_type`, `invited_count`, `submitted_count`.
+- **iro_comments** — every **submitted** per-criterion or per-topic
+  justification tied to its IRO: `iro_id`, `assessment_id`, `source`,
+  `stakeholder_group`, `expertise_topics`, `criterion_key` (null for a
+  topic-level row), `value`, `comment`, `comment_type` (`criterion` /
+  `topic`), `invitation_id`, `live_session_id`, `commented_at`. Never the
+  invitee's name — the Responses screen's "Reveal name" does a separate,
+  explicit `invitations.name` lookup by id when clicked. **Known
+  simplification:** a submission's `overall_comment` isn't tied to one IRO
+  and isn't included here — disclosed, not built this round.
+
+**submissions/ratings/topic_justifications DELETE RLS — replaced.**
+Migration `v2_delete_drafts_by_assessment_status` drops the three
+cycle-stage-gated policies from an earlier session
+(`v2_delete_drafts_in_calibrating_or_signed_off`) and replaces them with
+assessment-status-gated ones, matching spec v2.0 amended 9 ("once the
+assessment is Closed or Completed", not the retired cycle stage): Closed =
+an `expert_survey` past its `end_date`; Completed = an
+`expert_live_session` whose `live_sessions.status = 'finished'`. Draft
+rows only, never submitted ones — same as before. `purgeUnfinishedDrafts`
+(data.js) now takes an `assessmentId`, not a `cycleId` — "Delete unfinished
+drafts" moved from the Calibrate & Results header to the Responses
+screen's Expert survey panel, and is now scoped to that one assessment.
 
 ## RLS — full matrix (built this session, Tool A CLAUDE.md rules + Tool B spec Section 6)
 
