@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 14 (Step 4 finished: E/S/G and material filters shared between Results and Calibrate)
+**Last updated:** 2026-09-21 — session 2, part 15 (threshold Apply flow actually persists and logs, so the header and matrix can never drift; unrated topics now show in the Results bar chart)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,56 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 15 (2026-09-21) — real threshold Apply flow; unrated topics shown in the bar chart.**
+Builder asked for two things: (1) make sure the thresholds shown in the
+Calibrate & Results header ("overview") always match the Matrix's, and
+propagate a Matrix change to the header; (2) show every topic in the
+Results bar chart, even ones not yet rated.
+
+Investigated (1) before touching code and found the Matrix's threshold
+number inputs (`ResultsScreen.jsx`) had never actually been wired to
+anything — a disconnected local preview, not the real, persisted cycle
+threshold `aggregateIro`/`aggregateTopic` actually use for materiality.
+CLAUDE.md's Business Rules already specify the correct behaviour in full:
+"Two thresholds per cycle... editable only in stage Calibrating, in the
+Results tab, via Apply with a reason logged to threshold_changes; read-only
+otherwise" — a real feature that had simply never been built, not a design
+question. Built it for real rather than just cosmetically syncing two
+numbers (which would have let the header show one value while materiality
+used another):
+- **New `updateCycleThresholds`** (data.js) — updates
+  `cycles.impact_threshold`/`financial_threshold` and inserts one
+  append-only `threshold_changes` row per axis that actually changed
+  (`axis`, `old_value`, `new_value`, `reason`, `changed_by`) — confirmed the
+  table's exact columns and that `authenticated` already has UPDATE on
+  `cycles` and INSERT on `threshold_changes` (`pg_policies`) before writing
+  it, no migration needed.
+- **`ResultsScreen.jsx`** now takes `cycle`/`userId`/`locked`/`onChanged`
+  props (adaptation (g), added to the file's header comment). Outside the
+  Calibrating stage (or with no `cycle`), the thresholds render as
+  read-only text, always identical to the header's numbers by construction
+  — no divergence is possible. In Calibrating, the number inputs stay
+  editable; when the draft differs from the persisted value, a reason
+  field and "Apply to this round" button appear, with a note that
+  materiality (including the header) still uses the old value until
+  applied. Applying calls `updateCycleThresholds` then `onChanged()`,
+  which refetches the cycle — a `useEffect` re-syncs the draft inputs to
+  the fresh persisted value, so header and matrix read the same number
+  again immediately.
+- **`CalibrateResultsTab.jsx`** passes `cycle`/`userId`/`locked`/`onChanged`
+  through to `ResultsScreen` (it already had all four for `WorkspaceHeader`
+  and `CalibrationTab`).
+
+For (2): `scoredIros` (adaptation (h)) no longer filters out IROs with
+`score === null` (never assessed) — every IRO now appears in the "PRIMARY —
+IROs BY SCORE" bar chart, sorted to the bottom, rendering a 0-width bar and
+a "–" instead of a number. Fixed the two other places that assumed a
+non-null score (`maxScore`'s computation, the bar-chart CSV export) so
+neither crashes on the now-possible `null`.
+
+`npm run build` and a full `npx oxlint src` clean — same three
+pre-existing prototype warnings as every part this session.
+
 **Part 14 (2026-09-21) — Step 4 finished: E/S/G and material filters shared between Results and Calibrate.**
 Builder picked option (a) from part 13's three choices: lift the filter
 state out of `ResultsScreen.jsx` and share it with `CalibrationTab.jsx`.
@@ -783,7 +833,7 @@ schema — every new field the flow needed already existed).
 - [ ] (v2.0 revision) Build the Created / Congratulations screen — skipped; New assessment routes straight into Invitations/Participants instead since Review Hub and the live session run flow (this screen's own links) aren't built yet either
 - [ ] (v2.0 revision) Build Review Hub — render Tool A's screens exactly, including About you and Save and continue later
 - [ ] (v2.0 revision) Build Live session Intro flow and Questionnaire — justifications, Save and pause, Finish session
-- [ ] (v2.0 revision) Build the Calibrate & Results workspace — Calibrate, Results and Matrix tabs, stage banner, two thresholds with Apply and reason
+- [x] (v2.0 revision) Build the Calibrate & Results workspace — Calibrate, Results and Matrix tabs (merged into one workspace with a Results/Calibrate switcher, per the restore plan below), stage banner, two thresholds with Apply and reason — done across parts 7, 13-15
 - [ ] (v2.0 revision) Build the Report builder — Word (.docx), six sections, two presets, logo slots, personal data off by default
 - [ ] (v2.0 revision) Add the GDPR consent checkbox and data statement to the invitation, participant and stakeholder contact forms
 - [ ] (v2.0 revision) Local test pass — full signed-in click-through in a browser that can reach Supabase

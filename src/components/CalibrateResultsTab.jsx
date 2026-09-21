@@ -216,7 +216,9 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, l
 
       <FilterBar activeCats={activeCats} setActiveCats={setActiveCats} showMaterial={showMaterial} setShowMaterial={setShowMaterial} showNotMaterial={showNotMaterial} setShowNotMaterial={setShowNotMaterial} />
 
-      {sub === 'results' && <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} />}
+      {sub === 'results' && (
+        <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} cycle={cycle} userId={userId} locked={locked} onChanged={onChanged} />
+      )}
       {sub === 'calibrate' && (
         <CalibrationTab iros={iros} thresholds={thresholds} cycle={cycle} cycleId={cycle?.id ?? null} userId={userId} locked={locked} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} />
       )}

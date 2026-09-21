@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { aggregateIro, aggregateTopic, hasImpactAxis, assessmentSeverity } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR } from '../lib/topics';
 import { ResultsIcon } from './icons';
+import { updateCycleThresholds } from '../lib/data';
 import DmaMascot from './DmaMascot';
 
 function pillarOf(topicId) {
@@ -98,10 +99,56 @@ async function exportChartsAsPng(charts) {
 // material/not-material filters moved from local state to props —
 // CalibrateResultsTab.jsx now owns them so the same filter selection
 // applies to the Calibrate tab too, per the builder's direct request for
-// filters shared across the workspace, not just this screen.
-export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial }) {
+// filters shared across the workspace, not just this screen; (g) the
+// threshold number inputs are wired to a real Apply-with-reason flow
+// (CLAUDE.md Business Rules: "Editable only in stage Calibrating... via
+// Apply with a reason logged to threshold_changes; read-only otherwise")
+// instead of being a disconnected local preview — the prototype's own
+// inputs never persisted anywhere, which is exactly why they could drift
+// from the Calibrate & Results header's display; now both always read the
+// same cycle-stored value, and the only way they differ is a live,
+// unapplied edit in progress; (h) scoredIros no longer drops IROs with no
+// score — every topic shows in the primary bar chart, unrated ones
+// included, per the builder's direct request; an unrated bar renders at
+// 0 width with a "–" label instead of being hidden.
+export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, locked, onChanged }) {
   const [impactTh, setImpactTh] = useState(thresholds?.impact ?? 3.0);
   const [financialTh, setFinancialTh] = useState(thresholds?.financial ?? 3.0);
+  const [thresholdReason, setThresholdReason] = useState('');
+  const [thresholdBusy, setThresholdBusy] = useState(false);
+  const [thresholdError, setThresholdError] = useState('');
+
+  // Keep the draft in step with the persisted value — after a successful
+  // Apply (below), or if it changed from anywhere else (another tab,
+  // another session), the inputs snap back to matching the real number
+  // rather than silently keeping a stale local copy.
+  useEffect(() => { setImpactTh(thresholds?.impact ?? 3.0); }, [thresholds?.impact]);
+  useEffect(() => { setFinancialTh(thresholds?.financial ?? 3.0); }, [thresholds?.financial]);
+
+  const thresholdsDirty = impactTh !== (thresholds?.impact ?? 3.0) || financialTh !== (thresholds?.financial ?? 3.0);
+
+  async function handleApplyThresholds() {
+    setThresholdBusy(true);
+    setThresholdError('');
+    try {
+      await updateCycleThresholds({
+        cycleId: cycle.id,
+        oldImpact: thresholds?.impact ?? 3.0,
+        newImpact: impactTh,
+        oldFinancial: thresholds?.financial ?? 3.0,
+        newFinancial: financialTh,
+        reason: thresholdReason.trim(),
+        changedBy: userId,
+      });
+      setThresholdReason('');
+      onChanged();
+    } catch (err) {
+      setThresholdError(err.message);
+    } finally {
+      setThresholdBusy(false);
+    }
+  }
+
   const [hoverTopic, setHoverTopic] = useState(null);
   const [pinned, setPinned] = useState(null);
   const [downloadSections, setDownloadSections] = useState({ bar: true, heatmaps: true, matrix: true });
@@ -111,13 +158,15 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
   const financialSvgRef = useRef(null);
   const matrixSvgRef = useRef(null);
 
+  // Every IRO appears here, rated or not — per the builder's direct
+  // request, an unrated topic isn't hidden from the primary chart, it just
+  // sorts to the bottom with a "–" instead of a score.
   const scoredIros = useMemo(() => iros
     .map((iro) => {
       const agg = aggregateIro(iro, thresholds);
       return { iro, agg, score: agg.effectiveValue };
     })
-    .filter((x) => x.score !== null)
-    .sort((a, b) => b.score - a.score), [iros, thresholds]);
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1)), [iros, thresholds]);
 
   const topicIds = [...new Set(iros.map((i) => i.topic))];
   const allTopics = topicIds.map((id) => ({ id, ta: aggregateTopic(id, iros, thresholds), meta: ESRS_TOPICS.find((t) => t.id === id) }));
@@ -130,7 +179,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
     .filter((t) => activeCats.includes(t.meta?.cat))
     .filter((t) => (t.ta.isMaterial && showMaterial) || (!t.ta.isMaterial && showNotMaterial));
 
-  const maxScore = Math.max(5, ...scoredIros.map((x) => x.score));
+  const maxScore = Math.max(5, ...scoredIros.map((x) => x.score).filter((s) => s !== null));
   const active = pinned ?? hoverTopic;
 
   // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
@@ -164,7 +213,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
       if (downloadSections.bar) {
         downloadCsv('bar-chart-iro-scores.csv', [
           ['IRO', 'ESRS Topic', 'IRO Type', 'Score', 'Material'],
-          ...scoredIros.map(({ iro, score, agg }) => [iro.name, iro.topic, TYPE_LABEL[iro.iroType], score.toFixed(2), agg.isMaterial ? 'Yes' : 'No']),
+          ...scoredIros.map(({ iro, score, agg }) => [iro.name, iro.topic, TYPE_LABEL[iro.iroType], score !== null ? score.toFixed(2) : '', agg.isMaterial ? 'Yes' : 'No']),
         ]);
       }
       if (downloadSections.heatmaps) {
@@ -241,9 +290,9 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
               <span className="text-[13px] font-semibold w-48 truncate">{iro.name}</span>
               <div className="flex-1 bg-surface-2 rounded h-5 relative overflow-hidden">
-                <div className="h-full rounded" style={{ width: `${(score / maxScore) * 100}%`, background: color }} />
+                <div className="h-full rounded" style={{ width: score !== null ? `${(score / maxScore) * 100}%` : '0%', background: color }} />
               </div>
-              <span className="text-[13px] font-bold w-10 text-right">{score.toFixed(1)}</span>
+              <span className="text-[13px] font-bold w-10 text-right">{score !== null ? score.toFixed(1) : '–'}</span>
             </div>
           );
         })}
@@ -272,12 +321,33 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         Each dot is one ESRS topic, colour-coded by pillar. <b className="text-text-primary">Hover or click a dot</b> to see exactly which IROs sit behind it, in the panel on the right.
         {unratedCount > 0 && <span> {unratedCount} topic{unratedCount === 1 ? '' : 's'} not shown yet — no ratings recorded {unratedCount === 1 ? 'for it' : 'for them'} yet.</span>}
       </p>
-      <div className="flex gap-3 mb-3 flex-wrap items-center">
-        <span className="text-[12px] font-semibold">Impact threshold</span>
-        <input type="number" step="0.1" min="1" max="5" value={impactTh} onChange={(e) => setImpactTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
-        <span className="text-[12px] font-semibold">Financial threshold</span>
-        <input type="number" step="0.1" min="1" max="5" value={financialTh} onChange={(e) => setFinancialTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
-      </div>
+      {!cycle || locked ? (
+        <p className="text-[12px] text-text-secondary mb-3">
+          Impact threshold <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b> — same as the Calibrate &amp; Results header above; editable only in the Calibrating stage.
+        </p>
+      ) : (
+        <div className="mb-3">
+          <div className="flex gap-3 flex-wrap items-center">
+            <span className="text-[12px] font-semibold">Impact threshold</span>
+            <input type="number" step="0.1" min="1" max="5" value={impactTh} onChange={(e) => setImpactTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
+            <span className="text-[12px] font-semibold">Financial threshold</span>
+            <input type="number" step="0.1" min="1" max="5" value={financialTh} onChange={(e) => setFinancialTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
+          </div>
+          {thresholdsDirty && (
+            <div className="bg-surface border border-border-apus rounded-xl p-3 mt-2">
+              <p className="text-[11.5px] text-text-secondary mb-2">
+                Not yet applied — materiality across the workspace (including the header above) still uses <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> / <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b> until you apply this change, with a reason.
+              </p>
+              <input value={thresholdReason} onChange={(e) => setThresholdReason(e.target.value)} placeholder="Why is the threshold changing?" className="w-full bg-surface-2 rounded-lg px-3 py-2 text-[12px] outline-none mb-2" />
+              {thresholdError && <p className="text-[11.5px] text-badge-amber mb-2">{thresholdError}</p>}
+              <div className="flex gap-2">
+                <button onClick={handleApplyThresholds} disabled={thresholdBusy || !thresholdReason.trim()} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40" style={{ background: '#4C6FFF', color: '#07070B' }}>Apply to this round</button>
+                <button onClick={() => { setImpactTh(thresholds?.impact ?? 3.0); setFinancialTh(thresholds?.financial ?? 3.0); setThresholdReason(''); setThresholdError(''); }} className="text-[12px] text-text-secondary px-3 py-1.5">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_260px] gap-3 mb-6">
         <div className="bg-surface rounded-2xl p-4">

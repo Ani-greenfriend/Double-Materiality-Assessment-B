@@ -295,6 +295,28 @@ export async function setRequireBothSources(cycleId, value) {
   if (error) throw new Error(`cycles update failed: ${error.message}`);
 }
 
+// Section 8 business rule: thresholds are editable only in the Calibrating
+// stage, via Apply with a reason logged to threshold_changes (append-only —
+// never updated or deleted). One history row per axis that actually
+// changed, so a same-value re-apply on one axis doesn't pollute the other's
+// trail.
+export async function updateCycleThresholds({ cycleId, oldImpact, newImpact, oldFinancial, newFinancial, reason, changedBy }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('cycles')
+    .update({ impact_threshold: newImpact, financial_threshold: newFinancial })
+    .eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
+
+  const rows = [];
+  if (newImpact !== oldImpact) rows.push({ cycle_id: cycleId, axis: 'impact', old_value: oldImpact, new_value: newImpact, reason, changed_by: changedBy });
+  if (newFinancial !== oldFinancial) rows.push({ cycle_id: cycleId, axis: 'financial', old_value: oldFinancial, new_value: newFinancial, reason, changed_by: changedBy });
+  if (rows.length) {
+    const { error: historyError } = await supabase.from('threshold_changes').insert(rows);
+    if (historyError) throw new Error(`threshold_changes insert failed: ${historyError.message}`);
+  }
+}
+
 // RLS-gated: only succeeds when no response exists anywhere in the cycle
 // (see docs/supabase-setup.md — "authenticated delete cycles without responses").
 export async function deleteCycle(cycleId) {
