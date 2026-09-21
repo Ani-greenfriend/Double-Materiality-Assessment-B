@@ -236,6 +236,7 @@ export default function SetupReviewStep({
   stakeholderMap, setStakeholderMap,
   topicOverrides, setTopicOverrides,
   mandatory, setMandatory,
+  justificationMode, setJustificationMode,
   onBack, onCreate,
 }) {
   const isQual = mode === 'expert_live_session';
@@ -259,6 +260,26 @@ export default function SetupReviewStep({
         ? <ParticipantListCard participants={participants} setParticipants={setParticipants} stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap} />
         : <StakeholderCard stakeholders={stakeholders} setStakeholders={setStakeholders} perspectiveFilter={perspectiveFilter} />}
       <TopicsCard title="Assessment" iros={iros} overrides={topicOverrides} setOverrides={setTopicOverrides} />
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: 'linear-gradient(160deg, #4C6FFF12, var(--color-surface))', borderLeft: '3px solid #4C6FFF' }}>
+        <p className="text-[12.5px] font-semibold mb-3 flex items-center gap-2"><span className="text-[15px]">✍️</span>Justification mode</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-start gap-2.5 bg-surface-2 rounded-lg px-3 py-2.5 cursor-pointer">
+            <input type="radio" checked={justificationMode === 'per_criterion'} onChange={() => setJustificationMode('per_criterion')} className="mt-0.5" />
+            <span>
+              <span className="text-[12.5px] font-medium block">Per criterion (recommended)</span>
+              <span className="text-[10.5px] text-text-secondary">The more audit-defensible choice — a justification for each individual rating.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2.5 bg-surface-2 rounded-lg px-3 py-2.5 cursor-pointer">
+            <input type="radio" checked={justificationMode === 'per_topic'} onChange={() => setJustificationMode('per_topic')} className="mt-0.5" />
+            <span>
+              <span className="text-[12.5px] font-medium block">Per topic</span>
+              <span className="text-[10.5px] text-text-secondary">One justification covering the whole topic — suits smaller or lighter-touch companies.</span>
+            </span>
+          </label>
+        </div>
+      </div>
 
       <div className="bg-surface rounded-2xl p-5 mb-6 flex items-center justify-between">
         <div>

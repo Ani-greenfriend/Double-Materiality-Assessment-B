@@ -205,7 +205,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         });
         await snapshotTopicsIntoIros(created.id, topicsForSnapshot);
         setAdjustingId(created.id);
-        setActiveAssessment({ id: created.id, slug: created.slug, name: surveyMeta.name, type: assessmentMode });
+        setActiveAssessment({ id: created.id, slug: created.slug, name: surveyMeta.name, type: assessmentMode, justificationMode, mandatory });
       }
       setFlowStep('recipients');
     } catch (err) {
@@ -430,6 +430,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap}
           topicOverrides={topicOverrides} setTopicOverrides={setTopicOverrides}
           mandatory={mandatory} setMandatory={setMandatory}
+          justificationMode={justificationMode} setJustificationMode={setJustificationMode}
           onBack={() => setFlowStep('survey-details')}
           onCreate={handleCreate}
         />

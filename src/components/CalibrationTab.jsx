@@ -38,7 +38,7 @@ export default function CalibrationTab({ iros, thresholds, cycleId, locked, onCh
       <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {iros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
       {locked && (
         <p className="text-[12px] mb-5" style={{ color: '#D79A4C' }}>
-          Calibration is editable only while the cycle is in the Calibrating stage — this cycle is not, so adjustments are read-only here.
+          Calibration is editable only in the Calibrating stage — this round is not in that stage, so adjustments are read-only here.
         </p>
       )}
       {!locked && <div className="mb-5" />}
