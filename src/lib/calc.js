@@ -7,8 +7,8 @@
 // combined_ratings rows into this shape.
 
 // Anchor labels — restored verbatim from the prototype for the ported
-// Questionnaire.jsx/QuantAssessmentGrid.jsx/AssessmentReviewHub.jsx screens,
-// which display them as-is; purely descriptive text, unrelated to the v2.0
+// Questionnaire.jsx/AssessmentReviewHub.jsx screens, which display them
+// as-is; purely descriptive text, unrelated to the v2.0
 // scoring changes below. FINANCIAL_LIKELIHOOD_LABELS is still exported (its
 // wording differs slightly from IMPACT_LIKELIHOOD_LABELS) for the same
 // reason — the retired `financialLikelihood` *criterion key* only affects
