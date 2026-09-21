@@ -115,7 +115,7 @@ export async function fetchCycles() {
   const cycleIds = cycles.map((c) => c.id);
   const { data: assessments, error: aError } = await supabase
     .from('assessments')
-    .select('id, cycle_id, name, slug, type, status, justification_mode, created_at')
+    .select('id, cycle_id, name, slug, type, status, justification_mode, end_date, created_at')
     .in('cycle_id', cycleIds)
     .order('created_at', { ascending: true });
   if (aError) throw new Error(`assessments query failed: ${aError.message}`);
@@ -152,6 +152,7 @@ export async function fetchCycles() {
       type: a.type,
       status: a.status,
       justificationMode: a.justification_mode,
+      endDate: a.end_date,
       createdAt: a.created_at,
       invitationStatusCounts,
       liveSession,
@@ -281,18 +282,6 @@ export async function purgeUnfinishedDrafts(cycleId) {
   if (!assessmentIds.length) return;
   const { error } = await supabase.from('submissions').delete().eq('status', 'draft').in('assessment_id', assessmentIds);
   if (error) throw new Error(`submissions delete failed: ${error.message}`);
-}
-
-// ---- Topic library — read-only count for the Dashboard until Topics admin is built ----
-
-export async function fetchTopicLibraryCount(esrsVersion) {
-  assertConfigured();
-  const { count, error } = await supabase
-    .from('topic_library')
-    .select('id', { count: 'exact', head: true })
-    .eq('esrs_version', esrsVersion);
-  if (error) throw new Error(`topic_library count failed: ${error.message}`);
-  return count ?? 0;
 }
 
 // The library rows a new assessment snapshots into its own iros, filtered
@@ -609,6 +598,80 @@ export async function fetchDashboard(assessmentId) {
   });
 
   return { iros };
+}
+
+// Same shape as fetchDashboard's iros, but across every assessment in a
+// cycle rather than one — what the restored prototype Dashboard needs for
+// its "Assessment of impact/financial topics" and "Calibration" progress
+// cards (Section 8: App shell and navigation). Also returns a calibrations
+// map keyed by iro id, `{ [iroId]: { calibratedAt, ... } }`, matching the
+// prototype's original in-memory shape exactly (Dashboard.jsx only reads
+// `.calibratedAt`).
+export async function fetchCycleIros(cycleId) {
+  assertConfigured();
+
+  const { data: assessmentRows, error: aError } = await supabase
+    .from('assessments')
+    .select('id')
+    .eq('cycle_id', cycleId);
+  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
+  const assessmentIds = assessmentRows.map((a) => a.id);
+  if (!assessmentIds.length) return { iros: [], calibrations: {} };
+
+  const { data: iroRows, error: iroError } = await supabase
+    .from('iros')
+    .select('id, assessment_id, esrs_topic_id, name, description, iro_type, actual, time_horizon, potential_human_rights_impact, session_notes, order')
+    .in('assessment_id', assessmentIds)
+    .order('order', { ascending: true });
+  if (iroError) throw new Error(`iros query failed: ${iroError.message}`);
+  if (!iroRows.length) return { iros: [], calibrations: {} };
+
+  const { data: ratingRows, error: rError } = await supabase
+    .from('combined_ratings')
+    .select('submission_id, source, iro_id, criterion_key, value, justification, stakeholder_group, invitation_id, live_session_id')
+    .in('assessment_id', assessmentIds);
+  if (rError) throw new Error(`combined_ratings query failed: ${rError.message}`);
+
+  const { data: calRows, error: calError } = await supabase
+    .from('calibrations')
+    .select('id, cycle_id, iro_id, owner, moderator, calibrated_value, notes, band_value, reviewed_with_owner, reviewed_with_owner_at, calibrated_at')
+    .eq('cycle_id', cycleId);
+  if (calError) throw new Error(`calibrations query failed: ${calError.message}`);
+
+  const assessmentRowsByKey = new Map();
+  for (const r of ratingRows) {
+    const key = `${r.submission_id}:${r.iro_id}`;
+    if (!assessmentRowsByKey.has(key)) {
+      assessmentRowsByKey.set(key, { submissionId: r.submission_id, source: r.source, stakeholderGroup: r.stakeholder_group, iroId: r.iro_id });
+    }
+    assessmentRowsByKey.get(key)[r.criterion_key] = r.value;
+  }
+
+  const iros = iroRows.map((r) => ({
+    id: r.id,
+    topic: r.esrs_topic_id,
+    name: r.name,
+    description: r.description,
+    iroType: r.iro_type,
+    actual: r.actual,
+    timeHorizon: r.time_horizon,
+    potentialHumanRightsImpact: r.potential_human_rights_impact,
+    sessionNotes: r.session_notes,
+    assessments: [...assessmentRowsByKey.values()].filter((a) => a.iroId === r.id),
+    calibration: calRows.find((c) => c.iro_id === r.id) ?? null,
+  }));
+
+  // Dashboard.jsx (ported verbatim) treats calibratedAt as a Date.now()-style
+  // epoch-ms number, matching how the prototype always set it locally —
+  // convert from the DB's ISO timestamp rather than changing the component.
+  const calibrations = {};
+  for (const iro of iros) {
+    if (iro.calibration?.calibrated_at) {
+      calibrations[iro.id] = { calibratedAt: new Date(iro.calibration.calibrated_at).getTime(), calibratedValue: iro.calibration.calibrated_value };
+    }
+  }
+
+  return { iros, calibrations };
 }
 
 // ---- Stakeholders: master map + who actually participated in this assessment ----

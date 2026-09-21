@@ -1,5 +1,24 @@
-// Subset ported from reference-prototype/src/components/icons.jsx, plus a
-// couple new to v2.0 (CycleIcon, ReportIcon — no prototype equivalent).
+// Ported from reference-prototype/src/components/icons.jsx, plus a couple
+// new to v2.0 (CycleIcon, ReportIcon — no prototype equivalent).
+export function ImpactIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.5 2.5 3.5 6 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-6-3.5-9s1-6.5 3.5-9z" />
+    </svg>
+  );
+}
+
+export function FinancialIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="8" cy="8" r="5.5" />
+      <circle cx="15.5" cy="15.5" r="5.5" />
+      <path d="M8 8v.01M15.5 15.5v.01" />
+    </svg>
+  );
+}
+
 export function StakeholderIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">

@@ -5,12 +5,15 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 5
-**Live URL:** none yet — see PR #4, Netlify branch deploy in progress (builder testing there directly)
+**Last updated:** 2026-09-21 — session 2, part 6 (prototype-UI restore, step 1)
+**Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
-The app shell matches product-spec.md Section 8's v2.0 IA (sidebar ported
-from reference-prototype/'s mechanics, item set from spec — see Part 3).
+**Direction change 2026-09-21:** the builder found the app's UI had drifted from reference-prototype/ into a simplified, rewritten shell (sessions 1–2, PR #4). CLAUDE.md now carries a Hard Rule — prototype screens are copied verbatim, never restyled/simplified/rewritten, changing only data wiring, the Expert survey/Expert live session wording, and explicit v2.0 spec changes. A full restore is underway on a **new branch** (`claude/restore-prototype-ui`, PR #5, draft until complete), built from `claude/wonderful-darwin-ztquwp`'s tip so the v2.0 data layer, calc.js, login, cycles, invitations, participants and draft deletion are all kept. The restore proceeds in 6 builder-approved steps, each pushed to the same PR (stable deploy preview URL) and reported with a before/after checklist, stopping for the builder's OK after each one. **Step 1 (Dashboard and shell) is done and pushed; awaiting OK before step 2.**
+
+Report format also changed mid-project: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4). `entered_by` (nullable, additive) on `submissions` is proposed for step 3's "Enter expert responses" screen — not yet applied, needs the builder's approval first per CLAUDE.md's Open Questions.
+
+## Earlier state (superseded by the restore above, kept for history)
 Cycles now supports the full assessment-creation path: New assessment
 wizard (mode, perspective, survey setup, review & customise with a real
 topic-library snapshot), Invitations (add/remove/copy-link/mark-sent/
@@ -28,6 +31,44 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 6 (2026-09-21) — prototype-UI restore, Step 1: Dashboard and shell.**
+Pulled the builder's latest CLAUDE.md/product-spec.md (v2.0 amended 4,
+matching what main already had — 3 doc-only commits) and the new
+docs/product-spec-v1.2-prototype-reference.md (moved from repo root into
+docs/). Created `claude/restore-prototype-ui` from `claude/wonderful-darwin-ztquwp`'s
+tip, opened PR #5 (draft). Copied `reference-prototype/src/components/Dashboard.jsx`
+byte-for-byte into `src/components/Dashboard.jsx` (confirmed with `diff`) —
+original six cards (Stakeholder selection, Topic selection, Assessment of
+impact/financial topics, Calibration, Downloadable result), editable-name
+header, notification bell, all untouched. Added the two missing icons it
+needs (`ImpactIcon`, `FinancialIcon`, also copied verbatim — the rest were
+already verbatim from earlier sessions). Rebuilt the shell in App.jsx: the
+sidebar's collapsible-rail mechanics were already close to the prototype's
+own App.jsx aside; changed the nav item set to the spec's 7 items
+(Dashboard, Cycles, Stakeholders, Topics, **Assessments** — new, was
+missing — Calibrate & Results, Report) and moved signed-in email + Sign out
+to the top of the rail per Section 8. All data wiring for Dashboard.jsx
+happens in App.jsx, not the component: added `fetchCycleIros(cycleId)` to
+data.js (same shape as `fetchDashboard` but across every assessment in a
+cycle, plus a `calibrations` map keyed by iro id) and reused
+`fetchTopicLibraryForSnapshot`/`fetchStakeholderMaster`. Found and fixed
+two real shape mismatches before they could break at runtime: (1) v2.0's
+`aggregateIro`/`aggregateTopic` require a `thresholds` argument, but
+Dashboard.jsx (like other prototype screens) calls `aggregateIro(i)` with
+one — defaulted `thresholds` to `{impact: 3, financial: 3}` in calc.js
+rather than touch the prototype component; (2) Dashboard.jsx's
+`timeAgo()`/"closing soon" logic expects `Date.now()`-style epoch-ms
+numbers and a falsy `status` for "still running" — the DB gives ISO
+timestamp strings and an always-truthy status column, so App.jsx now
+shapes both (numeric `createdAt`, and a synthesized `status` derived from
+the cycle's stage) when building the prop, without touching the component.
+Added an `AssessmentsTab.jsx` stub (step 3's job) so the new nav item has
+somewhere to go. Deleted the now-superseded `DashboardTab.jsx` (session 2's
+rewritten dashboard) and the `fetchTopicLibraryCount` helper it alone used.
+Verified the query shape against live demo data (`execute_sql`) before
+trusting it. `npm run build` and `npm run lint` clean throughout.
+
+## Earlier sessions (superseded direction, kept for history)
 **Part 1** — re-verified docs/supabase-setup.md against the live database,
 reworked calc.js and data.js for the v2.0 schema (financialLikelihood
 retired, effective/calibrated value materiality, cycle-level thresholds,
@@ -204,6 +245,21 @@ left the actual spec-derived rules alone). `npm run build` and
 `npm run lint` clean.
 
 ## Remaining work
+**Restore checklist (current plan — supersedes the item ordering below):**
+- [x] Step 1 — Dashboard and shell
+- [ ] Step 2 — Stakeholders full admin and Topics with CSV upload
+- [ ] Step 3 — Assessment wizard (all steps incl. Created) + Assessment overview scoped to cycle; restyle Invitations/Participants
+- [ ] Step 4 — Review Hub + live session Intro/Questionnaire (justifications, Save and pause)
+- [ ] Step 5 — Calibrate & Results: prototype's Calibration/Results/heatmaps/Topic Matrix as tabs
+- [ ] Step 6 — PDF report builder
+- [ ] Additive `entered_by` column on `submissions` — proposed, needs builder approval before applying (step 3)
+
+The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
+superseded by the steps above now that the UI itself is being rebuilt from
+the prototype. Kept for reference since the underlying data-layer/RLS work
+it describes is still current (nothing in the restore touches the schema
+except the proposed `entered_by` column).
+
 - [x] Confirm Tool A has been built and docs/supabase-setup.md exists
 - [x] First Session Setup: create docs/, move reference files, commit
 - [ ] Confirm Supabase Pro plan upgrade is done (manual billing step) —
@@ -347,40 +403,37 @@ left the actual spec-derived rules alone). `npm run build` and
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
 
 ## Notes for next session
-Builder's explicit build order (overrides the plain top-to-bottom v2.0
-revision checklist order above — follow this instead): (1) logo storage
-bucket, New cycle, Cycles and assessments overview — **done**; (2) New
-assessment, Invitations and Participants — **done this session (Part 4)**,
-with the simplifications listed above; (3) Topics and Stakeholders admin —
-**next**; (4) Live session flow and the full Calibrate & Results workspace;
-(5) Report builder, Review Hub, then Dashboard last. Note: Dashboard was
-actually built in Part 3 as part of porting the nav shell (the builder
-asked for "the left-hand navigation and Dashboard structure" together) —
-it's done, ahead of where the order lists it; nothing further needed there
-unless the builder asks for changes.
+**Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
+stopped after Step 1 (Dashboard and shell) for the builder's OK, per their
+explicit instruction to stop after every step. Do not start Step 2 until
+that OK arrives.
 
-Start item (3) with Topics admin — the master IRO library
-(`topic_library`): manual add, CSV upload (sub-topic codes matched by
-prefix, unmatched flagged not dropped), sign-off/revoke, filtered by ESRS
-version. Currently a stub (`TopicsTab.jsx`). Then Stakeholders admin — turn
-the current read-only `StakeholdersTab.jsx` into a real admin (add/edit/
-remove groups and contacts, the consent checkbox + data statement pattern
-already established in Invitations/Participants, custom silent stakeholder
-groups). Both are independent of any cycle (Section 8) so don't need a
-selected cycle to work, unlike everything built in Part 4. Re-read Section
-8's Topics and Stakeholders subsections before starting each.
+Step 2, when approved: Stakeholders full admin (copy
+`reference-prototype/src/components/StakeholderModule.jsx` verbatim — add/
+edit/remove groups and contacts, generic-pool suggestions, drag reordering
+if present) and Topics with CSV upload (copy `TopicsModule.jsx` +
+`CsvUploadStep.jsx` verbatim). Both replace stub/read-only screens
+(`StakeholdersTab.jsx`, `TopicsTab.jsx`) and are cycle-independent (Section
+8), so no cycle-selection wiring needed, unlike Step 1. Before starting:
+list the checklist of features Section 8 describes for these two screens
+(the builder's protocol — do this before writing any code); after
+building, mark each done/changed(with v2.0 reason)/missing, same as Step
+1's report. Remember the GDPR consent checkbox + data statement pattern
+already established in Invitations/Participants for the stakeholder
+contact add form (Section 7). Use docs/product-spec-v1.2-prototype-reference.md
+Section 8 for detailed screen behaviour where product-spec.md is silent.
 
-Two open items are just deferred, not blocked — pick these up when there's
-a natural moment, no builder decision needed: the Invitations "group
-mismatch" flag and Participants in-place edit. Tool A's site address is
-resolved (Part 5).
+Hard Rule to hold the line on throughout every remaining step: copy each
+prototype component verbatim (check with `diff` against
+reference-prototype/, as Step 1 did for Dashboard.jsx/icons/DmaMascot);
+change only (a) data wiring — done in the shell/App.jsx or small adapter
+functions in data.js, never inside the copied component; (b) Expert
+survey/Expert live session wording; (c) explicit v2.0 spec changes. If
+a prototype behaviour and the v2.0 spec conflict, or it's unclear which
+bucket a needed change falls into, ask the builder — don't guess.
 
-All work should keep pushing straight to this PR branch
-(claude/wonderful-darwin-ztquwp) — builder has branch deploys enabled on
-Netlify and is testing there rather than waiting for a merge. PR #4
-(https://github.com/Ani-greenfriend/Double-Materiality-Assessment-B/pull/4)
-covers everything through this session. Two things flagged this session
-still need a builder decision, not more building: "Delete unfinished
-drafts" has no RLS support and conflicts with Section 6 (see Known issues);
-Netlify MCP isn't available in this cloud session so deploys are
-builder-managed via the dashboard.
+Two things flagged in earlier sessions are genuinely resolved and need no
+further action: "Delete unfinished drafts" has RLS support (built in the
+pre-restore work); Tool A's site address is hardcoded with an env var
+override. The Netlify MCP gap is now moot — the builder pushes/tests via
+their own Netlify dashboard against PR #5's deploy preview.

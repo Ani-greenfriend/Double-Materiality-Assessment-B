@@ -9,8 +9,8 @@ import { CalibrationIcon } from './icons';
 // header, Matrix tab and persistent filters is separate, later work) under
 // one nav destination with an internal switcher, so the nav item count
 // matches the spec's six process steps.
-export default function CalibrateResultsTab({ iros, thresholds, cycleId, locked, onChanged }) {
-  const [sub, setSub] = useState('results');
+export default function CalibrateResultsTab({ iros, thresholds, cycleId, locked, onChanged, initialSub = 'results' }) {
+  const [sub, setSub] = useState(initialSub);
 
   return (
     <div>

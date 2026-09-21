@@ -68,7 +68,10 @@ export function effectiveValue(iro, { impactScore, financialScore }) {
 
 // Aggregate all assessment rows for one IRO. `thresholds` is the cycle's
 // { impact, financial } pair — thresholds live on the cycle, not the IRO.
-export function aggregateIro(iro, thresholds) {
+// thresholds defaults to the cycle default (3.0/3.0) — restored prototype
+// screens that only need assessor counts (e.g. Dashboard's progress %) call
+// this with one argument, exactly as reference-prototype/ always did.
+export function aggregateIro(iro, thresholds = { impact: 3.0, financial: 3.0 }) {
   const bySource = (source) => iro.assessments.filter((a) => a.source === source);
   const scoresFor = (rows) => ({
     impact: rows.map((a) => assessmentImpactScore(iro, a)).filter((v) => v !== null),
@@ -126,7 +129,7 @@ export function aggregateIro(iro, thresholds) {
 
 // Topic-level roll-up (Section 9, Step 4) — uses each IRO's effective value
 // (calibrated where set, otherwise calculated).
-export function aggregateTopic(topicId, iros, thresholds) {
+export function aggregateTopic(topicId, iros, thresholds = { impact: 3.0, financial: 3.0 }) {
   const topicIros = iros.filter((i) => i.topic === topicId);
   if (!topicIros.length) return null;
   const pairs = topicIros.map((iro) => ({ iro, agg: aggregateIro(iro, thresholds) }));
