@@ -65,7 +65,7 @@ RLS: `authenticated` policies as built (docs/supabase-setup.md, spec Section 6);
 - Tool A's public survey depends on the anon policies and column grants on assessments, iros, clients, cycles and stakeholder_groups, and on six SECURITY DEFINER functions (lookup_invitation, mark_invitation_opened, get_draft, create_draft, save_progress, submit_survey_response) — anon has no direct table access to invitations, submissions, ratings or topic_justifications. Never change any of it, or the schema of submissions, ratings and topic_justifications, from this tool — changes go through Tool A.
 - calibration_history, threshold_changes and attendance_edit_log are append-only: never update or delete rows.
 - Never show invitee names, emails or titles in results tables or exports unless the builder ticks it in the report builder.
-- Prototype screens are copied, not rewritten: port each component verbatim from reference-prototype/ (the PR #3 branch claude/elegant-hypatia-vx86i7 also holds it, wired to Supabase). Change only data wiring, the renamed wording (Expert survey / Expert live session) and the v2.0 changes in docs/product-spec.md. Never restyle, simplify or rewrite a prototype screen; if unsure, ask the builder.
+- Prototype screens are copied, not rewritten: port each component verbatim from reference-prototype/ (the PR #3 branch claude/elegant-hypatia-vx86i7 also holds it, wired to Supabase). Change only data wiring, the renamed wording (Expert survey / Expert live session) and the v2.0 changes in docs/product-spec.md. Never restyle, simplify or rewrite a prototype screen; if unsure, ask the builder. Every feature that docs/product-spec-v1.2-prototype-reference.md Section 8 describes for a screen must exist in the restored screen unless docs/product-spec.md removes or changes it. Before building a screen, list those features as a checklist; after building it, show the checklist with each item marked done, changed (with the v2.0 reason) or missing.
 
 ## Project Structure
 ```
@@ -85,7 +85,7 @@ No brand skill yet. These inline rules apply until one is added to the repo (the
 - PDF report: white pages, dark text, one accent colour (default #1F9A63), standard sans-serif font.
 
 ## Business Rules
-- A cycle starts with the financial year; the ESRS version is pre-selected (2026 → esrs_2023_amended, 2027 or later → esrs_2026) and overridable. Assessments belong to a cycle.
+- Cycles exist only in the database, never in the interface (no Cycles screen, selector or wizard; never say "cycle" to the user). A cycle is created automatically with the first assessment of a financial year and shared by every assessment of that year. The first assessment's setup asks the financial year and pre-selects the ESRS version (2026 → esrs_2023_amended, 2027 or later → esrs_2026), overridable. The assessment flow is the prototype's full flow.
 - Each assessment is an Expert survey (invited experts answer in Tool A) or an Expert live session (run here). Never use the words quantitative/qualitative.
 - Severity, negative impact = avg(Scale, Scope, Irremediability), or 5 if any one is 5; positive impact = avg(Scale, Scope).
 - Impact score = severity × (likelihood ÷ 5); actual impact = severity; potential human rights impact = severity alone. Financial = magnitude × (likelihood ÷ 5), no override.
@@ -94,13 +94,13 @@ No brand skill yet. These inline rules apply until one is added to the repo (the
 - Two thresholds per cycle (impact, financial), default 3.0, baseline stored at setup. Editable only in stage Calibrating, in the Results tab, via Apply with a reason logged to threshold_changes; read-only otherwise.
 - Material if an impact IRO ≥ impact threshold or a risk/opportunity ≥ financial threshold, using the calibrated value if one exists; a topic is material if any IRO is.
 - Stages: Collecting → Calibrating → Signed off. Results are Provisional until sign-off, then Final; signed-off cycles block new ratings and edits until revoked.
-- Sign-off is per cycle: approver name, role, date, minutes reference, and the logged-in user as recorded_by. "Require both sources" (default off) blocks sign-off if one source has no submitted data.
+- Stage and sign-off controls sit in the Calibrate & Results header. Sign-off is per financial-year round: approver name, role, date, minutes reference, and the logged-in user as recorded_by. "Require both sources" (default off) blocks sign-off if one source has no submitted data.
 - Calibration is append-only history (old, new, reason, who, when); the calculated value is never overwritten; owner ≠ moderator is a warning, not a block.
 - Justification is per criterion or per topic per assessment.justification_mode and is required whenever a rating has a value.
 - Live session: participant list (name and expertise required) set by the owner, editable with soft removal and an edit log; "Save and pause" keeps ratings as drafts until Finish.
 - Invitations hold name, email and stakeholder group; each gets a personal link (Tool A's survey address for the assessment slug plus the invitation's link_code); links are copied and sent manually.
-- Silent stakeholders: groups of type 'silent' (Nature and ecosystems, Species and biodiversity, Future generations) offered only in stakeholder group selection; no wizard step, no per-IRO tag (the cycles.silent_stakeholders_* columns stay unused).
-- Shell: the prototype's collapsible left rail — Dashboard, Cycles, Stakeholders, Topics, Assessments, Calibrate & Results, Report; no top tab bar. The Dashboard keeps the prototype's six cards (Stakeholder selection, Topic selection, Assessment of impact topics, Assessment of financial topics, Calibration, Downloadable result) with live data, editable header and bell.
+- Silent stakeholders: groups of type 'silent' (Nature and ecosystems, Species and biodiversity, Future generations) ordinary entries in the stakeholder list (generic pool, dragged into the Impact column) with a "Silent stakeholder" marker and explanation on the entry, and selectable in group selection; no separate panel, no wizard step, no per-IRO tag (the cycles.silent_stakeholders_* columns stay unused).
+- Shell: the prototype's collapsible left rail — Dashboard, Stakeholders, Topics, Assessments, Calibrate & Results, Report; no top tab bar and no Cycles item. The Dashboard keeps the prototype's six cards (Stakeholder selection, Topic selection, Assessment of impact topics, Assessment of financial topics, Calibration, Downloadable result) with live data, editable header and bell.
 - The prototype's assessment grid (QuantAssessmentGrid) is kept as "Enter expert responses": the consultant enters an expert's responses from an invitation; saved as a submitted expert_survey submission tied to that invitation with entered_by = the logged-in user (nullable column, approve with the builder before adding).
 - "Delete unfinished drafts" deletes draft submissions (and their ratings and justifications) only, in Calibrating or Signed-off cycles; never submitted rows.
 - Assessments snapshot topic_library into iros at creation (by perspective, ESRS version, client); re-editing a completed assessment's setup never resets its responses or status. Sub-topics follow the ESRS version; CSV upload flags unmatched codes, never drops them.
@@ -119,5 +119,6 @@ Read before building the related part:
 - docs/product-spec.md — full module specs, UI sections, logic, acceptance criteria
 - docs/supabase-setup.md — schema source of truth (exists — read first)
 - docs/product-spec-tool-a-expert-survey.md — Tool A spec; the Review Hub must render its screens exactly
+- docs/product-spec-v1.2-prototype-reference.md — detailed behaviour of every prototype screen (Section 8); v2.0 wins where they differ
 - reference-prototype/ — authoritative for existing screens and calc arithmetic
 PROGRESS.md in the root is read at every session start per the Session Protocol.
