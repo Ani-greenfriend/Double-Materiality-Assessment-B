@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 10 (prototype-UI restore, step 3: full assessment flow, Cycles removed from the UI)
+**Last updated:** 2026-09-21 — session 2, part 11 (post-step-3 builder feedback round: silent-stakeholder sort, deletable topics, Recipients/Participants quick access, no-participants kick-off guard, Results rebuilt)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -17,7 +17,16 @@
 - The assessment flow must be the prototype's full flow, copied verbatim — Assessment overview, Mode select, Perspective select, General info, Review & customise, Recipients, Created, Review Hub, Intro flow and Questionnaire — with only six sanctioned differences (Section 8, "New assessment"): wording; Recipients keeps the prototype's layout; a justification-mode setting in Review & customise; financial year + ESRS version in General info; Created's link card shows a list of personal links; justification/Save and pause/who-answered in the live-session grid.
 - **Dropped by the builder mid-step:** "Enter expert responses" (`QuantAssessmentGrid`) — every expert response comes through Tool A's survey, no exceptions; Tool B is consultant/owner setup only. No `entered_by` column needed; the earlier open question about it is moot.
 
-**Steps 1–3 are done and pushed (PR #5); awaiting the builder's OK before step 4** (Calibrate & Results workspace redesign — Matrix tab, persistent filters — was step 5 in the original plan; step 4, Review Hub + Intro/Questionnaire, is now folded into step 3 above, so step 4 going forward is the old step 5's scope, and step 5 is the PDF report builder, old step 6).
+**Steps 1–3 are done and pushed (PR #5).** After step 3 the builder gave a
+round of direct fixes (part 11, below) rather than an "OK, start step 4" —
+worked through all five, including a full rebuild of the Results tab
+(bar chart, impact/financial heatmaps, topic matrix — the prototype's
+`ResultsScreen.jsx`, verbatim except one requested cut). That rebuild
+covers most of what step 4 was scoped to do for Results/Matrix; what's
+still open for step 4 is `CalibrationTab.jsx` (still its session-1 shape,
+not the prototype's `CalibrationScreen.jsx`) and persistent filters shared
+across the Calibrate/Results tabs. Step 5 (PDF report builder) is
+untouched. Awaiting the builder's OK before starting either.
 
 Report format: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4).
 
@@ -39,6 +48,87 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 11 (2026-09-21) — post-step-3 builder feedback: five direct fixes.**
+The builder sent five concrete asks in one message after seeing PR #5's
+deploy preview, ahead of any step-4 go-ahead. All five done, each its own
+change, verified with `npm run build`/`npx oxlint` (both clean throughout,
+no new warnings beyond the pre-existing prototype ones already on record)
+before pushing:
+
+1. **Silent stakeholders sorted to the top.** `StakeholderModule.jsx`'s
+   group list (both the Impact and Financial columns, and the generic
+   pool) now sorts `type === 'silent'` entries first, stable order
+   otherwise — a small sort comparator added at the render boundary, no
+   change to the drag/reorder logic itself. Category (c), direct request.
+2. **Topics deletable, not just editable, in Review & customise.** Added a
+   delete (trash-icon) button next to Edit on each topic row in
+   `SetupReviewStep.jsx`'s `TopicsCard` (`onDeleteTopic` prop,
+   `handleDelete(iro)` with a confirm dialog warning that any ratings
+   already recorded against it are deleted too) — works identically for
+   both Expert survey and Expert live session modes, since both go through
+   the same Review & customise screen. Wired in `AssessmentsTab.jsx`:
+   `handleDeleteTopic(iroId)` calls the new `deleteAssessmentIro(iroId)`
+   (data.js) when adjusting an already-created assessment (relies on the
+   existing `ratings`/`calibrations`/`topic_justifications` CASCADE FKs on
+   `iros`, verified live before relying on it), or just filters local
+   in-memory state when still mid-creation (nothing in the DB yet). Lets
+   the consultant scope a questionnaire down to a handful of topics for a
+   specific expert, per the builder's stated reason.
+3. **Quick access to Recipients/Participants from the overview table.**
+   `AssessmentOverview.jsx` gained a fifth action icon (people icon)
+   between Preview and Edit, titled "Recipients" or "Participants"
+   depending on the assessment's type — `onRecipients` prop, not in the
+   original prototype table (documented with a comment in the file).
+   `AssessmentsTab.jsx`'s new `openRecipientsDirect(assessment)` jumps
+   straight to the Recipients screen without going through Mode/
+   Perspective/General info/Review, deriving the stakeholder choices fresh
+   from the master map filtered by the assessment's own
+   `perspective_filter`, and remembers where "Back" should return to
+   (`recipientsBackTarget`, since Recipients is normally a mid-wizard step
+   with a fixed prior step). Building this surfaced a real gap the
+   prototype's single-pass wizard never had to handle — revisiting
+   Recipients could invite the same person twice — so added dedup-by-email
+   (`createInvitationsFromRecipients`) and dedup-by-name among active
+   participants (`addParticipantsFromRecipients`) in data.js.
+4. **Warn before kicking off a live session with no participants.**
+   `enterLiveSession` (`AssessmentsTab.jsx`) now fetches the participant
+   list first; if none are active, it routes into
+   `openRecipientsDirect(assessment)` (reusing item 3's shortcut) and shows
+   "No one has signed up for this session yet — add participants before
+   kicking it off." instead of opening an empty Intro flow. (Caught and
+   fixed an ordering bug while building this: `openRecipientsDirect` itself
+   clears the error banner first, so the warning has to be set *after*
+   calling it, not before, or it'd be silently wiped.)
+5. **Results tab rebuilt from the prototype.** New
+   `src/components/ResultsScreen.jsx`, a verbatim port of
+   reference-prototype/'s `ResultsScreen.jsx` (581 vs. 620 lines — the
+   delta is the removed section below, plus the removed PDF code), wired
+   into `CalibrateResultsTab.jsx` in place of the old session-1
+   `ResultsTab.jsx` (now deleted). Keeps, byte-for-byte: the bar chart of
+   every IRO by score, the impact and financial SVG heatmaps, the topic
+   scatter matrix with E/S/G and material filters and its hover/pin side
+   panel, and the CSV/PNG download panel. Five adaptations, documented in
+   a header comment on the file:
+   - (a) **the builder's direct request** — dropped the "TOPIC SUMMARY"
+     card grid (IROs rolled up by ESRS standard, e.g. "E1", shown as a
+     grid of squares above the bar chart) entirely; the bar chart, both
+     heatmaps and the topic matrix are unchanged.
+   - (b) a `thresholds` prop threaded into every `aggregateIro`/
+     `aggregateTopic` call, so materiality reflects the round's real
+     threshold instead of the prototype's hardcoded 3.0 default.
+   - (c) `scoredIros` and the side panel read `agg.effectiveValue` instead
+     of a separate `calibrations` prop — v2.0's `calc.js` already resolves
+     the calibrated value per IRO, so there's no separate map to pass.
+   - (d) `financialPoints` reads `a.likelihood`, not the prototype's
+     `a.financialLikelihood` — that key was retired in the v2.0 schema (a
+     risk/opportunity's likelihood axis is the same `likelihood` key an
+     impact IRO uses); the DB never produces a `financialLikelihood` field.
+   - (e) PDF export removed (the `jspdf` import, `exportChartsAsPdf`, the
+     'pdf' format button) — CLAUDE.md's Arms section already says Results
+     keeps only the PNG/CSV downloads and the report builder owns PDF;
+     confirmed `jspdf` isn't even a dependency in this repo (only in the
+     prototype's own `package.json`).
+
 **Part 10 (2026-09-21) — Step 3: the full assessment flow, Cycles removed from the interface.**
 The builder's instruction for this step arrived in two messages: an initial
 one describing the change, then a stricter follow-up ("Step 3, stricter
@@ -478,7 +568,8 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Step 1 — Dashboard and shell
 - [x] Step 2 — Stakeholders full admin and Topics with CSV upload (+ correction: silent stakeholders as ordinary entries)
 - [x] Step 3 — Full assessment flow verbatim (Assessment overview, Mode/Perspective/General info/Review/Recipients/Created, Review Hub, Intro/Questionnaire), Cycles removed from the interface, stage controls moved into Calibrate & Results
-- [ ] Step 4 — Calibrate & Results workspace redesign: the prototype's Calibration/Results/heatmaps/Topic Matrix as tabs, persistent filters (this absorbs the old step 5's scope, since step 3 above already absorbed the old step 4's Review Hub/Questionnaire work)
+- [x] Results tab rebuilt from the prototype (bar chart, impact/financial heatmaps, topic matrix, CSV/PNG export) — done in part 11 as a direct builder fix, ahead of step 4 proper
+- [ ] Step 4 — remaining scope: `CalibrationTab.jsx` still needs porting from the prototype's `CalibrationScreen.jsx` (currently its session-1 shape), plus persistent filters (assessment source, ESRS topic, material only) shared across the Calibrate/Results tabs
 - [ ] Step 5 — PDF report builder (old step 6)
 - [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
@@ -632,24 +723,28 @@ schema — every new field the flow needed already existed).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-stopped after Step 3 (full assessment flow, Cycles removed from the
-interface) for the builder's OK, per their explicit instruction to stop
-after every step. Do not start Step 4 until that OK arrives.
+after step 3, the builder sent a round of five direct fixes instead of an
+"OK, start step 4" — all five are done (part 11 above: silent-stakeholder
+sort, deletable topics in Review & customise, a Recipients/Participants
+quick-access shortcut from the overview table, a no-participants guard
+before kicking off a live session, and the Results tab rebuilt from the
+prototype). Stopped again for the builder's OK before continuing into step
+4 proper, per their standing instruction to stop after each round of work.
 
-Step 4, when approved: the Calibrate & Results workspace redesign — the
-prototype's Calibration/Results screens plus the Matrix tab (heatmaps,
-topic scatter), persistent filters (assessment source, ESRS topic,
-material only) across all three tabs. `CalibrationTab.jsx`/`ResultsTab.jsx`
-are still their session-1 shape (not ported from reference-prototype/'s
-`CalibrationScreen.jsx`/`ResultsScreen.jsx`) — the shared workspace header
-built in step 3 (`CalibrateResultsTab.jsx`'s `WorkspaceHeader`) stays; only
-the two tab bodies (and the new Matrix tab) get replaced with verbatim
-prototype screens. Check PR #3's `claude/elegant-hypatia-vx86i7` branch and
-reference-prototype/'s own `CalibrationScreen.jsx`/`ResultsScreen.jsx` first,
-same pattern as steps 2–3. Known simplifications from step 3 worth
-revisiting if there's time: Recipients re-invite dedup on "Edit setup",
+Step 4, when approved: `ResultsScreen.jsx` (part 11) already covers the
+bar chart/heatmaps/topic matrix piece of the old step-4 scope. What's left:
+port `CalibrationTab.jsx` from reference-prototype/'s `CalibrationScreen.jsx`
+verbatim (still its session-1 shape today, not a prototype port), and add
+persistent filters (assessment source, ESRS topic, material only) shared
+across the Calibrate/Results tabs. The shared workspace header built in
+step 3 (`CalibrateResultsTab.jsx`'s `WorkspaceHeader`) stays as-is. Check
+PR #3's `claude/elegant-hypatia-vx86i7` branch and reference-prototype/'s
+own `CalibrationScreen.jsx` first, same pattern as steps 2–3. Known
+simplifications from step 3 still worth revisiting if there's time:
 E1–G1 expertise for participants added via Recipients (currently empty,
 editable after), Review Hub's stakeholder-chip-removal persistence.
+(Recipients re-invite dedup was resolved in part 11 as a side effect of
+the quick-access shortcut.)
 
 Hard Rule to hold the line on throughout every remaining step: copy each
 prototype component verbatim (check with `diff` against

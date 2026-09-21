@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ResultsTab from './ResultsTab';
+import ResultsScreen from './ResultsScreen';
 import CalibrationTab from './CalibrationTab';
 import { CalibrationIcon } from './icons';
 import { startCalibration, signOffCycle, revokeCycleSignOff, setRequireBothSources, purgeUnfinishedDrafts } from '../lib/data';
@@ -188,7 +188,7 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, l
         ))}
       </div>
 
-      {sub === 'results' && <ResultsTab iros={iros} thresholds={thresholds} />}
+      {sub === 'results' && <ResultsScreen iros={iros} thresholds={thresholds} />}
       {sub === 'calibrate' && (
         <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} locked={locked} onChanged={onChanged} />
       )}

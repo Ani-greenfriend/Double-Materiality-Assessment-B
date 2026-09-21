@@ -134,7 +134,7 @@ export const PILLAR_COLOR = {
 
 export const MATERIAL_BADGE = { text: '#D79A4C', bg: 'rgba(215,154,76,0.16)' };
 
-// Used by ResultsTab.jsx/CalibrationTab.jsx (pre-existing, not a prototype
+// Used by ResultsScreen.jsx/CalibrationTab.jsx (pre-existing, not a prototype
 // screen) — not part of reference-prototype/'s own lib/topics.js.
 export function pillarFor(esrsTopicId) {
   return ESRS_TOPICS.find((t) => t.id === esrsTopicId)?.cat ?? 'E';
