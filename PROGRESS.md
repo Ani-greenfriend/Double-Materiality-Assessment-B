@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 12 (Results matrix recoloured to a real material-quadrant legend, Calibration's EBITDA selector replaced with explanation text, a sign-off section added inside Calibrate)
+**Last updated:** 2026-09-21 — session 2, part 13 (Step 4 start: Calibration's per-topic sign-off wording matches the prototype; shared topic/material filters flagged, not yet built)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -48,6 +48,51 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 13 (2026-09-21) — Step 4 start: per-topic sign-off wording, and what's still open.**
+Builder said "move ahead" into Step 4 (port `CalibrationScreen.jsx` from the
+prototype + persistent filters, per part 11's handoff notes). Read the
+prototype's actual `CalibrationScreen.jsx` before touching anything, which
+surfaced a real conflict worth stopping for: the prototype has a **per-topic**
+"✓ Sign off this result" button (storing `signedOffBy`/`signedOffAt` per
+IRO) — almost certainly what the builder's earlier "we had that in the past"
+meant, not the round-level sign-off added in part 12. But that's exactly
+the feature CLAUDE.md retires (`calibrations.signed_off_by`/`signed_off_at`,
+replaced by `reviewed_with_owner` — "a tick + date, not an approval").
+Asked the builder directly rather than guessing; they chose: keep
+`reviewed_with_owner` exactly as-is (no schema change, no new invalidate-
+on-edit behaviour) but relabel it to read as a sign-off. Done in
+`CalibrationTab.jsx`: the badge, the confirmation panel and its "Unmark"
+button, and the call-to-action button now read "✓ Signed off" / "✓ Sign off
+this result" / "Revoke" (matching the prototype's own wording) instead of
+"Reviewed with owner" / "Unmark". No behaviour change — same
+`setReviewedWithOwner`/`reviewed_with_owner`/`reviewed_with_owner_at`
+underneath, still doesn't invalidate when the calibrated value is later
+edited (the prototype's version does auto-revoke on edit; deliberately not
+added — out of scope for a wording-only change, flag if the builder wants
+that behaviour too).
+
+Comparing the prototype's `CalibrationScreen.jsx` line-by-line against our
+`CalibrationTab.jsx` also showed the "port from the prototype" part of
+step 4 is mostly already done — this file was already built to the same
+accordion/owner/moderator/history/adjust/reset structure in an earlier
+session, just wired to real Supabase calls instead of the prototype's local
+`useState`. The one prototype feature still missing is its assessment-filter
+dropdown — but `App.jsx` already has an equivalent (the assessment picker
+above the Calibrate & Results tab, which persists correctly across the
+Results/Calibrate switch since it lives outside `CalibrateResultsTab`'s own
+state) — so that appears to be a non-issue, not an open gap.
+
+**Still open, deliberately not started this round:** the "persistent
+filters (ESRS topic, material only) across tabs" part of step 4. Results'
+Matrix already has E/S/G and material/not-material filters, but they're
+`useState` local to the verbatim-ported `ResultsScreen.jsx`, not shared
+with Calibration (which has no topic/material filter at all today).
+Sharing them means lifting that state out of a verbatim-ported prototype
+file into the `CalibrateResultsTab` wrapper — a real structural change to
+a file that's supposed to stay byte-identical to reference-prototype/
+except at the data-wiring boundary. Flagged for the builder rather than
+guessed at; see Notes for next session.
+
 **Part 12 (2026-09-21) — Results matrix colours, Calibration's EBITDA selector, a Calibrate sign-off section.**
 Builder sent an image of the live deploy preview's topic matrix as a colour
 reference, plus three more direct asks. All four done:
@@ -784,24 +829,37 @@ schema — every new field the flow needed already existed).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-after step 3, the builder sent a round of five direct fixes instead of an
-"OK, start step 4" — all five are done (part 11 above: silent-stakeholder
-sort, deletable topics in Review & customise, a Recipients/Participants
-quick-access shortcut from the overview table, a no-participants guard
-before kicking off a live session, and the Results tab rebuilt from the
-prototype). Stopped again for the builder's OK before continuing into step
-4 proper, per their standing instruction to stop after each round of work.
+builder said "move ahead" into step 4 (part 13). Done: `CalibrationTab.jsx`'s
+per-topic `reviewed_with_owner` control now reads as a sign-off ("✓ Signed
+off" / "✓ Sign off this result" / "Revoke"), matching the prototype's own
+wording, by explicit builder decision after a flagged conflict with
+CLAUDE.md's retired-columns rule (see part 13 above for the full
+reasoning — do not resurrect `calibrations.signed_off_by`/`signed_off_at`).
+Comparing line-by-line against reference-prototype/'s `CalibrationScreen.jsx`
+showed the rest of the "port from the prototype" work was already done in
+an earlier session (same accordion/owner/moderator/history/adjust/reset
+structure, just wired to real Supabase instead of local state) — nothing
+else to port there.
 
-Step 4, when approved: `ResultsScreen.jsx` (part 11) already covers the
-bar chart/heatmaps/topic matrix piece of the old step-4 scope. What's left:
-port `CalibrationTab.jsx` from reference-prototype/'s `CalibrationScreen.jsx`
-verbatim (still its session-1 shape today, not a prototype port), and add
-persistent filters (assessment source, ESRS topic, material only) shared
-across the Calibrate/Results tabs. The shared workspace header built in
-step 3 (`CalibrateResultsTab.jsx`'s `WorkspaceHeader`) stays as-is. Check
-PR #3's `claude/elegant-hypatia-vx86i7` branch and reference-prototype/'s
-own `CalibrationScreen.jsx` first, same pattern as steps 2–3. Known
-simplifications from step 3 still worth revisiting if there's time:
+**Open — needs a builder decision before starting:** the "persistent
+filters (ESRS topic, material only) across tabs" part of step 4. Today
+those filters live as `useState` inside `ResultsScreen.jsx` (a verbatim
+prototype port) and only affect its own Matrix chart; `CalibrationTab.jsx`
+has no topic/material filter at all. Sharing them means lifting that state
+out of the ported file into `CalibrateResultsTab.jsx` — real surgery on a
+file that's supposed to stay byte-identical to reference-prototype/ outside
+the data-wiring boundary, so flagged rather than guessed at. Options to put
+to the builder: (a) lift the filter state up and pass it into `ResultsScreen`
+as props (still "data wiring," but touches the ported file's internals more
+than any change so far), (b) add a *separate*, new filter bar in
+`CalibrateResultsTab.jsx` that scopes the `iros` array before it reaches
+either tab (no internal change to `ResultsScreen.jsx`, but then Results'
+own Matrix filters would double up with it), or (c) leave Results' filter
+local (matches the prototype) and only add a topic/material filter to
+Calibration, not truly "shared" but closing the actual functional gap
+(Calibration has zero filtering today).
+
+Known simplifications from step 3 still worth revisiting if there's time:
 E1–G1 expertise for participants added via Recipients (currently empty,
 editable after), Review Hub's stakeholder-chip-removal persistence.
 (Recipients re-invite dedup was resolved in part 11 as a side effect of

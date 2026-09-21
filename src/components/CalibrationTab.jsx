@@ -133,7 +133,7 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
           <span className="text-[12.5px] font-semibold" style={{ color: pillar.text }}>{iro.name}</span>
           {flagged && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5 border border-text-secondary text-text-secondary">Needs review</span>}
           {isCalibrated && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#4C6FFF' }}>Calibrated</span>}
-          {isReviewedWithOwner && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#5ED996' }}>✓ Reviewed with owner</span>}
+          {isReviewedWithOwner && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#5ED996' }}>✓ Signed off</span>}
         </div>
         <span className="text-[11px]" style={{ color: pillar.text }}>{fmt(calculated)} {isOpen ? '▲' : '▼'}</span>
       </button>
@@ -163,8 +163,8 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
 
           {isReviewedWithOwner && (
             <div className="rounded-lg px-3 py-2.5 mb-3.5 flex items-center justify-between" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
-              <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Reviewed with owner at {fmt(currentValue)} · {cal.reviewed_with_owner_at ? new Date(cal.reviewed_with_owner_at).toLocaleDateString() : ''}</p>
-              <button onClick={toggleReviewedWithOwner} disabled={busy || locked} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0 disabled:opacity-40">Unmark</button>
+              <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Signed off at {fmt(currentValue)} · {cal.reviewed_with_owner_at ? new Date(cal.reviewed_with_owner_at).toLocaleDateString() : ''}</p>
+              <button onClick={toggleReviewedWithOwner} disabled={busy || locked} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0 disabled:opacity-40">Revoke</button>
             </div>
           )}
 
@@ -227,7 +227,7 @@ function CalibrationRow({ iro, thresholds, cycleId, locked, isOpen, onToggle, on
                 <button onClick={resetToCalculated} disabled={locked || busy} className="text-[12px] text-text-secondary px-3 py-1.5 disabled:opacity-40">↺ Reset to calculated</button>
               )}
               {!isReviewedWithOwner && (
-                <button onClick={toggleReviewedWithOwner} disabled={locked || busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 ml-auto disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>✓ Reviewed with owner</button>
+                <button onClick={toggleReviewedWithOwner} disabled={locked || busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 ml-auto disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>✓ Sign off this result</button>
               )}
             </div>
           ) : (
