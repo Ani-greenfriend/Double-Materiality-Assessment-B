@@ -10,7 +10,64 @@ function slugify(s) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, value, onChange, onProceed, onBack }) {
+// Section 8, New assessment: "for the first assessment of a financial
+// year, financial year and the ESRS version, pre-selected from the year,
+// overridable; for later assessments of the same year these show
+// read-only." cycleForYear is the existing cycle for whatever financial
+// year is currently entered (null if none yet — meaning this would be that
+// year's first assessment).
+function esrsVersionForYear(year) {
+  return year >= 2027 ? 'esrs_2026' : 'esrs_2023_amended';
+}
+
+function FinancialYearCard({ meta, set, cycleForYear, onFinancialYearChange }) {
+  const readOnly = !!cycleForYear;
+  const esrsVersion = readOnly ? cycleForYear.esrsVersion : (meta.esrsVersion || esrsVersionForYear(meta.financialYear || new Date().getFullYear() + 1));
+
+  function handleYearChange(v) {
+    const year = Number(v);
+    set('financialYear', year);
+    onFinancialYearChange?.(year);
+  }
+
+  return (
+    <div className="bg-surface rounded-2xl p-5 mb-5">
+      <p className="text-[11px] text-text-secondary mb-1.5">WHICH FINANCIAL YEAR IS THIS ASSESSMENT FOR?</p>
+      <input
+        type="number"
+        value={meta.financialYear || ''}
+        onChange={(e) => handleYearChange(e.target.value)}
+        className="w-full bg-surface-2 rounded-lg px-3 py-2.5 text-[12.5px] outline-none mb-4"
+      />
+      <p className="text-[11px] text-text-secondary mb-1.5">ESRS VERSION</p>
+      {readOnly ? (
+        <p className="text-[12.5px] bg-surface-2 rounded-lg px-3 py-2.5">
+          {esrsVersion === 'esrs_2026' ? 'Simplified standards — ESRS 2026' : 'Current standards — ESRS 2023 as amended'}
+          <span className="text-[10.5px] text-text-secondary ml-2">— set by this year's first assessment</span>
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <label className="flex items-start gap-2.5 bg-surface-2 rounded-lg px-3 py-2.5 cursor-pointer">
+            <input type="radio" checked={esrsVersion === 'esrs_2023_amended'} onChange={() => set('esrsVersion', 'esrs_2023_amended')} className="mt-0.5" />
+            <span>
+              <span className="text-[12.5px] font-medium block">Current standards — ESRS 2023 as amended</span>
+              <span className="text-[10.5px] text-text-secondary">The ESRS in force today, with the 2023 amendments.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2.5 bg-surface-2 rounded-lg px-3 py-2.5 cursor-pointer">
+            <input type="radio" checked={esrsVersion === 'esrs_2026'} onChange={() => set('esrsVersion', 'esrs_2026')} className="mt-0.5" />
+            <span>
+              <span className="text-[12.5px] font-medium block">Simplified standards — ESRS 2026</span>
+              <span className="text-[10.5px] text-text-secondary">The upcoming simplified set, expected to apply from 2027 reporting.</span>
+            </span>
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, value, onChange, onProceed, onBack, cycleForYear, onFinancialYearChange }) {
   const isQual = mode === 'expert_live_session';
   const meta = value;
   const [slugTouched, setSlugTouched] = useState(Boolean(meta.slug));
@@ -24,7 +81,7 @@ export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, valu
   const effectiveSlug = slugTouched ? (meta.slug ?? '') : slugify(meta.name || 'survey');
   const slugValid = isQual || (/^[a-z0-9-]+$/.test(effectiveSlug) && effectiveSlug.length > 0);
   const dateValid = isQual || !meta.endDate || meta.endDate >= start;
-  const canProceed = (meta.name || '').trim().length > 0 && slugValid && dateValid;
+  const canProceed = (meta.name || '').trim().length > 0 && slugValid && dateValid && !!meta.financialYear;
 
   function copyLink() {
     navigator.clipboard?.writeText(`apus.app/survey/${effectiveSlug}`).catch(() => {});
@@ -54,6 +111,8 @@ export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, valu
         />
         <p className="text-[10.5px] text-text-secondary italic">Internal only — participants won't see this.</p>
       </div>
+
+      <FinancialYearCard meta={meta} set={set} cycleForYear={cycleForYear} onFinancialYearChange={onFinancialYearChange} />
 
       <div className="bg-surface rounded-2xl p-5 mb-5">
         <LogoUpload logo={meta.logo} onChange={(v) => set('logo', v)} />

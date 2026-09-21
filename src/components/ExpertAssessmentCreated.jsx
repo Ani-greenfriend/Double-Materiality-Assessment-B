@@ -1,4 +1,4 @@
-export default function ExpertAssessmentCreated({ mode, surveyName, link, startDate, endDate, alreadyRun, onCopy, onPreview, onKickOff, onGoToOverview }) {
+export default function ExpertAssessmentCreated({ mode, surveyName, invitations = [], startDate, endDate, alreadyRun, onCopyInvitation, onPreview, onKickOff, onGoToOverview }) {
   const isQuant = mode === 'expert_survey';
   return (
     <div className="max-w-xl mx-auto text-center">
@@ -30,14 +30,23 @@ export default function ExpertAssessmentCreated({ mode, surveyName, link, startD
             </div>
 
             <div className="text-left bg-surface-2 rounded-xl p-4 mb-6">
-              <p className="text-[10.5px] font-semibold text-text-secondary mb-1">PARTICIPANT LINK — OUTSIDE THIS PLATFORM</p>
+              <p className="text-[10.5px] font-semibold text-text-secondary mb-1">PERSONAL LINKS — OUTSIDE THIS PLATFORM</p>
               <p className="text-[11.5px] text-text-secondary mb-3">
-                This is the real link each participant opens on their own device to fill in the assessment — separately from this tool, no account needed.
+                Each invitee has their own link to fill in the assessment on their own device — separately from this tool, no account needed. Manage the full list any time from Recipients.
               </p>
-              <div className="flex items-center gap-2">
-                <input readOnly value={link} className="flex-1 bg-app-black rounded-lg px-3 py-2 text-[12px] outline-none" />
-                <button onClick={onCopy} className="text-[11.5px] border border-border-apus rounded-lg px-3 py-2 shrink-0">Copy</button>
-              </div>
+              {invitations.length === 0 ? (
+                <p className="text-[11.5px] text-text-secondary">No invitations yet.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {invitations.map((inv) => (
+                    <div key={inv.id} className="flex items-center gap-2">
+                      <span className="text-[11.5px] w-28 truncate shrink-0">{inv.name}</span>
+                      <input readOnly value={inv.link} className="flex-1 bg-app-black rounded-lg px-3 py-2 text-[12px] outline-none" />
+                      <button onClick={() => onCopyInvitation(inv)} className="text-[11.5px] border border-border-apus rounded-lg px-3 py-2 shrink-0">Copy</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
