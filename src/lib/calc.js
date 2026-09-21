@@ -5,6 +5,27 @@
 // live on the cycle, not the IRO. Field names on the `a` (assessment row)
 // objects are camelCase; src/lib/data.js maps the DB's snake_case
 // combined_ratings rows into this shape.
+
+// Anchor labels — restored verbatim from the prototype for the ported
+// Questionnaire.jsx/QuantAssessmentGrid.jsx/AssessmentReviewHub.jsx screens,
+// which display them as-is; purely descriptive text, unrelated to the v2.0
+// scoring changes below. FINANCIAL_LIKELIHOOD_LABELS is still exported (its
+// wording differs slightly from IMPACT_LIKELIHOOD_LABELS) for the same
+// reason — the retired `financialLikelihood` *criterion key* only affects
+// which DB column a value is stored under (see src/lib/data.js's mapping at
+// the assessment-flow wrapper boundary), not which label text a risk or
+// opportunity's likelihood axis shows.
+export const SCALE_LABELS = ['None', 'Minimal', 'Low', 'Medium', 'High', 'Very High'];
+export const SCOPE_LABELS = ['None', 'Local', 'Regional', 'National', 'Continental', 'Global'];
+export const IRREMEDIABILITY_LABELS = ['None', 'Easily remediable', 'Remediable with cost', 'Difficult', 'Very difficult', 'Irreversible'];
+export const IMPACT_LIKELIHOOD_LABELS = ['None', 'Very unlikely & long-term', 'Unlikely & long-term', 'Likely & mid-term', 'Probable & short-term', 'Certain or already occurred'];
+export const FINANCIAL_LIKELIHOOD_LABELS = ['None', 'Very unlikely & long-term', 'Unlikely & long-term', 'Likely & medium-term', 'Likely & short-term', 'Certain or already occurred'];
+export const RISK_MAGNITUDE_LABELS = ['None', 'Minimal', 'Noticeable impact', 'Impact on business', 'High financial loss', 'Threat to operations'];
+export const OPPORTUNITY_MAGNITUDE_LABELS = ['None', 'Minimal', 'Noticeable financial opportunity', 'Positive impact on business', 'High financial gains', 'Growth opportunity of significance'];
+// Backward-compat alias used by a couple of older call sites
+export const LIKELIHOOD_LABELS = IMPACT_LIKELIHOOD_LABELS;
+export const MAGNITUDE_LABELS = RISK_MAGNITUDE_LABELS;
+
 export const CALC_METHODOLOGY_VERSION = 'severity-avg-with-override-v2';
 
 export const MAGNITUDE_BANDS = [
