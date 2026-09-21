@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 7 (prototype-UI restore, step 2)
+**Last updated:** 2026-09-21 — session 2, part 8 (prototype-UI restore, step 2 verification)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -31,6 +31,27 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 8 (2026-09-21) — Step 2 verification against the v1.2 prototype reference doc.**
+Builder asked for confirmation, against docs/product-spec-v1.2-prototype-reference.md
+Section 8, that every prototype-era feature (not just v2.0 additions) is
+still present and unchanged in the ported `StakeholderModule.jsx`/
+`TopicsModule.jsx`. Verified every named item with `diff` against
+reference-prototype/ and targeted greps — all present, all untouched
+(the diffs show only additive changes, nothing removed or restyled): the
+three Stakeholders stat cards, two-step explainer, "+Both", generic pool,
+"N people"/"+ Add stakeholders" pills, "← Back to all groups", "Expert in"
+E/S/G + free-text, the contact table columns, the bottom banner; and
+Topics' mascot guidance, bulk upload panel + template download, E/S/G
+filter pills, the two sections, dependent sub-topic dropdown, reference
+codes, expand-to-edit-or-delete, sign-off badge, bottom banner. One real
+issue found and fixed: `TopicsModule.jsx`'s delete-topic confirmation said
+deleting a topic "will be removed from any assessment that references
+it" — wrong under v2.0, where `snapshotTopicsIntoIros` (data.js) copies a
+topic's fields into `iros` at assessment creation, so an assessment's IROs
+are independent of the library entry afterward. Corrected the confirm()
+text to say assessments keep their own copy and aren't affected. Verified
+`npm run build` clean after the fix.
+
 **Part 7 (2026-09-21) — prototype-UI restore, Step 2: Stakeholders full admin and Topics with CSV upload.**
 Copied `StakeholderModule.jsx` and `TopicsModule.jsx` (plus `lib/topics.js`
 and `lib/csv.js`) byte-for-byte from reference-prototype/ (confirmed with

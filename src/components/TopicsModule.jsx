@@ -158,7 +158,7 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
 
   function handleDelete(e) {
     e.stopPropagation();
-    if (window.confirm(`Delete "${topic.shortTitle}"? This cannot be undone, and it will be removed from any assessment that references it.`)) {
+    if (window.confirm(`Delete "${topic.shortTitle}"? This cannot be undone. Assessments that already snapshotted this topic keep their own copy and are not affected.`)) {
       onDelete(topic.id);
     }
   }
