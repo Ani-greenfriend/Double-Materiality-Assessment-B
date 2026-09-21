@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabaseConfigError } from './lib/supabaseClient';
 import {
   getSession, onAuthStateChange, signOut, fetchAssessments, fetchDashboard, fetchStakeholderMaster,
-  participationByGroup, fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot,
+  fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot, fetchClients,
 } from './lib/data';
 import Login from './components/Login';
 import ApusLogo from './components/ApusLogo';
@@ -52,6 +52,12 @@ export default function App() {
   const [assessmentsPerspective, setAssessmentsPerspective] = useState(null);
   const [crInitialSub, setCrInitialSub] = useState('results');
 
+  // Lifted out of StakeholdersTab so the sidebar nav click can reset it —
+  // otherwise clicking "Stakeholders" while inside a specific group's detail
+  // view would do nothing, since the tab is already selected.
+  const [openGroupId, setOpenGroupId] = useState(null);
+  const [clients, setClients] = useState([]);
+
   useEffect(() => {
     if (supabaseConfigError) {
       setSession(null);
@@ -80,12 +86,17 @@ export default function App() {
     reloadAssessments();
   }, [reloadCycles, reloadAssessments]);
 
+  const reloadStakeholderMaster = useCallback(() => {
+    fetchStakeholderMaster().then(setStakeholderMaster).catch((err) => setLoadError(err.message));
+  }, []);
+
   useEffect(() => {
     if (!session) return;
     reloadAssessments();
     reloadCycles();
-    fetchStakeholderMaster().then(setStakeholderMaster).catch((err) => setLoadError(err.message));
-  }, [session, reloadAssessments, reloadCycles]);
+    reloadStakeholderMaster();
+    fetchClients().then(setClients).catch((err) => setLoadError(err.message));
+  }, [session, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
 
   useEffect(() => {
     if (cycles.length && !cycles.some((c) => c.id === dashboardCycleId)) setDashboardCycleId(cycles[0].id);
@@ -132,7 +143,6 @@ export default function App() {
   }
   if (!session) return <Login />;
 
-  const participation = participationByGroup(iros);
   const currentAssessment = assessments.find((a) => a.id === assessmentId) ?? null;
   // Dashboard.jsx (ported verbatim) expects two things the DB doesn't give
   // as-is: (1) `!a.status` meaning "still running" — v2.0's status is always
@@ -155,7 +165,7 @@ export default function App() {
   // tab; Downloadable result opens the Report builder (not the old Results
   // tab — that behaviour moved under Report in v2.0).
   function onNavigate(step) {
-    if (step === 'stakeholders') setTab('stakeholders');
+    if (step === 'stakeholders') { setTab('stakeholders'); setOpenGroupId(null); }
     else if (step === 'topics') setTab('topics');
     else if (step === 'assessment-impact') { setAssessmentsPerspective('impact'); setTab('assessments'); }
     else if (step === 'assessment-financial') { setAssessmentsPerspective('financial'); setTab('assessments'); }
@@ -211,7 +221,7 @@ export default function App() {
           {TABS.map(({ key, label, Icon }) => (
             <button
               key={key}
-              onClick={() => setTab(key)}
+              onClick={() => { setTab(key); if (key === 'stakeholders') setOpenGroupId(null); }}
               title={label}
               className={`flex items-center gap-3 text-[13px] font-medium px-3 py-2.5 rounded-lg transition-colors ${tab === key ? 'bg-emerald text-app-black' : 'text-text-primary hover:bg-surface'}`}
             >
@@ -250,14 +260,22 @@ export default function App() {
                 iros={dashboardIros}
                 stakeholderMap={stakeholderMaster}
                 topicLibrary={dashboardTopicLibrary}
-                onGoToAssessment={() => setTab('stakeholders')}
+                onGoToAssessment={() => { setTab('stakeholders'); setOpenGroupId(null); }}
                 onNavigate={onNavigate}
               />
             </div>
           )}
           {tab === 'cycles' && <CyclesTab cycles={cycles} userId={session.user.id} stakeholderMaster={stakeholderMaster} onChanged={reloadCyclesAndAssessments} />}
-          {tab === 'stakeholders' && <StakeholdersTab master={stakeholderMaster} participation={participation} />}
-          {tab === 'topics' && <TopicsTab />}
+          {tab === 'stakeholders' && (
+            <StakeholdersTab
+              openGroupId={openGroupId} setOpenGroupId={setOpenGroupId}
+              onGoNext={() => setTab('topics')}
+              onChanged={reloadStakeholderMaster}
+            />
+          )}
+          {tab === 'topics' && (
+            <TopicsTab clients={clients} currentUserEmail={session.user.email} onGoNext={() => setTab('assessments')} />
+          )}
           {tab === 'assessments' && <AssessmentsTab perspective={assessmentsPerspective} />}
           {tab === 'report' && <ReportTab />}
           {tab === 'calibrate-results' && (

@@ -1,18 +1,45 @@
-import { TopicsIcon } from './icons';
+import { useState, useEffect } from 'react';
+import TopicsModule from './TopicsModule';
+import { loadTopicLibraryForModule, saveTopicLibraryForModule } from '../lib/data';
 
-export default function TopicsTab() {
+// Section 8: "Topics (master IRO library — independent of any single
+// cycle)". TopicsModule.jsx is the ported prototype screen — this wrapper
+// owns the Supabase-backed state it expects (same useState-shaped
+// topicLibrary/setTopicLibrary contract as Stakeholders) and supplies the
+// v2.0 context the component needs but the prototype never had: which ESRS
+// version is being edited, the client list (for the optional per-topic
+// client field) and the logged-in user (for sign-off).
+export default function TopicsTab({ clients, currentUserEmail, onGoNext }) {
+  const [topicLibrary, setTopicLibraryLocal] = useState([]);
+  const [esrsVersion, setEsrsVersion] = useState('esrs_2023_amended');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadTopicLibraryForModule()
+      .then(setTopicLibraryLocal)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function setTopicLibrary(updater) {
+    setTopicLibraryLocal((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveTopicLibraryForModule(next).catch((err) => setError(err.message));
+      return next;
+    });
+  }
+
+  if (loading) return <p className="text-[13px] text-text-secondary">Loading…</p>;
+
   return (
     <div>
-      <h2 className="text-[24px] font-bold flex items-center gap-3 mb-1">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #7C9BFF, #4C6FFF)' }}>
-          <TopicsIcon size={19} />
-        </span>
-        Topics
-      </h2>
-      <p className="text-[12px] text-text-secondary mb-5">The master IRO library — independent of any single cycle.</p>
-      <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">
-        Not built yet — the topic library admin (manual add, CSV upload, sign-off, filtered by ESRS version) is next in the build order.
-      </div>
+      {error && <p className="text-[12px] text-badge-amber mb-4">{error}</p>}
+      <TopicsModule
+        topicLibrary={topicLibrary} setTopicLibrary={setTopicLibrary} onGoNext={onGoNext}
+        esrsVersion={esrsVersion} setEsrsVersion={setEsrsVersion}
+        clients={clients} currentUserEmail={currentUserEmail}
+      />
     </div>
   );
 }

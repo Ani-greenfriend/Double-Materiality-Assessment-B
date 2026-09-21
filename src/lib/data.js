@@ -780,3 +780,240 @@ export async function setReviewedWithOwner({ iroId, cycleId, calibration, review
   if (error) throw new Error(`calibrations update failed: ${error.message}`);
   return calibrationId;
 }
+
+// ---------------------------------------------------------------------------
+// Stakeholders — StakeholderModule.jsx (ported verbatim from
+// reference-prototype/) — the Impact/Financial perspectives + generic pool.
+// Loaded/saved as one nested array, matching the shape the component already
+// expects: [{ id, name, perspectives, members: [{ id, name, title, company,
+// email, pillars, expertise }] }]. "title" in the component === "role" in the
+// DB (the prototype's own field naming, kept verbatim per the Hard Rule).
+//
+// Scoped to non-silent groups only (`type is null or != 'silent'`) — silent
+// presets and custom silent groups (below) are a deliberately separate scope
+// so this full-collection sync (which upserts everything present and deletes
+// everything absent) never touches or deletes them.
+// ---------------------------------------------------------------------------
+
+export async function loadStakeholderMapForModule() {
+  assertConfigured();
+  const { data: groups, error: gErr } = await supabase
+    .from('stakeholder_groups')
+    .select('id, name, perspectives, order')
+    .or('type.is.null,type.neq.silent')
+    .order('order', { ascending: true });
+  if (gErr) throw new Error(`stakeholder_groups query failed: ${gErr.message}`);
+
+  const groupIds = groups.map((g) => g.id);
+  let members = [];
+  if (groupIds.length) {
+    const { data, error: mErr } = await supabase
+      .from('stakeholder_members')
+      .select('id, group_id, name, role, company, email, pillars, expertise')
+      .in('group_id', groupIds);
+    if (mErr) throw new Error(`stakeholder_members query failed: ${mErr.message}`);
+    members = data;
+  }
+
+  return groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    perspectives: g.perspectives || [],
+    members: members
+      .filter((m) => m.group_id === g.id)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        title: m.role,
+        company: m.company || '',
+        email: m.email || '',
+        pillars: m.pillars || [],
+        expertise: m.expertise || '',
+      })),
+  }));
+}
+
+export async function saveStakeholderMapForModule(map) {
+  assertConfigured();
+  const groupRows = map.map((g, index) => ({ id: g.id, name: g.name, perspectives: g.perspectives, type: null, order: index }));
+  const memberRows = map.flatMap((g) =>
+    g.members.map((m) => ({
+      id: m.id,
+      group_id: g.id,
+      name: m.name,
+      role: m.title,
+      company: m.company || null,
+      email: m.email || null,
+      pillars: m.pillars || [],
+      expertise: m.expertise || null,
+    }))
+  );
+
+  if (groupRows.length) {
+    const { error } = await supabase.from('stakeholder_groups').upsert(groupRows);
+    if (error) throw new Error(`stakeholder_groups upsert failed: ${error.message}`);
+  }
+  if (memberRows.length) {
+    const { error } = await supabase.from('stakeholder_members').upsert(memberRows);
+    if (error) throw new Error(`stakeholder_members upsert failed: ${error.message}`);
+  }
+
+  const groupIds = groupRows.map((g) => g.id);
+  const delGroupsQuery = supabase.from('stakeholder_groups').delete().or('type.is.null,type.neq.silent');
+  const { error: delGroupsErr } = groupIds.length
+    ? await delGroupsQuery.not('id', 'in', `(${groupIds.join(',')})`)
+    : await delGroupsQuery;
+  if (delGroupsErr) throw new Error(`stakeholder_groups delete failed: ${delGroupsErr.message}`);
+
+  // Members are deleted by explicit id, scoped to groups in this map — never
+  // a blanket "not in" over the whole table, so a silent group's members
+  // (out of scope for this sync entirely) can never be caught by it.
+  if (groupIds.length) {
+    const { data: existingMembers, error: exErr } = await supabase
+      .from('stakeholder_members')
+      .select('id')
+      .in('group_id', groupIds);
+    if (exErr) throw new Error(`stakeholder_members query failed: ${exErr.message}`);
+    const keepIds = new Set(memberRows.map((m) => m.id));
+    const toDelete = existingMembers.filter((m) => !keepIds.has(m.id)).map((m) => m.id);
+    if (toDelete.length) {
+      const { error: delErr } = await supabase.from('stakeholder_members').delete().in('id', toDelete);
+      if (delErr) throw new Error(`stakeholder_members delete failed: ${delErr.message}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Silent stakeholders — a small, separate scope (the three presets plus any
+// custom groups the consultant adds). Simple CRUD rather than a full sync,
+// since this list is short and never drag-reordered like the module above.
+// ---------------------------------------------------------------------------
+
+const SILENT_PRESETS = ['Nature and ecosystems', 'Species and biodiversity', 'Future generations'];
+
+export async function loadSilentStakeholderGroups() {
+  assertConfigured();
+  const { data: groups, error: gErr } = await supabase
+    .from('stakeholder_groups')
+    .select('id, name, order')
+    .eq('type', 'silent')
+    .order('order', { ascending: true });
+  if (gErr) throw new Error(`stakeholder_groups query failed: ${gErr.message}`);
+
+  const groupIds = groups.map((g) => g.id);
+  let members = [];
+  if (groupIds.length) {
+    const { data, error: mErr } = await supabase
+      .from('stakeholder_members')
+      .select('id, group_id, name, role, company, email, pillars, expertise')
+      .in('group_id', groupIds);
+    if (mErr) throw new Error(`stakeholder_members query failed: ${mErr.message}`);
+    members = data;
+  }
+
+  return groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    isCustom: !SILENT_PRESETS.includes(g.name),
+    members: members
+      .filter((m) => m.group_id === g.id)
+      .map((m) => ({ id: m.id, name: m.name, role: m.role, company: m.company || '', email: m.email || '', pillars: m.pillars || [], expertise: m.expertise || '' })),
+  }));
+}
+
+export async function addSilentStakeholderGroup(name) {
+  assertConfigured();
+  const { error } = await supabase.from('stakeholder_groups').insert({ name, type: 'silent', perspectives: [] });
+  if (error) throw new Error(`stakeholder_groups insert failed: ${error.message}`);
+}
+
+export async function removeSilentStakeholderGroup(id) {
+  assertConfigured();
+  const { error } = await supabase.from('stakeholder_groups').delete().eq('id', id);
+  if (error) throw new Error(`stakeholder_groups delete failed: ${error.message}`);
+}
+
+export async function addSilentStakeholderMember({ groupId, name, role, company, email, pillars, expertise }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('stakeholder_members')
+    .insert({ group_id: groupId, name, role, company: company || null, email: email || null, pillars: pillars || [], expertise: expertise || null });
+  if (error) throw new Error(`stakeholder_members insert failed: ${error.message}`);
+}
+
+export async function removeSilentStakeholderMember(id) {
+  assertConfigured();
+  const { error } = await supabase.from('stakeholder_members').delete().eq('id', id);
+  if (error) throw new Error(`stakeholder_members delete failed: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Topics — TopicsModule.jsx (ported verbatim) — the master IRO library.
+// Unlike Stakeholders, topic_library has no protected subset (this tool owns
+// the whole table), so this is a plain full-collection sync over every row —
+// upserts everything present, deletes everything absent. JS field names
+// match the component exactly (iroType, esrsTopicId, subtopic — not
+// esrsSubtopic, shortTitle, valueChain, referenceCode, signedOffBy,
+// signedOffAt as a JS ms timestamp), plus the v2.0 additions esrsVersion,
+// timeHorizon, potentialHumanRightsImpact and clientId.
+// ---------------------------------------------------------------------------
+
+export async function loadTopicLibraryForModule() {
+  assertConfigured();
+  const { data: rows, error } = await supabase
+    .from('topic_library')
+    .select('id, esrs_version, iro_type, esrs_topic_id, esrs_subtopic, short_title, description, actual, value_chain, reference_code, signed_off_by, signed_off_at, time_horizon, potential_human_rights_impact, client_id, created_at')
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`topic_library query failed: ${error.message}`);
+
+  return rows.map((r) => ({
+    id: r.id,
+    esrsVersion: r.esrs_version,
+    iroType: r.iro_type,
+    esrsTopicId: r.esrs_topic_id,
+    subtopic: r.esrs_subtopic || '',
+    shortTitle: r.short_title,
+    description: r.description || '',
+    actual: r.actual,
+    valueChain: r.value_chain,
+    referenceCode: r.reference_code,
+    signedOffBy: r.signed_off_by,
+    signedOffAt: r.signed_off_at ? new Date(r.signed_off_at).getTime() : null,
+    timeHorizon: r.time_horizon || '',
+    potentialHumanRightsImpact: r.potential_human_rights_impact || false,
+    clientId: r.client_id,
+  }));
+}
+
+export async function saveTopicLibraryForModule(list) {
+  assertConfigured();
+  const rows = list.map((t) => ({
+    id: t.id,
+    esrs_version: t.esrsVersion,
+    iro_type: t.iroType,
+    esrs_topic_id: t.esrsTopicId,
+    esrs_subtopic: t.subtopic || null,
+    short_title: t.shortTitle,
+    description: t.description || null,
+    actual: t.actual,
+    value_chain: t.valueChain,
+    reference_code: t.referenceCode,
+    signed_off_by: t.signedOffBy || null,
+    signed_off_at: t.signedOffAt ? new Date(t.signedOffAt).toISOString() : null,
+    time_horizon: t.timeHorizon || null,
+    potential_human_rights_impact: t.potentialHumanRightsImpact || false,
+    client_id: t.clientId || null,
+  }));
+
+  if (rows.length) {
+    const { error } = await supabase.from('topic_library').upsert(rows);
+    if (error) throw new Error(`topic_library upsert failed: ${error.message}`);
+  }
+
+  const ids = rows.map((r) => r.id);
+  const delQuery = supabase.from('topic_library').delete();
+  const { error: delErr } = ids.length
+    ? await delQuery.not('id', 'in', `(${ids.join(',')})`)
+    : await delQuery.neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delErr) throw new Error(`topic_library delete failed: ${delErr.message}`);
+}

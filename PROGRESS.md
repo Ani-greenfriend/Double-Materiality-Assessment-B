@@ -5,11 +5,11 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 6 (prototype-UI restore, step 1)
+**Last updated:** 2026-09-21 — session 2, part 7 (prototype-UI restore, step 2)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
-**Direction change 2026-09-21:** the builder found the app's UI had drifted from reference-prototype/ into a simplified, rewritten shell (sessions 1–2, PR #4). CLAUDE.md now carries a Hard Rule — prototype screens are copied verbatim, never restyled/simplified/rewritten, changing only data wiring, the Expert survey/Expert live session wording, and explicit v2.0 spec changes. A full restore is underway on a **new branch** (`claude/restore-prototype-ui`, PR #5, draft until complete), built from `claude/wonderful-darwin-ztquwp`'s tip so the v2.0 data layer, calc.js, login, cycles, invitations, participants and draft deletion are all kept. The restore proceeds in 6 builder-approved steps, each pushed to the same PR (stable deploy preview URL) and reported with a before/after checklist, stopping for the builder's OK after each one. **Step 1 (Dashboard and shell) is done and pushed; awaiting OK before step 2.**
+**Direction change 2026-09-21:** the builder found the app's UI had drifted from reference-prototype/ into a simplified, rewritten shell (sessions 1–2, PR #4). CLAUDE.md now carries a Hard Rule — prototype screens are copied verbatim, never restyled/simplified/rewritten, changing only data wiring, the Expert survey/Expert live session wording, and explicit v2.0 spec changes. A full restore is underway on a **new branch** (`claude/restore-prototype-ui`, PR #5, draft until complete), built from `claude/wonderful-darwin-ztquwp`'s tip so the v2.0 data layer, calc.js, login, cycles, invitations, participants and draft deletion are all kept. The restore proceeds in 6 builder-approved steps, each pushed to the same PR (stable deploy preview URL) and reported with a before/after checklist, stopping for the builder's OK after each one. **Steps 1–2 (Dashboard/shell; Stakeholders + Topics) are done and pushed; awaiting OK before step 3.**
 
 Report format also changed mid-project: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4). `entered_by` (nullable, additive) on `submissions` is proposed for step 3's "Enter expert responses" screen — not yet applied, needs the builder's approval first per CLAUDE.md's Open Questions.
 
@@ -31,6 +31,69 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 7 (2026-09-21) — prototype-UI restore, Step 2: Stakeholders full admin and Topics with CSV upload.**
+Copied `StakeholderModule.jsx` and `TopicsModule.jsx` (plus `lib/topics.js`
+and `lib/csv.js`) byte-for-byte from reference-prototype/ (confirmed with
+`diff`); added `papaparse` as a real dependency (`lib/csv.js` needs it,
+wasn't in package.json). Sanctioned additions only, all category (c) unless
+noted:
+- **Stakeholders:** added the GDPR consent checkbox + Section 7 data
+  statement to `GroupDetail`'s add-contact form only (the "add stakeholder"
+  button is disabled until checked) — the one form Section 8 names. New
+  `SilentStakeholdersPanel.jsx` (not a prototype screen — the prototype has
+  no concept of "silent" stakeholders at all) renders alongside the ported
+  module: the three presets plus custom groups, guidance text, add/remove
+  member with the same consent pattern, add/remove a custom group. Both are
+  wired through a new `StakeholdersTab.jsx` wrapper that owns Supabase state
+  behind the exact same `useState`-shaped `stakeholderMap`/`setStakeholderMap`
+  contract the component already expects (mirrors PR #3's
+  `setStakeholderMap(updater)` pattern exactly, confirmed by reading its
+  `src/App.jsx`/`src/lib/data.js` directly). `openGroupId` is lifted into
+  App.jsx so the sidebar's "Stakeholders" click always resets to group
+  overview, matching the prototype's own behaviour.
+- **Topics:** added an ESRS version toggle (2023 amended / 2026) above the
+  ported module — new topics/CSV rows are tagged with whichever version is
+  selected, and `PerspectiveSection`'s filter gained an `esrsVersion` term
+  alongside its existing E/S/G one; a custom-subtopic text input appears
+  next to the dropdown only under ESRS 2026 (the list is non-binding there).
+  Added Time horizon (risk/opportunity only), Potential human rights impact
+  (negative impact only) and an optional Client select to `TopicForm`/
+  `TopicRow` — all three are named per-entry fields in spec Section 8 that
+  the prototype's form doesn't have. Sign-off now uses the logged-in user's
+  email instead of the prototype's free-text "YOUR NAME (real sign-in comes
+  later)" input — spec Section 8: "records the logged-in user and time".
+  Fixed one wording instance ("Set up an assessment (quantitative or
+  qualitative)" → "Set up an assessment") — the "no quantitative/qualitative
+  anywhere" rule applies to every prototype string, not just the mode-select
+  screen from Step 1's scope. `reference_code` is globally unique in the DB,
+  so the save function is a plain, unscoped full-collection sync across
+  every ESRS version (topic_library has no protected subset, unlike
+  Stakeholders) rather than scoped-by-version — avoids a same-prefix
+  collision between two versions' first topics.
+- **data.js:** `loadStakeholderMapForModule`/`saveStakeholderMapForModule`
+  (scoped to `type is null or != 'silent'`, both on load and on the sync's
+  delete step — silent groups are a deliberately separate scope this sync
+  can never reach; member deletes are by explicit id within the map's own
+  group ids, never a blanket table-wide "not in", so a silent group's
+  members can't be caught either), `loadSilentStakeholderGroups`/
+  `addSilentStakeholderGroup`/`removeSilentStakeholderGroup`/
+  `addSilentStakeholderMember`/`removeSilentStakeholderMember` (simple CRUD,
+  not a sync — this list is short and never reordered), and
+  `loadTopicLibraryForModule`/`saveTopicLibraryForModule` (unscoped full
+  sync, the whole table). No RLS changes needed — `stakeholder_groups`,
+  `stakeholder_members` and `topic_library` already carry fully-permissive
+  `authenticated` policies (verified live via `pg_policies` in an earlier
+  part this session). No migration — every DB column used already existed
+  (`type`, `esrs_version`, `time_horizon`, `potential_human_rights_impact`,
+  `client_id` were all added in the shared v2.0 migration, before this
+  session started).
+`npm run build` clean; `npx oxlint` on every changed file clean (one
+pre-existing `PerspectiveTag` unused-function warning in
+`StakeholderModule.jsx`, confirmed present in reference-prototype/'s own
+copy too — not introduced by this change). Not click-tested live — magic-link
+auth needs a real inbox, which this sandbox can't complete; same limitation
+noted in every earlier part.
+
 **Part 6 (2026-09-21) — prototype-UI restore, Step 1: Dashboard and shell.**
 Pulled the builder's latest CLAUDE.md/product-spec.md (v2.0 amended 4,
 matching what main already had — 3 doc-only commits) and the new
@@ -247,7 +310,7 @@ left the actual spec-derived rules alone). `npm run build` and
 ## Remaining work
 **Restore checklist (current plan — supersedes the item ordering below):**
 - [x] Step 1 — Dashboard and shell
-- [ ] Step 2 — Stakeholders full admin and Topics with CSV upload
+- [x] Step 2 — Stakeholders full admin and Topics with CSV upload
 - [ ] Step 3 — Assessment wizard (all steps incl. Created) + Assessment overview scoped to cycle; restyle Invitations/Participants
 - [ ] Step 4 — Review Hub + live session Intro/Questionnaire (justifications, Save and pause)
 - [ ] Step 5 — Calibrate & Results: prototype's Calibration/Results/heatmaps/Topic Matrix as tabs
@@ -404,24 +467,27 @@ except the proposed `entered_by` column).
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-stopped after Step 1 (Dashboard and shell) for the builder's OK, per their
-explicit instruction to stop after every step. Do not start Step 2 until
-that OK arrives.
+stopped after Step 2 (Stakeholders full admin + Topics with CSV upload) for
+the builder's OK, per their explicit instruction to stop after every step.
+Do not start Step 3 until that OK arrives.
 
-Step 2, when approved: Stakeholders full admin (copy
-`reference-prototype/src/components/StakeholderModule.jsx` verbatim — add/
-edit/remove groups and contacts, generic-pool suggestions, drag reordering
-if present) and Topics with CSV upload (copy `TopicsModule.jsx` +
-`CsvUploadStep.jsx` verbatim). Both replace stub/read-only screens
-(`StakeholdersTab.jsx`, `TopicsTab.jsx`) and are cycle-independent (Section
-8), so no cycle-selection wiring needed, unlike Step 1. Before starting:
-list the checklist of features Section 8 describes for these two screens
-(the builder's protocol — do this before writing any code); after
-building, mark each done/changed(with v2.0 reason)/missing, same as Step
-1's report. Remember the GDPR consent checkbox + data statement pattern
-already established in Invitations/Participants for the stakeholder
-contact add form (Section 7). Use docs/product-spec-v1.2-prototype-reference.md
-Section 8 for detailed screen behaviour where product-spec.md is silent.
+Step 3, when approved: the assessment wizard (all steps including Created)
+and the Assessment overview scoped to the selected cycle, then restyle
+Invitations and Participants to match the prototype's verbatim visual style
+(they're currently the session-1-era rewritten panels, not ported from
+reference-prototype/ — check `AssessmentModeSelect.jsx`,
+`PerspectiveSelect.jsx`, `SurveySetupStep.jsx`, `SetupReviewStep.jsx`,
+`RecipientsScreen.jsx`, `ExpertAssessmentCreated.jsx`, `AssessmentOverview.jsx`
+in reference-prototype/ and in PR #3's `claude/elegant-hypatia-vx86i7`
+branch, which already wired an earlier version of most of these against the
+v1.1 schema — same source worth reading first, same as Step 2 did for
+`StakeholderModule`/`TopicsModule`). Also where "Enter expert responses"
+(kept `QuantAssessmentGrid`, wired to an invitation) is expected to be
+built: the additive `entered_by` column on `submissions` still needs the
+builder's explicit approval before applying — ask before writing that
+migration, not after. Use
+docs/product-spec-v1.2-prototype-reference.md Section 8 for detailed screen
+behaviour where product-spec.md is silent, same as Step 2.
 
 Hard Rule to hold the line on throughout every remaining step: copy each
 prototype component verbatim (check with `diff` against
