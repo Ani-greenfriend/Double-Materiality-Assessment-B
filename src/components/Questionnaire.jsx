@@ -110,6 +110,7 @@ function initialValuesFor(iro) {
 export default function Questionnaire({
   perspectiveFilter, iros, onFinish, topicOverrides = {}, mandatory = false,
   initialRatings = {}, initialIndex = 0, onProgress, onExit,
+  justificationMode = 'per_criterion', initialJustifications = {}, participants = [],
 }) {
   const relevantIros = iros.filter((i) => {
     if (perspectiveFilter === 'impact') return hasImpactAxis(i.iroType);
@@ -128,13 +129,18 @@ export default function Questionnaire({
   const [sessionNotes, setSessionNotes] = useState({});
   const [touched, setTouched] = useState(() => new Set(initialRatings[relevantIros[startIndex]?.id] ? Object.keys(initialRatings[relevantIros[startIndex].id]) : []));
   const [finished, setFinished] = useState(false);
+  // Section 8, Live session: "a justification per criterion or per topic
+  // according to the assessment's justification mode (required once a
+  // value is entered)" — per_criterion: { [iroId]: { [criterionKey]: text } };
+  // per_topic: { [iroId]: text }.
+  const [justifications, setJustifications] = useState(initialJustifications);
 
   // Must run before any early return below — a hook can never be skipped
   // conditionally, or React throws "Rendered fewer hooks than expected".
   useEffect(() => {
-    onProgress?.(ratings, index);
+    onProgress?.(ratings, index, justifications);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratings, index]);
+  }, [ratings, index, justifications]);
 
   if (!relevantIros.length) {
     return <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No matching IROs in this upload for the selected scope.</div>;
@@ -182,7 +188,7 @@ export default function Questionnaire({
           </div>
 
           <button
-            onClick={() => onFinish(ratings, relevantIros, sessionNotes)}
+            onClick={() => onFinish(ratings, relevantIros, sessionNotes, justifications)}
             className="text-[13px] font-semibold rounded-xl px-6 py-3"
             style={{ background: '#4C6FFF', color: '#F5F6FA' }}
           >
@@ -202,9 +208,25 @@ export default function Questionnaire({
   const allTouched = criteria.every((c) => touched.has(c.key));
   const nextBlocked = mandatory && !allTouched;
 
+  // A justification is required once a criterion has been rated (per
+  // criterion) or once any criterion on the topic has been rated (per
+  // topic) — Section 8, Live session.
+  const topicJustification = justificationMode === 'per_topic' ? (justifications[iro.id] ?? '') : '';
+  const justificationBlocked = justificationMode === 'per_criterion'
+    ? criteria.some((c) => touched.has(c.key) && !(justifications[iro.id]?.[c.key] ?? '').trim())
+    : touched.size > 0 && !topicJustification.trim();
+
   function setVal(key, v) {
     setValues((prev) => ({ ...prev, [key]: v }));
     setTouched((prev) => new Set(prev).add(key));
+  }
+
+  function setCriterionJustification(key, text) {
+    setJustifications((prev) => ({ ...prev, [iro.id]: { ...prev[iro.id], [key]: text } }));
+  }
+
+  function setTopicJustification(text) {
+    setJustifications((prev) => ({ ...prev, [iro.id]: text }));
   }
 
   function loadTopic(i) {
@@ -256,13 +278,18 @@ export default function Questionnaire({
       <div className="h-1.5 bg-surface-2 rounded-full mb-2 overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: '#4C6FFF' }} />
       </div>
-      <div className="flex justify-between items-center mb-6">
+      <div className={`flex justify-between items-center ${participants.length > 0 ? 'mb-2' : 'mb-6'}`}>
         <p className="text-[11px] text-text-secondary">Topic {index + 1} of {relevantIros.length}</p>
         <div className="flex items-center gap-3">
           {index > 0 && <button onClick={prev} className="text-[11px] text-text-secondary">← Previous topic</button>}
-          {onExit && <button onClick={exitSession} className="text-[11px] text-text-secondary">Exit — resume later</button>}
+          {onExit && <button onClick={exitSession} className="text-[11px] text-text-secondary">Save and pause session</button>}
         </div>
       </div>
+      {participants.length > 0 && (
+        <p className="text-[10.5px] text-text-secondary mb-6">
+          <span className="opacity-70">Session participants:</span> {participants.map((p) => p.name).join(', ')}
+        </p>
+      )}
 
       <div
         className="bg-surface rounded-3xl p-8 relative"
@@ -285,8 +312,33 @@ export default function Questionnaire({
         </div>
 
         {criteria.map((c) => (
-          <CriterionSlider key={c.key} label={c.label} description={c.description} labels={c.labels} value={values[c.key]} onChange={(v) => setVal(c.key, v)} color={color} />
+          <div key={c.key}>
+            <CriterionSlider label={c.label} description={c.description} labels={c.labels} value={values[c.key]} onChange={(v) => setVal(c.key, v)} color={color} />
+            {justificationMode === 'per_criterion' && touched.has(c.key) && (
+              <div className="mb-6 -mt-4">
+                <p className="text-[10.5px] mb-1.5" style={{ color: '#8B8B98' }}>JUSTIFICATION FOR {c.label.toUpperCase()}</p>
+                <textarea
+                  value={justifications[iro.id]?.[c.key] ?? ''}
+                  onChange={(e) => setCriterionJustification(c.key, e.target.value)}
+                  placeholder="Why this rating?"
+                  className="w-full bg-surface-2 rounded-xl px-3.5 py-3 text-[12.5px] outline-none min-h-[60px]"
+                />
+              </div>
+            )}
+          </div>
         ))}
+
+        {justificationMode === 'per_topic' && touched.size > 0 && (
+          <div className="mb-6">
+            <p className="text-[10.5px] mb-1.5" style={{ color: '#8B8B98' }}>JUSTIFICATION FOR THIS TOPIC</p>
+            <textarea
+              value={topicJustification}
+              onChange={(e) => setTopicJustification(e.target.value)}
+              placeholder="Why these ratings?"
+              className="w-full bg-surface-2 rounded-xl px-3.5 py-3 text-[12.5px] outline-none min-h-[60px]"
+            />
+          </div>
+        )}
 
         <div className="mb-6">
           <p className="text-[10.5px] mb-1.5" style={{ color: '#8B8B98' }}>SESSION NOTES FOR THIS TOPIC (optional)</p>
@@ -299,8 +351,9 @@ export default function Questionnaire({
         </div>
 
         {nextBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please rate every criterion above before continuing.</p>}
-        <button onClick={next} disabled={nextBlocked} className="w-full text-[13.5px] font-semibold rounded-2xl py-3.5 mt-2 disabled:opacity-40 transition-transform hover:scale-[1.01]" style={{ background: '#4C6FFF', color: '#F5F6FA', boxShadow: '0 8px 24px -6px rgba(76,111,255,0.5)' }}>
-          {index + 1 < relevantIros.length ? 'Next topic →' : 'Finish assessment ✓'}
+        {!nextBlocked && justificationBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please add a justification for every rating above before continuing.</p>}
+        <button onClick={next} disabled={nextBlocked || justificationBlocked} className="w-full text-[13.5px] font-semibold rounded-2xl py-3.5 mt-2 disabled:opacity-40 transition-transform hover:scale-[1.01]" style={{ background: '#4C6FFF', color: '#F5F6FA', boxShadow: '0 8px 24px -6px rgba(76,111,255,0.5)' }}>
+          {index + 1 < relevantIros.length ? 'Next topic →' : 'Finish session ✓'}
         </button>
       </div>
     </div>

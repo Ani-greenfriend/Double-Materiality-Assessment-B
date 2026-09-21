@@ -980,3 +980,232 @@ export async function saveTopicLibraryForModule(list) {
     : await delQuery.neq('id', '00000000-0000-0000-0000-000000000000');
   if (delErr) throw new Error(`topic_library delete failed: ${delErr.message}`);
 }
+
+// ---------------------------------------------------------------------------
+// Assessment flow — ported prototype screens (AssessmentModeSelect,
+// PerspectiveSelect, SurveySetupStep, SetupReviewStep, RecipientsScreen,
+// ExpertAssessmentCreated, AssessmentReviewHub, IntroFlow, Questionnaire),
+// wired to the v2.0 schema. General patch for the draft-autosave pattern
+// these screens use (SetupReviewStep autosaves on every keystroke; the
+// wizard patches at each step's "proceed").
+// ---------------------------------------------------------------------------
+
+export async function updateAssessment(id, patch) {
+  assertConfigured();
+  const dbPatch = {};
+  if (patch.name !== undefined) dbPatch.name = patch.name;
+  if (patch.description !== undefined) dbPatch.description = patch.description || null;
+  if (patch.startDate !== undefined) dbPatch.start_date = patch.startDate || null;
+  if (patch.endDate !== undefined) dbPatch.end_date = patch.endDate || null;
+  if (patch.welcomeText !== undefined) dbPatch.welcome_text = patch.welcomeText || null;
+  if (patch.taskText !== undefined) dbPatch.task_text = patch.taskText || null;
+  if (patch.justificationMode !== undefined) dbPatch.justification_mode = patch.justificationMode;
+  if (patch.mandatory !== undefined) dbPatch.mandatory = patch.mandatory;
+  if (patch.status !== undefined) dbPatch.status = patch.status;
+  if (patch.slug !== undefined) dbPatch.slug = patch.slug;
+  if (Object.keys(dbPatch).length === 0) return;
+  const { error } = await supabase.from('assessments').update(dbPatch).eq('id', id);
+  if (error) throw new Error(`assessments update failed: ${error.message}`);
+}
+
+// Review Hub's per-assessment topic name/description overrides — write
+// straight onto the assessment's own iros snapshot (never the master
+// topic_library), matching how iros already carries its own name/description.
+export async function updateIroOverrides(overridesByIroId) {
+  assertConfigured();
+  const entries = Object.entries(overridesByIroId || {});
+  for (const [iroId, fields] of entries) {
+    const patch = {};
+    if (fields.name !== undefined) patch.name = fields.name;
+    if (fields.description !== undefined) patch.description = fields.description;
+    if (Object.keys(patch).length === 0) continue;
+    const { error } = await supabase.from('iros').update(patch).eq('id', iroId);
+    if (error) throw new Error(`iros update failed: ${error.message}`);
+  }
+}
+
+// ---- Recipients screen → real invitations/participants rows ----
+
+// invitations.email is NOT NULL, but the master stakeholder map treats
+// email as optional — anyone without one can't get a personal link, so
+// they're skipped here and handed back for the wizard to surface.
+export async function createInvitationsFromRecipients(assessmentId, people) {
+  assertConfigured();
+  const withEmail = people.filter((p) => p.email);
+  const skipped = people.filter((p) => !p.email).map((p) => p.name);
+  for (const p of withEmail) {
+    await createInvitation({ assessmentId, name: p.name, email: p.email, stakeholderGroupId: p.groupId ?? null });
+  }
+  return { created: withEmail.length, skipped };
+}
+
+export async function addParticipantsFromRecipients(liveSessionId, people, changedBy) {
+  assertConfigured();
+  for (const p of people) {
+    await addParticipant({ liveSessionId, name: p.name, expertise: p.expertise ?? [], representsGroupId: p.groupId ?? null, changedBy });
+  }
+}
+
+// ---- Live session ratings (Questionnaire.jsx) ----
+//
+// Questionnaire.jsx's own field naming (kept verbatim in the component) uses
+// `financialLikelihood` for a risk/opportunity's likelihood axis — the
+// prototype's pre-v2.0 name for what the DB now stores under the single,
+// unified `likelihood` criterion_key. That translation happens only here,
+// at the data boundary, never inside the component. Continuous slider
+// values (0-5, step 0.1) are rounded to the nearest integer, since
+// ratings.value is an integer column shared with Tool A.
+
+const CRITERION_KEYS = ['scale', 'scope', 'irreversibility', 'likelihood', 'magnitude', 'financialLikelihood'];
+function componentKeyToDbKey(k) {
+  return k === 'financialLikelihood' ? 'likelihood' : k;
+}
+
+function ratingRowsFromComponentState({ submissionId, assessmentId, ratings, justifications, justificationMode }) {
+  const rows = [];
+  for (const [iroId, r] of Object.entries(ratings || {})) {
+    for (const componentKey of CRITERION_KEYS) {
+      if (!(componentKey in r)) continue;
+      const raw = r[componentKey];
+      const justification = justificationMode === 'per_criterion' ? (justifications?.[iroId]?.[componentKey] || null) : null;
+      rows.push({
+        submission_id: submissionId,
+        assessment_id: assessmentId,
+        iro_id: iroId,
+        criterion_key: componentKeyToDbKey(componentKey),
+        value: raw === null || raw === undefined ? null : Math.round(raw),
+        justification,
+      });
+    }
+  }
+  return rows;
+}
+
+function topicJustificationRowsFromComponentState({ submissionId, ratings, justifications, justificationMode }) {
+  if (justificationMode !== 'per_topic') return [];
+  return Object.keys(ratings || {})
+    .filter((iroId) => (justifications?.[iroId] || '').trim())
+    .map((iroId) => ({ submission_id: submissionId, iro_id: iroId, justification: justifications[iroId] }));
+}
+
+// One live session has exactly one submission (the group's combined
+// ratings) — created as a draft on first save, marked submitted on Finish.
+async function ensureLiveSessionSubmission(assessmentId, liveSessionId) {
+  const { data: existing, error: selError } = await supabase
+    .from('submissions')
+    .select('id, status, current_topic_index')
+    .eq('live_session_id', liveSessionId)
+    .maybeSingle();
+  if (selError) throw new Error(`submissions query failed: ${selError.message}`);
+  if (existing) return existing;
+  const { data, error } = await supabase
+    .from('submissions')
+    .insert({ assessment_id: assessmentId, source: 'expert_live_session', live_session_id: liveSessionId, status: 'draft' })
+    .select('id, status, current_topic_index')
+    .single();
+  if (error) throw new Error(`submissions insert failed: ${error.message}`);
+  return data;
+}
+
+// Resume support for Questionnaire.jsx's initialRatings/initialIndex/
+// initialJustifications props — reads back whatever "Save and pause" wrote.
+export async function fetchLiveSessionProgress(assessmentId, liveSessionId) {
+  assertConfigured();
+  const submission = await ensureLiveSessionSubmission(assessmentId, liveSessionId);
+
+  const { data: ratingRows, error: rError } = await supabase
+    .from('ratings')
+    .select('iro_id, criterion_key, value, justification')
+    .eq('submission_id', submission.id);
+  if (rError) throw new Error(`ratings query failed: ${rError.message}`);
+
+  const { data: justRows, error: jError } = await supabase
+    .from('topic_justifications')
+    .select('iro_id, justification')
+    .eq('submission_id', submission.id);
+  if (jError) throw new Error(`topic_justifications query failed: ${jError.message}`);
+
+  // The DB's single `likelihood` key is ambiguous on the way back out —
+  // which component key it un-maps to depends on the IRO's type.
+  const { data: iroRows, error: iError } = await supabase.from('iros').select('id, iro_type, session_notes').eq('assessment_id', assessmentId);
+  if (iError) throw new Error(`iros query failed: ${iError.message}`);
+  const iroTypeById = new Map(iroRows.map((r) => [r.id, r.iro_type]));
+
+  const ratings = {};
+  const justifications = {};
+  for (const r of ratingRows) {
+    const isFinancialAxis = !['neg_impact', 'pos_impact'].includes(iroTypeById.get(r.iro_id));
+    const componentKey = isFinancialAxis && r.criterion_key === 'likelihood' ? 'financialLikelihood' : r.criterion_key;
+    ratings[r.iro_id] = ratings[r.iro_id] || {};
+    ratings[r.iro_id][componentKey] = r.value;
+    if (r.justification) {
+      justifications[r.iro_id] = justifications[r.iro_id] || {};
+      justifications[r.iro_id][componentKey] = r.justification;
+    }
+  }
+  for (const r of justRows) {
+    justifications[r.iro_id] = r.justification;
+  }
+  const sessionNotes = {};
+  for (const r of iroRows) {
+    if (r.session_notes) sessionNotes[r.id] = r.session_notes;
+  }
+
+  return {
+    submissionId: submission.id,
+    status: submission.status,
+    currentTopicIndex: submission.current_topic_index ?? 0,
+    ratings,
+    justifications,
+    sessionNotes,
+  };
+}
+
+// "Save and pause session" — writes ratings/justifications/session notes so
+// far and records the paused position; the submission stays draft, so
+// nothing here counts in results yet.
+export async function saveLiveSessionProgress({ assessmentId, submissionId, ratings, sessionNotes, justifications, justificationMode, currentTopicIndex }) {
+  assertConfigured();
+  const ratingRows = ratingRowsFromComponentState({ submissionId, assessmentId, ratings, justifications, justificationMode });
+  if (ratingRows.length) {
+    const { error } = await supabase.from('ratings').upsert(ratingRows, { onConflict: 'submission_id,iro_id,criterion_key' });
+    if (error) throw new Error(`ratings upsert failed: ${error.message}`);
+  }
+
+  const topicRows = topicJustificationRowsFromComponentState({ submissionId, ratings, justifications, justificationMode });
+  if (topicRows.length) {
+    const { error } = await supabase.from('topic_justifications').upsert(topicRows, { onConflict: 'submission_id,iro_id' });
+    if (error) throw new Error(`topic_justifications upsert failed: ${error.message}`);
+  }
+
+  for (const [iroId, note] of Object.entries(sessionNotes || {})) {
+    if (!note) continue;
+    const { error } = await supabase.from('iros').update({ session_notes: note }).eq('id', iroId);
+    if (error) throw new Error(`iros update failed: ${error.message}`);
+  }
+
+  const { error: subError } = await supabase
+    .from('submissions')
+    .update({ current_topic_index: currentTopicIndex ?? 0, last_saved_at: new Date().toISOString() })
+    .eq('id', submissionId);
+  if (subError) throw new Error(`submissions update failed: ${subError.message}`);
+}
+
+// "Finish session" — final write, then marks the submission submitted and
+// the live session finished. Only from here on do its ratings count in results.
+export async function finishLiveSession({ assessmentId, liveSessionId, submissionId, ratings, sessionNotes, justifications, justificationMode }) {
+  assertConfigured();
+  await saveLiveSessionProgress({ assessmentId, submissionId, ratings, sessionNotes, justifications, justificationMode, currentTopicIndex: 0 });
+
+  const { error: subError } = await supabase
+    .from('submissions')
+    .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+    .eq('id', submissionId);
+  if (subError) throw new Error(`submissions update failed: ${subError.message}`);
+
+  const { error: lsError } = await supabase
+    .from('live_sessions')
+    .update({ status: 'finished', finished_at: new Date().toISOString() })
+    .eq('id', liveSessionId);
+  if (lsError) throw new Error(`live_sessions update failed: ${lsError.message}`);
+}
