@@ -2,15 +2,21 @@
 // "Export Arm" design intent, CLAUDE.md Brand: white pages, dark text, one
 // accent colour (default #1F9A63) for headings and table header rows, a
 // standard sans-serif font, graphs as images on a white background, topics
-// and stakeholders in tables with repeating header rows, compact — no
-// decorative elements. Built entirely in the browser (jsPDF +
-// jspdf-autotable), matching CLAUDE.md's Export Arm ("no server function").
+// and stakeholders in tables with repeating header rows, professional and
+// compact. Built entirely in the browser (jsPDF + jspdf-autotable),
+// matching CLAUDE.md's Export Arm ("no server function").
 //
 // The console's own charts (ResultsScreen.jsx) are dark-themed and not
 // reusable here — the PDF needs light/white-background versions of the
 // same charts, so this file has its own small SVG chart builders using the
 // same underlying calc.js math (aggregateIro/aggregateTopic/
 // assessmentSeverity), not a second scoring implementation.
+//
+// Section 4 ("Topics and results") leads with a materiality determination
+// grouped by ESRS pillar and topic (E1–E5, S1–S4, G1) — every topic in
+// scope shown as Material, Not material or Not yet assessed — since a DMA
+// report's core deliverable is that determination, not just a flat IRO
+// table.
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -18,10 +24,16 @@ import { aggregateIro, aggregateTopic, hasImpactAxis, assessmentSeverity, CALC_M
 import { ESRS_TOPICS, TYPE_LABEL } from './topics';
 
 const ACCENT = '#1F9A63';
+const AMBER = '#B36B1F';
 const PRINT_PILLAR_COLOR = { E: '#1F9A63', S: '#C77F1A', G: '#3A5BD9' };
-const TEXT_DARK = '#1A1A1A';
-const TEXT_MUTED = '#6B6B6B';
-const GRID = '#DADADA';
+const PILLAR_NAME = { E: 'Environmental', S: 'Social', G: 'Governance' };
+const PILLAR_RANGE = { E: 'ESRS E1–E5', S: 'ESRS S1–S4', G: 'ESRS G1' };
+const TEXT_DARK = '#1F2328';
+const TEXT_MUTED = '#6B7280';
+const GRID = '#DDE1E4';
+const BORDER = '#D8DBDE';
+
+const MARGIN = 48;
 
 function pillarOf(topicId) {
   return ESRS_TOPICS.find((t) => t.id === topicId)?.cat ?? 'E';
@@ -31,23 +43,31 @@ function pillarOf(topicId) {
 // rasterized without ever being mounted in the DOM) ----
 
 function buildBarChartSvg(scoredIros) {
-  const W = 900, rowH = 26, top = 10, left = 260, right = 60;
-  const H = top + scoredIros.length * rowH + 10;
-  const maxScore = Math.max(5, ...scoredIros.map((x) => x.score ?? 0));
+  const W = 900, rowH = 24, top = 14, left = 260, right = 50, bottom = 34;
+  const H = top + scoredIros.length * rowH + bottom;
+  const maxScore = 5;
   const plotW = W - left - right;
+  const gx = (v) => left + (v / maxScore) * plotW;
+  const grid = [0, 1, 2, 3, 4, 5].map((v) => `
+    <line x1="${gx(v)}" y1="${top - 6}" x2="${gx(v)}" y2="${top + scoredIros.length * rowH}" stroke="${GRID}" stroke-width="0.5" />
+    <text x="${gx(v)}" y="${top + scoredIros.length * rowH + 16}" text-anchor="middle" font-size="9" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">${v}</text>
+  `).join('');
   const rows = scoredIros.map(({ iro, score }, i) => {
     const y = top + i * rowH;
     const color = PRINT_PILLAR_COLOR[pillarOf(iro.topic)];
     const w = score !== null ? (score / maxScore) * plotW : 0;
-    const label = iro.name.length > 42 ? iro.name.slice(0, 40) + '…' : iro.name;
+    const label = iro.name.length > 40 ? iro.name.slice(0, 38) + '…' : iro.name;
     return `
-      <text x="${left - 8}" y="${y + rowH / 2 + 4}" text-anchor="end" font-size="11" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${escapeXml(label)}</text>
-      <rect x="${left}" y="${y + 4}" width="${plotW}" height="${rowH - 10}" fill="#F2F2F2" />
-      <rect x="${left}" y="${y + 4}" width="${w}" height="${rowH - 10}" fill="${color}" />
-      <text x="${left + plotW + 6}" y="${y + rowH / 2 + 4}" font-size="11" font-weight="700" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${score !== null ? score.toFixed(1) : '–'}</text>
+      <text x="${left - 8}" y="${y + rowH / 2 + 4}" text-anchor="end" font-size="9.5" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${escapeXml(label)}</text>
+      <rect x="${left}" y="${y + 5}" width="${plotW}" height="${rowH - 11}" fill="#F2F3F4" />
+      <rect x="${left}" y="${y + 5}" width="${w}" height="${rowH - 11}" fill="${color}" />
+      <text x="${left + w + 6}" y="${y + rowH / 2 + 4}" font-size="9.5" font-weight="700" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${score !== null ? score.toFixed(1) : '–'}</text>
     `;
   }).join('');
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${rows}</svg>`, width: W, height: H };
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${grid}${rows}<text x="${left + plotW / 2}" y="${H - 4}" text-anchor="middle" font-size="9.5" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">Score (0–5)</text></svg>`,
+    width: W, height: H,
+  };
 }
 
 function buildHeatmapSvg({ points, xLabel, yLabel, title }) {
@@ -135,46 +155,180 @@ function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
+// Wraps and draws a paragraph, returning the y position after it — the
+// line count actually rendered (not a guessed fixed increment) drives the
+// cursor, so long lines never overlap the content that follows them.
+function paragraph(doc, text, x, y, maxWidth, opts = {}) {
+  const { fontSize = 10, color = TEXT_DARK, font = 'normal' } = opts;
+  const lineHeight = opts.lineHeight ?? fontSize * 1.4;
+  doc.setFontSize(fontSize);
+  doc.setTextColor(color);
+  doc.setFont(undefined, font);
+  const lines = doc.splitTextToSize(text, maxWidth);
+  doc.text(lines, x, y);
+  doc.setFont(undefined, 'normal');
+  return y + lines.length * lineHeight;
+}
+
+function subheading(doc, text, y) {
+  doc.setFontSize(11.5);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(TEXT_DARK);
+  doc.text(text, MARGIN, y);
+  doc.setFont(undefined, 'normal');
+  return y + 16;
+}
+
+// A small rounded label — used for Provisional/Final on the cover.
+function pill(doc, text, x, y, { fill, textColor, fontSize = 9 }) {
+  doc.setFontSize(fontSize);
+  doc.setFont(undefined, 'bold');
+  const padX = 9, h = fontSize + 8;
+  const w = doc.getTextWidth(text) + padX * 2;
+  doc.setFillColor(fill);
+  doc.roundedRect(x, y, w, h, h / 2, h / 2, 'F');
+  doc.setTextColor(textColor);
+  doc.text(text, x + w / 2, y + h / 2 + fontSize * 0.35, { align: 'center' });
+  doc.setFont(undefined, 'normal');
+  return w;
+}
+
+// A numbered circle beside a wrapped line of text — used for the process
+// steps in Section 2.
+function numberedStep(doc, n, text, x, y, maxWidth) {
+  const r = 9, cy = y + r;
+  doc.setFillColor(ACCENT);
+  doc.circle(x + r, cy, r, 'F');
+  doc.setFontSize(9.5);
+  doc.setTextColor('#FFFFFF');
+  doc.setFont(undefined, 'bold');
+  doc.text(String(n), x + r, cy + 3.2, { align: 'center' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(TEXT_DARK);
+  const textX = x + r * 2 + 12;
+  const lines = doc.splitTextToSize(text, maxWidth - r * 2 - 12);
+  const lineH = 13;
+  doc.text(lines, textX, cy + 3.2);
+  return y + Math.max(lines.length * lineH, r * 2) + 12;
+}
+
+// A bordered stat box — label, big value, small sub-line — used on the
+// cover and for the two thresholds in Section 2.
+function statCard(doc, x, y, w, h, { label, value, sub }) {
+  doc.setDrawColor(BORDER);
+  doc.setLineWidth(0.75);
+  doc.roundedRect(x, y, w, h, 4, 4, 'S');
+  doc.setFontSize(8);
+  doc.setTextColor(TEXT_MUTED);
+  doc.setFont(undefined, 'normal');
+  doc.text(label.toUpperCase(), x + 12, y + 16);
+  doc.setFontSize(19);
+  doc.setTextColor(TEXT_DARK);
+  doc.setFont(undefined, 'bold');
+  doc.text(value, x + 12, y + 37);
+  doc.setFont(undefined, 'normal');
+  if (sub) {
+    doc.setFontSize(8);
+    doc.setTextColor(TEXT_MUTED);
+    doc.text(sub, x + 12, y + h - 10);
+  }
+}
+
 function addFooter(doc, { cycleLabel, esrsLabel, provisional }) {
   const pageCount = doc.internal.getNumberOfPages();
   const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
   const dateStr = new Date().toLocaleDateString();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    doc.setDrawColor(GRID);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN, pageH - 34, pageW - MARGIN, pageH - 34);
     doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
     doc.setTextColor(TEXT_MUTED);
-    doc.text(`${cycleLabel} · ${esrsLabel} · ${dateStr}`, 36, pageH - 20);
-    doc.text(`${provisional ? 'PROVISIONAL' : 'FINAL'} · Page ${i} of ${pageCount}`, pageW - 36, pageH - 20, { align: 'right' });
+    doc.text(`${cycleLabel} · ${esrsLabel} · ${dateStr}`, MARGIN, pageH - 20);
+    doc.text(`${provisional ? 'PROVISIONAL' : 'FINAL'} · Page ${i} of ${pageCount}`, pageW - MARGIN, pageH - 20, { align: 'right' });
   }
 }
 
-function sectionHeading(doc, text, y) {
-  doc.setFontSize(16);
-  doc.setTextColor(ACCENT);
-  doc.setFont(undefined, 'bold');
-  doc.text(text, 36, y);
-  doc.setFont(undefined, 'normal');
-  doc.setTextColor(TEXT_DARK);
-  return y + 20;
+// A slim running header (report title, client name, a rule) on every page
+// except the cover, which already carries its own large title.
+function addRunningHeader(doc, { clientName }) {
+  const pageCount = doc.internal.getNumberOfPages();
+  const pageW = doc.internal.pageSize.getWidth();
+  for (let i = 2; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(TEXT_MUTED);
+    doc.text('DOUBLE MATERIALITY ASSESSMENT', MARGIN, 28);
+    doc.text(clientName, pageW - MARGIN, 28, { align: 'right' });
+    doc.setDrawColor(GRID);
+    doc.setLineWidth(0.5);
+    doc.line(MARGIN, 34, pageW - MARGIN, 34);
+  }
 }
 
-function ensureSpace(doc, y, needed, topMargin = 50) {
+function sectionHeading(doc, num, text, y) {
+  doc.setFontSize(9);
+  doc.setTextColor(TEXT_MUTED);
+  doc.setFont(undefined, 'bold');
+  doc.text(`SECTION ${num}`, MARGIN, y);
+  doc.setFontSize(18);
+  doc.setTextColor(TEXT_DARK);
+  doc.text(text, MARGIN, y + 22);
+  doc.setDrawColor(ACCENT);
+  doc.setLineWidth(2);
+  doc.line(MARGIN, y + 30, MARGIN + 40, y + 30);
+  doc.setLineWidth(0.5);
+  doc.setFont(undefined, 'normal');
+  return y + 52;
+}
+
+// A colored tick mark + pillar name + ESRS range — groups the materiality
+// determination table and the topic matrix by Environmental/Social/
+// Governance.
+function pillarHeading(doc, pillarKey, y) {
+  const color = PRINT_PILLAR_COLOR[pillarKey];
+  doc.setFillColor(color);
+  doc.rect(MARGIN, y - 10, 4, 14, 'F');
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(TEXT_DARK);
+  doc.text(PILLAR_NAME[pillarKey], MARGIN + 10, y);
+  const nameW = doc.getTextWidth(PILLAR_NAME[pillarKey]);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(TEXT_MUTED);
+  doc.text(PILLAR_RANGE[pillarKey], MARGIN + 10 + nameW + 8, y);
+  return y + 14;
+}
+
+function ensureSpace(doc, y, needed, topMargin = MARGIN + 20) {
   const pageH = doc.internal.pageSize.getHeight();
-  if (y + needed > pageH - 40) {
+  if (y + needed > pageH - 46) {
     doc.addPage();
     return topMargin;
   }
   return y;
 }
 
-const TABLE_THEME = { headStyles: { fillColor: ACCENT, textColor: '#FFFFFF', fontStyle: 'bold' }, styles: { fontSize: 8.5, textColor: TEXT_DARK, cellPadding: 4 }, margin: { left: 36, right: 36 } };
+const TABLE_THEME = {
+  headStyles: { fillColor: ACCENT, textColor: '#FFFFFF', fontStyle: 'bold', fontSize: 8.5 },
+  styles: { fontSize: 8.5, textColor: TEXT_DARK, cellPadding: 5, lineColor: GRID, lineWidth: 0.5 },
+  alternateRowStyles: { fillColor: '#FAFAFB' },
+  margin: { left: MARGIN, right: MARGIN },
+};
 
 export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdChanges, liveSessions, liveParticipants, submissions, ratings, consultantLogoUrl }, { sections, options }) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
+  const contentW = pageW - MARGIN * 2;
   const isFinal = iros.length > 0 && iros.every((iro) => iro.calibration?.reviewed_with_owner);
   const esrsLabel = cycle.esrsVersion === 'esrs_2026' ? 'ESRS 2026' : 'ESRS 2023 as amended';
-  const cycleLabel = `${cycle.clientName ?? 'Client'} — FY${cycle.financialYear}`;
+  const clientName = cycle.clientName ?? 'Client';
+  const cycleLabel = `${clientName} — FY${cycle.financialYear}`;
   const showPersonalData = !!options.personalData;
 
   const thresholds = { impact: cycle.impactThreshold ?? 3.0, financial: cycle.financialThreshold ?? 3.0 };
@@ -184,6 +338,23 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
     if (options.scope && options.scope !== 'all') return iro.topic === options.scope;
     return true;
   });
+
+  // The ESRS topic-level determination, in canonical E1..G1 order — the
+  // basis for both the cover summary and Section 4's pillar-grouped
+  // breakdown. A topic with no submitted ratings yet is called out
+  // separately from one that was assessed and found not material.
+  const topicOrder = ESRS_TOPICS.map((t) => t.id);
+  const presentTopicIds = [...new Set(scopedIros.map((i) => i.topic))]
+    .sort((a, b) => topicOrder.indexOf(a) - topicOrder.indexOf(b));
+  const topicSummaries = presentTopicIds.map((id) => {
+    const meta = ESRS_TOPICS.find((t) => t.id === id);
+    const ta = aggregateTopic(id, scopedIros, thresholds);
+    const hasData = ta.iros.some((i) => i.assessments.length > 0);
+    const status = !hasData ? 'not_assessed' : ta.isMaterial ? 'material' : 'not_material';
+    return { id, meta, ta, status };
+  });
+  const materialCount = topicSummaries.filter((t) => t.status === 'material').length;
+  const assessedCount = topicSummaries.filter((t) => t.status !== 'not_assessed').length;
 
   // Each section starts on its own fresh page, but only the page break
   // between two INCLUDED sections — never a trailing blank page after
@@ -197,62 +368,88 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
   // ---- 1. Cover and basis ----
   if (sections.cover) {
     startSection();
-    let y = 90;
-    if (consultantLogoUrl) { try { doc.addImage(consultantLogoUrl, 'PNG', 36, 36, 60, 60); } catch { /* skip if not loadable */ } }
-    if (cycle.clientLogoUrl) { try { doc.addImage(cycle.clientLogoUrl, 'PNG', pageW - 96, 36, 60, 60); } catch { /* skip if not loadable */ } }
-    doc.setFontSize(24);
+    doc.setFillColor(ACCENT);
+    doc.rect(0, 0, pageW, 6, 'F');
+
+    let y = 74;
+    if (consultantLogoUrl) { try { doc.addImage(consultantLogoUrl, 'PNG', MARGIN, y, 54, 54); } catch { /* skip if not loadable */ } }
+    if (cycle.clientLogoUrl) { try { doc.addImage(cycle.clientLogoUrl, 'PNG', pageW - MARGIN - 54, y, 54, 54); } catch { /* skip if not loadable */ } }
+    y += 86;
+
+    doc.setFontSize(10);
     doc.setTextColor(ACCENT);
     doc.setFont(undefined, 'bold');
-    doc.text('Double Materiality Assessment', 36, y);
-    doc.setFont(undefined, 'normal');
+    doc.text('DOUBLE MATERIALITY ASSESSMENT', MARGIN, y);
+    y += 30;
+    doc.setFontSize(27);
     doc.setTextColor(TEXT_DARK);
-    y += 34;
+    doc.text(clientName, MARGIN, y);
+    y += 20;
+    doc.setFont(undefined, 'normal');
     doc.setFontSize(13);
-    doc.text(cycle.clientName ?? 'Client', 36, y); y += 20;
-    doc.setFontSize(11);
     doc.setTextColor(TEXT_MUTED);
-    doc.text(`Financial year ${cycle.financialYear}`, 36, y); y += 16;
-    doc.text(esrsLabel, 36, y); y += 16;
-    doc.text(`Report generated ${new Date().toLocaleDateString()}`, 36, y); y += 24;
-    doc.setFontSize(12);
-    doc.setTextColor(isFinal ? ACCENT : '#B36B1F');
-    doc.setFont(undefined, 'bold');
-    doc.text(isFinal ? 'FINAL' : 'PROVISIONAL', 36, y);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(TEXT_DARK);
+    doc.text(`Financial year ${cycle.financialYear} · ${esrsLabel}`, MARGIN, y);
+    y += 38;
+
+    const statW = (contentW - 24) / 3;
+    statCard(doc, MARGIN, y, statW, 64, { label: 'ESRS topics in scope', value: String(topicSummaries.length), sub: `${assessedCount} assessed` });
+    statCard(doc, MARGIN + statW + 12, y, statW, 64, { label: 'Material topics', value: String(materialCount), sub: `of ${topicSummaries.length}` });
+    const signedOff = iros.filter((i) => i.calibration?.reviewed_with_owner).length;
+    statCard(doc, MARGIN + (statW + 12) * 2, y, statW, 64, { label: 'Report status', value: isFinal ? 'Final' : 'Provisional', sub: isFinal ? 'All IROs signed off' : `${signedOff} of ${iros.length} IROs signed off` });
+    y += 92;
+
+    const summary = `This report presents the outcome of the Double Materiality Assessment performed for ${clientName}, covering financial year ${cycle.financialYear} under ${esrsLabel}. Sustainability topics were assessed from both an impact and a financial materiality perspective, in line with the ESRS double materiality principle. Of the ${topicSummaries.length} ESRS topic${topicSummaries.length === 1 ? '' : 's'} in scope, ${materialCount} ${materialCount === 1 ? 'was' : 'were'} determined material, based on an impact materiality threshold of ${fmt(thresholds.impact)} and a financial materiality threshold of ${fmt(thresholds.financial)} (both on a 0–5 scale). Section 4 sets out the determination for every topic; Section 2 explains the process and scoring method behind it.`;
+    y = paragraph(doc, summary, MARGIN, y, contentW, { fontSize: 10.5, lineHeight: 15 });
+    y += 26;
+
+    pill(doc, isFinal ? 'FINAL' : 'PROVISIONAL', MARGIN, y, { fill: isFinal ? ACCENT : AMBER, textColor: '#FFFFFF', fontSize: 10 });
+    doc.setFontSize(9);
+    doc.setTextColor(TEXT_MUTED);
+    doc.text(`Report generated ${new Date().toLocaleDateString()}`, MARGIN, y + 32);
   }
 
   // ---- 2. Process and methodology ----
   if (sections.methodology) {
     startSection();
-    let y = sectionHeading(doc, 'Process and methodology', 50);
-    doc.setFontSize(10);
+    let y = sectionHeading(doc, '02', 'Process and methodology', MARGIN + 4);
+    y = paragraph(doc, `This assessment applied the double materiality principle set out in the European Sustainability Reporting Standards (ESRS): a sustainability topic is material if it is material from an impact perspective, a financial perspective, or both. Impact materiality considers the severity and likelihood of ${clientName}'s actual and potential impacts on people and the environment; financial materiality considers the risks and opportunities that could reasonably affect ${clientName}'s development, performance and position. The process below was followed to reach the determination set out in Section 4.`, MARGIN, y, contentW, { fontSize: 10, lineHeight: 14 });
+    y += 18;
+
     const steps = [
-      'Stakeholders identified across impact and financial perspectives, including silent stakeholders represented by a proxy.',
-      'Topics assessed as Impacts, Risks or Opportunities, drawn from the ESRS topic library.',
-      'Experts rate each applicable topic — by questionnaire (Expert survey) or a facilitated group session (Expert live session).',
-      'Results are calculated, then calibrated where the group agrees an adjustment is needed, with every change logged.',
-      'Each IRO is signed off individually once the group confirms the result.',
+      'Stakeholders were identified across the impact and financial perspectives, including silent stakeholders (nature, biodiversity and future generations) represented by a proxy.',
+      'Sustainability topics were scoped from the ESRS topic library and broken down into impacts, risks and opportunities (IROs).',
+      'Experts rated each applicable IRO — by written questionnaire (Expert survey) or in a facilitated group session (Expert live session).',
+      'Scores were calculated from the ratings, then calibrated where the group agreed an adjustment was needed; every calibration change was logged.',
+      'Each IRO was signed off individually once its result was confirmed with the topic owner.',
     ];
-    steps.forEach((s, i) => { doc.text(`${i + 1}. ${s}`, 36, y, { maxWidth: pageW - 72 }); y += 26; });
-    y += 8;
-    doc.setFont(undefined, 'bold'); doc.text('Scoring', 36, y); doc.setFont(undefined, 'normal'); y += 16;
-    doc.setFontSize(9);
-    [
-      'Severity (negative impact) = average of Scale, Scope and Irremediability — or 5 if any one of them is 5.',
-      'Severity (positive impact) = average of Scale and Scope.',
-      'Impact score = severity × (likelihood ÷ 5). Financial score = magnitude × (likelihood ÷ 5), no override.',
-      `Methodology version: ${CALC_METHODOLOGY_VERSION}.`,
-    ].forEach((s) => { doc.text(s, 36, y, { maxWidth: pageW - 72 }); y += 14; });
-    y += 14;
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'bold'); doc.text('Thresholds', 36, y); doc.setFont(undefined, 'normal'); y += 16;
-    doc.setFontSize(9);
-    doc.text(`Impact threshold: ${fmt(thresholds.impact)} (baseline ${fmt(cycle.baselineImpactThreshold)})`, 36, y); y += 14;
-    doc.text(`Financial threshold: ${fmt(thresholds.financial)} (baseline ${fmt(cycle.baselineFinancialThreshold)})`, 36, y); y += 20;
+    steps.forEach((s, i) => { y = numberedStep(doc, i + 1, s, MARGIN, y, contentW); });
+    y += 6;
+
+    y = ensureSpace(doc, y, 150);
+    y = subheading(doc, 'Scoring method', y);
+    const scoringLines = [
+      'Severity of a negative impact is the average of Scale, Scope and Irremediability — or 5 if any one of the three is rated 5 (a precautionary override).',
+      'Severity of a positive impact is the average of Scale and Scope, with no override.',
+      'Impact score = severity × (likelihood ÷ 5). Financial score = magnitude × (financial likelihood ÷ 5), with no override.',
+      'A topic is material if any one of its underlying impacts, risks or opportunities meets or exceeds the applicable threshold.',
+    ];
+    scoringLines.forEach((s) => { y = paragraph(doc, `–  ${s}`, MARGIN, y, contentW, { fontSize: 9.5, lineHeight: 13 }); y += 4; });
+    y += 4;
+    doc.setFontSize(8.5);
+    doc.setTextColor(TEXT_MUTED);
+    doc.text(`Methodology version: ${CALC_METHODOLOGY_VERSION}`, MARGIN, y);
+    y += 26;
+
+    y = ensureSpace(doc, y, 100);
+    y = subheading(doc, 'Materiality thresholds', y);
+    const halfW = (contentW - 12) / 2;
+    statCard(doc, MARGIN, y, halfW, 56, { label: 'Impact threshold', value: `${fmt(thresholds.impact)} / 5`, sub: `Baseline ${fmt(cycle.baselineImpactThreshold)}` });
+    statCard(doc, MARGIN + halfW + 12, y, halfW, 56, { label: 'Financial threshold', value: `${fmt(thresholds.financial)} / 5`, sub: `Baseline ${fmt(cycle.baselineFinancialThreshold)}` });
+    y += 76;
 
     if (thresholdChanges.length) {
-      y = ensureSpace(doc, y, 40);
+      y = ensureSpace(doc, y, 50);
+      y = subheading(doc, 'Threshold change log', y);
       autoTable(doc, {
         startY: y,
         head: [['Axis', 'Old value', 'New value', 'Reason', 'Changed at']],
@@ -261,14 +458,18 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       });
       y = doc.lastAutoTable.finalY + 20;
     }
-    if (options.notes?.methodology) { doc.setFontSize(9); doc.text(options.notes.methodology, 36, y, { maxWidth: pageW - 72 }); }
+    if (options.notes?.methodology) paragraph(doc, options.notes.methodology, MARGIN, ensureSpace(doc, y, 30), contentW, { fontSize: 9, color: TEXT_MUTED, font: 'italic' });
   }
 
   // ---- 3. Engagement ----
   if (sections.engagement) {
     startSection();
-    let y = sectionHeading(doc, 'Engagement', 50);
+    let y = sectionHeading(doc, '03', 'Engagement', MARGIN + 4);
+    y = paragraph(doc, 'Engagement covered stakeholders across both the impact and financial perspectives, including proxies for stakeholders who cannot represent themselves directly (nature and ecosystems, species and biodiversity, future generations).', MARGIN, y, contentW, { fontSize: 10, lineHeight: 14 });
+    y += 12;
+
     if (groupEngagement.length) {
+      y = subheading(doc, 'Stakeholder groups', y);
       autoTable(doc, {
         startY: y,
         head: [['Stakeholder group', 'Type', 'Invited', 'Responded']],
@@ -281,7 +482,7 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
     const silentSubmissions = submissions.filter((s) => s.basis_for_representation);
     if (silentSubmissions.length) {
       y = ensureSpace(doc, y, 60);
-      doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text('Silent stakeholder representation', 36, y); doc.setFont(undefined, 'normal'); y += 16;
+      y = subheading(doc, 'Silent stakeholder representation', y);
       autoTable(doc, {
         startY: y,
         head: [['Stakeholder group', 'Basis for representation']],
@@ -292,7 +493,7 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
     }
 
     y = ensureSpace(doc, y, 60);
-    doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text('Respondents by field of expertise', 36, y); doc.setFont(undefined, 'normal'); y += 16;
+    y = subheading(doc, 'Respondents by field of expertise', y);
     const expertiseCounts = {};
     submissions.forEach((s) => (s.expertise_topics || []).forEach((t) => { expertiseCounts[t] = (expertiseCounts[t] ?? 0) + 1; }));
     const expertiseRows = Object.entries(expertiseCounts);
@@ -300,12 +501,12 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       autoTable(doc, { startY: y, head: [['Field of expertise', 'Respondents']], body: expertiseRows, ...TABLE_THEME });
       y = doc.lastAutoTable.finalY + 20;
     } else {
-      doc.setFontSize(9); doc.text('No expertise declared yet.', 36, y); y += 20;
+      doc.setFontSize(9); doc.setTextColor(TEXT_MUTED); doc.text('No expertise declared yet.', MARGIN, y); y += 20;
     }
 
     if (liveSessions.length) {
       y = ensureSpace(doc, y, 60);
-      doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text('Live session dates and attendees', 36, y); doc.setFont(undefined, 'normal'); y += 16;
+      y = subheading(doc, 'Live session dates and attendees', y);
       autoTable(doc, {
         startY: y,
         head: [['Facilitator', 'Started', 'Finished', 'Attendees']],
@@ -317,23 +518,60 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
         ]),
         ...TABLE_THEME,
       });
+      y = doc.lastAutoTable.finalY + 20;
     }
-    if (options.notes?.engagement) { const ny = ensureSpace(doc, (doc.lastAutoTable?.finalY ?? y) + 20, 20); doc.setFontSize(9); doc.text(options.notes.engagement, 36, ny, { maxWidth: pageW - 72 }); }
+    if (options.notes?.engagement) paragraph(doc, options.notes.engagement, MARGIN, ensureSpace(doc, y, 30), contentW, { fontSize: 9, color: TEXT_MUTED, font: 'italic' });
   }
 
   // ---- 4. Topics and results ----
   if (sections.results) {
     startSection();
-    let y = sectionHeading(doc, 'Topics and results', 50);
+    let y = sectionHeading(doc, '04', 'Topics and results', MARGIN + 4);
+    y = paragraph(doc, `Of the ${topicSummaries.length} ESRS topic${topicSummaries.length === 1 ? '' : 's'} in scope for ${clientName}, ${assessedCount} ${assessedCount === 1 ? 'has' : 'have'} been assessed to date and ${materialCount} ${materialCount === 1 ? 'is' : 'are'} determined material under the process described in Section 2. A topic is Material if any of its underlying impacts, risks or opportunities (IROs) scored at or above the applicable threshold — impact ≥ ${fmt(thresholds.impact)}, financial ≥ ${fmt(thresholds.financial)}. "Not yet assessed" means no rating has been submitted for that topic yet.`, MARGIN, y, contentW, { fontSize: 10, lineHeight: 14 });
+    y += 10;
+
+    y = ensureSpace(doc, y, 40);
+    y = subheading(doc, 'Materiality determination by ESRS topic', y);
+
+    ['E', 'S', 'G'].forEach((pk) => {
+      const rows = topicSummaries.filter((t) => t.meta?.cat === pk);
+      if (!rows.length) return;
+      y = ensureSpace(doc, y, 80);
+      y = pillarHeading(doc, pk, y + 8) + 6;
+      autoTable(doc, {
+        startY: y,
+        head: [['Topic', 'Impact score', 'Financial score', 'Determination']],
+        body: rows.map((t) => {
+          const impactIroCount = t.ta.iros.filter((i) => hasImpactAxis(i.iroType)).length;
+          const financialIroCount = t.ta.iros.filter((i) => !hasImpactAxis(i.iroType)).length;
+          const label = t.status === 'material' ? 'Material' : t.status === 'not_material' ? 'Not material' : 'Not yet assessed';
+          return [t.meta?.name ?? t.id, impactIroCount ? fmt(t.ta.impactScore) : '—', financialIroCount ? fmt(t.ta.financialScore) : '—', label];
+        }),
+        columnStyles: { 1: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center', fontStyle: 'bold' } },
+        didParseCell: (data) => {
+          if (data.section === 'body' && data.column.index === 3) {
+            if (data.cell.raw === 'Material') data.cell.styles.textColor = ACCENT;
+            else if (data.cell.raw === 'Not yet assessed') { data.cell.styles.textColor = TEXT_MUTED; data.cell.styles.fontStyle = 'italic'; }
+            else data.cell.styles.textColor = TEXT_MUTED;
+          }
+        },
+        ...TABLE_THEME,
+      });
+      y = doc.lastAutoTable.finalY + 18;
+    });
+
+    y = ensureSpace(doc, y, 40);
+    y = subheading(doc, 'Visual analysis', y);
 
     const scoredIros = scopedIros
       .map((iro) => ({ iro, score: aggregateIro(iro, thresholds).effectiveValue }))
       .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
     const bar = buildBarChartSvg(scoredIros);
     const barPng = await svgStringToPngDataUrl(bar.svg, bar.width, bar.height);
-    const barW = pageW - 72, barH = (bar.height / bar.width) * barW;
-    y = ensureSpace(doc, y, barH + 20);
-    doc.addImage(barPng.dataUrl, 'PNG', 36, y, barW, barH);
+    const barW = contentW, barH = (bar.height / bar.width) * barW;
+    y = ensureSpace(doc, y, barH + 30);
+    doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(TEXT_DARK); doc.text('IRO scores', MARGIN, y); doc.setFont(undefined, 'normal'); y += 10;
+    doc.addImage(barPng.dataUrl, 'PNG', MARGIN, y, barW, barH);
     y += barH + 24;
 
     const impactPoints = scopedIros.filter((iro) => hasImpactAxis(iro.iroType) && iro.assessments.length).map((iro) => {
@@ -351,47 +589,54 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       return { topic: iro.topic, x: avg(likelihoods), y: avg(magnitudes) };
     }).filter(Boolean);
 
-    y = ensureSpace(doc, y, 200);
+    y = ensureSpace(doc, y, 220);
+    doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(TEXT_DARK); doc.text('Impact and financial heatmaps', MARGIN, y); doc.setFont(undefined, 'normal'); y += 10;
     const impactHm = buildHeatmapSvg({ points: impactPoints, xLabel: 'Likelihood', yLabel: 'Severity', title: 'Impact heatmap' });
     const financialHm = buildHeatmapSvg({ points: financialPoints, xLabel: 'Likelihood', yLabel: 'Magnitude', title: 'Financial heatmap' });
     const [impactPng, financialPng] = await Promise.all([
       svgStringToPngDataUrl(impactHm.svg, impactHm.width, impactHm.height),
       svgStringToPngDataUrl(financialHm.svg, financialHm.width, financialHm.height),
     ]);
-    const halfW = (pageW - 72 - 16) / 2, hmH = (impactHm.height / impactHm.width) * halfW;
-    doc.addImage(impactPng.dataUrl, 'PNG', 36, y, halfW, hmH);
-    doc.addImage(financialPng.dataUrl, 'PNG', 36 + halfW + 16, y, halfW, hmH);
+    const halfW2 = (contentW - 16) / 2, hmH = (impactHm.height / impactHm.width) * halfW2;
+    doc.addImage(impactPng.dataUrl, 'PNG', MARGIN, y, halfW2, hmH);
+    doc.addImage(financialPng.dataUrl, 'PNG', MARGIN + halfW2 + 16, y, halfW2, hmH);
     y += hmH + 24;
 
-    const topicIds = [...new Set(scopedIros.map((i) => i.topic))];
-    const topics = topicIds.map((id) => ({ id, ta: aggregateTopic(id, scopedIros, thresholds), meta: ESRS_TOPICS.find((t) => t.id === id) })).filter((t) => t.ta && t.ta.iros.some((i) => i.assessments.length > 0));
-    y = ensureSpace(doc, y, 260);
-    const matrix = buildMatrixSvg({ topics, impactTh: thresholds.impact, financialTh: thresholds.financial });
-    const matrixPng = await svgStringToPngDataUrl(matrix.svg, matrix.width, matrix.height);
-    const matrixW = pageW - 72, matrixH = (matrix.height / matrix.width) * matrixW;
-    doc.addImage(matrixPng.dataUrl, 'PNG', 36, y, matrixW, matrixH);
-    y += matrixH + 20;
+    const matrixTopics = presentTopicIds
+      .map((id) => ({ id, ta: aggregateTopic(id, scopedIros, thresholds), meta: ESRS_TOPICS.find((t) => t.id === id) }))
+      .filter((t) => t.ta && t.ta.iros.some((i) => i.assessments.length > 0));
+    if (matrixTopics.length) {
+      y = ensureSpace(doc, y, 280);
+      doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(TEXT_DARK); doc.text('Topic matrix', MARGIN, y); doc.setFont(undefined, 'normal'); y += 10;
+      const matrix = buildMatrixSvg({ topics: matrixTopics, impactTh: thresholds.impact, financialTh: thresholds.financial });
+      const matrixPng = await svgStringToPngDataUrl(matrix.svg, matrix.width, matrix.height);
+      const matrixW = contentW, matrixH = (matrix.height / matrix.width) * matrixW;
+      doc.addImage(matrixPng.dataUrl, 'PNG', MARGIN, y, matrixW, matrixH);
+    }
 
     doc.addPage();
-    y = 50;
+    y = MARGIN + 14;
+    y = subheading(doc, 'Full IRO listing', y);
+    const sortedIros = [...scopedIros].sort((a, b) => topicOrder.indexOf(a.topic) - topicOrder.indexOf(b.topic) || a.name.localeCompare(b.name));
     autoTable(doc, {
       startY: y,
       head: [['ESRS Topic', 'IRO', 'Type', 'Survey', 'Session', 'Calibrated/Calculated', 'Material']],
-      body: scopedIros.map((iro) => {
+      body: sortedIros.map((iro) => {
         const agg = aggregateIro(iro, thresholds);
         return [iro.topic, iro.name, TYPE_LABEL[iro.iroType], fmt(agg.surveyAvg), fmt(agg.sessionAvg), fmt(agg.effectiveValue), agg.isMaterial ? 'Yes' : 'No'];
       }),
       ...TABLE_THEME,
     });
-    if (options.notes?.results) { const ny = ensureSpace(doc, doc.lastAutoTable.finalY + 20, 20); doc.setFontSize(9); doc.text(options.notes.results, 36, ny, { maxWidth: pageW - 72 }); }
+    if (options.notes?.results) paragraph(doc, options.notes.results, MARGIN, ensureSpace(doc, doc.lastAutoTable.finalY + 20, 30), contentW, { fontSize: 9, color: TEXT_MUTED, font: 'italic' });
   }
 
   // ---- 5. Calibration and sign-off ----
   if (sections.calibration) {
     startSection();
-    let y = sectionHeading(doc, 'Calibration and sign-off', 50);
+    let y = sectionHeading(doc, '05', 'Calibration and sign-off', MARGIN + 4);
     const allHistory = scopedIros.flatMap((iro) => (iro.calibrationHistory || []).map((h) => ({ iro, h })));
     if (allHistory.length) {
+      y = subheading(doc, 'Calibration history', y);
       autoTable(doc, {
         startY: y,
         head: [['IRO', 'Old value', 'New value', 'Reason', 'Changed by', 'Changed at']],
@@ -400,11 +645,11 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       });
       y = doc.lastAutoTable.finalY + 20;
     } else {
-      doc.setFontSize(9); doc.text('No calibration changes recorded.', 36, y); y += 20;
+      doc.setFontSize(9); doc.setTextColor(TEXT_MUTED); doc.text('No calibration changes recorded.', MARGIN, y); y += 24;
     }
 
     y = ensureSpace(doc, y, 60);
-    doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text('Sign-off', 36, y); doc.setFont(undefined, 'normal'); y += 16;
+    y = subheading(doc, 'Sign-off', y);
     autoTable(doc, {
       startY: y,
       head: [['IRO', 'Signed off', 'Date']],
@@ -415,19 +660,19 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
 
     if (options.approvalDetails?.approverName) {
       y = ensureSpace(doc, y, 60);
-      doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text('Approval details', 36, y); doc.setFont(undefined, 'normal'); y += 16;
-      doc.setFontSize(9);
-      doc.text(`Approver: ${options.approvalDetails.approverName}${options.approvalDetails.approverRole ? ` (${options.approvalDetails.approverRole})` : ''}`, 36, y); y += 14;
-      if (options.approvalDetails.approvalDate) { doc.text(`Date: ${options.approvalDetails.approvalDate}`, 36, y); y += 14; }
-      if (options.approvalDetails.minutesReference) { doc.text(`Minutes reference: ${options.approvalDetails.minutesReference}`, 36, y); y += 14; }
+      y = subheading(doc, 'Approval details', y);
+      doc.setFontSize(9); doc.setTextColor(TEXT_DARK);
+      doc.text(`Approver: ${options.approvalDetails.approverName}${options.approvalDetails.approverRole ? ` (${options.approvalDetails.approverRole})` : ''}`, MARGIN, y); y += 14;
+      if (options.approvalDetails.approvalDate) { doc.text(`Date: ${options.approvalDetails.approvalDate}`, MARGIN, y); y += 14; }
+      if (options.approvalDetails.minutesReference) { doc.text(`Minutes reference: ${options.approvalDetails.minutesReference}`, MARGIN, y); y += 14; }
     }
-    if (options.notes?.calibration) { const ny = ensureSpace(doc, y + 10, 20); doc.setFontSize(9); doc.text(options.notes.calibration, 36, ny, { maxWidth: pageW - 72 }); }
+    if (options.notes?.calibration) paragraph(doc, options.notes.calibration, MARGIN, ensureSpace(doc, y + 6, 30), contentW, { fontSize: 9, color: TEXT_MUTED, font: 'italic' });
   }
 
   // ---- 6. Appendix ----
   if (sections.appendix) {
     startSection();
-    let y = sectionHeading(doc, 'Appendix', 50);
+    let y = sectionHeading(doc, '06', 'Appendix', MARGIN + 4);
     const includeJustifications = options.justifications !== 'excluded';
     if (includeJustifications) {
       const flaggedTopicIds = options.justifications === 'flagged'
@@ -436,6 +681,7 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       const ratingRows = ratings.filter((r) => r.justification && (!flaggedTopicIds || flaggedTopicIds.has(r.iro_id)));
       const iroNameById = new Map(iros.map((i) => [i.id, i.name]));
       if (ratingRows.length) {
+        y = subheading(doc, 'Ratings and justifications', y);
         autoTable(doc, {
           startY: y,
           head: [['IRO', 'Source', 'Stakeholder group', 'Criterion', 'Value', 'Justification']],
@@ -448,17 +694,19 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
     const comments = submissions.filter((s) => s.overall_comment);
     if (comments.length) {
       y = ensureSpace(doc, y, 60);
-      doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text("Experts' overall comments", 36, y); doc.setFont(undefined, 'normal'); y += 16;
+      y = subheading(doc, "Experts' overall comments", y);
       autoTable(doc, {
         startY: y,
         head: [['Source', 'Stakeholder group', 'Comment']],
         body: comments.map((s) => [TYPE_LABEL[s.source] ?? s.source, s.stakeholder_group ?? '—', s.overall_comment]),
         ...TABLE_THEME,
       });
+      y = doc.lastAutoTable.finalY + 20;
     }
-    if (options.notes?.appendix) { const ny = ensureSpace(doc, (doc.lastAutoTable?.finalY ?? y) + 20, 20); doc.setFontSize(9); doc.text(options.notes.appendix, 36, ny, { maxWidth: pageW - 72 }); }
+    if (options.notes?.appendix) paragraph(doc, options.notes.appendix, MARGIN, ensureSpace(doc, y, 30), contentW, { fontSize: 9, color: TEXT_MUTED, font: 'italic' });
   }
 
+  addRunningHeader(doc, { clientName });
   addFooter(doc, { cycleLabel, esrsLabel, provisional: !isFinal });
   return doc;
 }

@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-22 — session 2, part 18 (Step 5: the PDF report builder — 4-step wizard, jsPDF + jspdf-autotable, 6 sections, print-themed SVG charts)
+**Last updated:** 2026-09-22 — session 2, part 19 (Report PDF redesign: professional layout, ESRS-topic-grouped materiality determination)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,66 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 19 (2026-09-22) — Report PDF redesign: professional layout, ESRS materiality determination.**
+
+The builder tried the generated PDF on the deploy preview and called it
+"horrible" — a fair read of the first cut: no visual hierarchy beyond a
+plain accent heading, a real line-wrap bug (paragraphs that wrapped to
+more than one line used a fixed y-advance regardless of actual line
+count, so long text could overlap the content below it), and Section 4
+("Topics and results") was a flat IRO table and three charts with no
+explicit per-topic material/not-material call-out — the thing a DMA
+report actually exists to deliver. Rewrote `reportPdf.js`'s layout
+end to end rather than patching it:
+
+- **New layout primitives**, replacing ad hoc `doc.text`/`doc.setFont`
+  calls scattered through each section: `paragraph()` (wraps via
+  `splitTextToSize` and advances the cursor by the *actual* rendered
+  line count — fixes the overlap bug at the root, not per call site),
+  `subheading()`, `pill()` (rounded badge — Provisional/Final on the
+  cover), `numberedStep()` (a filled accent circle + wrapped text — the
+  process steps in Section 2), `statCard()` (bordered label/value/sub
+  box — the cover's three headline stats and the two threshold cards),
+  `sectionHeading()` (a "SECTION 0N" kicker + a short accent rule, not
+  just colored text), `pillarHeading()` (a colored tick mark + pillar
+  name + ESRS range, e.g. "Environmental · ESRS E1–E5"), and a slim
+  `addRunningHeader()` on every page but the cover (report title left,
+  client name right, a rule) alongside the existing footer.
+- **Cover** rebuilt: a thin accent bar at the very top, logos, a real
+  title block, three stat cards (ESRS topics in scope, material topics,
+  report status), and a short prose paragraph stating the outcome in
+  numbers before the reader reaches Section 4 — not just a label list.
+- **Section 4 ("Topics and results") now leads with a "Materiality
+  determination by ESRS topic"** table, grouped by pillar (Environmental
+  ESRS E1–E5, Social S1–S4, Governance G1) in canonical ESRS order, one
+  row per topic: impact score, financial score, and a determination of
+  **Material** / **Not material** / **Not yet assessed** (a topic with
+  no submitted ratings is called out separately from one that was
+  assessed and found not material — not silently dropped). This reuses
+  `calc.js`'s existing `aggregateTopic`, not a new scoring path. The
+  bar chart, heatmaps and topic matrix (kept, with the bar chart gaining
+  a 0–5 axis grid) and the full IRO table now sit after this as
+  supporting detail, under "Visual analysis" and "Full IRO listing"
+  subheadings.
+- Every other section (methodology, engagement, calibration, appendix)
+  restyled with the same heading/subheading/paragraph primitives for a
+  single consistent look, and free-text notes now render in italic
+  muted text so they read as annotations rather than body copy.
+
+**Verification, given this sandbox still has no browser to open a real
+PDF:** `npm run build` and `npx oxlint src` clean (same three
+pre-existing warnings only). Beyond that — this round specifically —
+ran a Node smoke test exercising every new jsPDF primitive this rewrite
+introduces and hadn't been used before (`roundedRect` fill and
+stroke-only, `circle` fill, hex colors passed to `setFillColor`/
+`setDrawColor`, `splitTextToSize` + array-based `doc.text`,
+`getTextWidth`, `autoTable`'s `didParseCell` cell-styling hook, and
+`italic` as a `setFont` style) — all confirmed working before relying on
+them throughout the rewrite. Visual correctness (exact spacing, whether
+it now reads as genuinely "professional and compact" per spec) still
+needs a human look at a generated PDF — the one thing this sandbox
+cannot do itself.
+
 **Part 18 (2026-09-22) — Step 5: the PDF report builder.**
 
 New dependencies: `jspdf` and `jspdf-autotable` (v5 functional API —
@@ -1185,14 +1245,18 @@ schema — every new field the flow needed already existed).
 - New assessment's draft auto-save (row created and kept in sync from the moment mode+perspective are picked, so abandoning the wizard never loses progress — Section 8) is not implemented; the assessment row is created once, at the end of the wizard
 - Before inviting any real expert, the builder gets a short GDPR check (business reason: audit traceability; anonymise-on-request approach). Does not block the build
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
-- **New 2026-09-22 (part 18):** the PDF report builder (`ReportTab.jsx`/
-  `reportPdf.js`) has not been human-verified — this sandbox has no
+- **Updated 2026-09-22 (part 19):** the PDF report builder (`ReportTab.jsx`/
+  `reportPdf.js`) still has not been human-verified — this sandbox has no
   browser to click through the wizard or open a generated PDF. Build/lint
-  are clean, `jspdf-autotable`'s functional API and `doc.output('bloburl')`
-  were confirmed via Node smoke tests, and the module was manually
-  reviewed for scoping/logic bugs, but actual visual output (page layout,
-  chart legibility, spacing) needs a real look on the deploy preview
-  before treating this as production-ready.
+  are clean; `jspdf-autotable`'s functional API, `doc.output('bloburl')`,
+  and (added this round, after the builder reported the first version
+  looked unpolished) every new drawing primitive the redesign introduced
+  (`roundedRect`, `circle`, hex `setFillColor`/`setDrawColor`,
+  `splitTextToSize`, `getTextWidth`, `autoTable`'s `didParseCell`, italic
+  `setFont`) were all confirmed working via Node smoke tests. Actual
+  visual output (exact spacing, chart legibility, whether it now reads as
+  "professional and compact") still needs a real look on the deploy
+  preview.
 - **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
 
 ## Notes for next session
