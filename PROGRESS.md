@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-21 — session 2, part 17 (Group B: no more stage banner/global sign-off in Calibrate & Results, per-IRO sign-off restored, thresholds editable any time, the new Responses screen built, a real anon-access security hole caught and fixed on the new views)
+**Last updated:** 2026-09-22 — session 2, part 18 (Step 5: the PDF report builder — 4-step wizard, jsPDF + jspdf-autotable, 6 sections, print-themed SVG charts)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -17,16 +17,17 @@
 - The assessment flow must be the prototype's full flow, copied verbatim — Assessment overview, Mode select, Perspective select, General info, Review & customise, Recipients, Created, Review Hub, Intro flow and Questionnaire — with only six sanctioned differences (Section 8, "New assessment"): wording; Recipients keeps the prototype's layout; a justification-mode setting in Review & customise; financial year + ESRS version in General info; Created's link card shows a list of personal links; justification/Save and pause/who-answered in the live-session grid.
 - **Dropped by the builder mid-step:** "Enter expert responses" (`QuantAssessmentGrid`) — every expert response comes through Tool A's survey, no exceptions; Tool B is consultant/owner setup only. No `entered_by` column needed; the earlier open question about it is moot.
 
-**Steps 1–3 are done and pushed (PR #5).** After step 3 the builder gave a
+**Steps 1–5 are done and pushed (PR #5).** After step 3 the builder gave a
 round of direct fixes (part 11, below) rather than an "OK, start step 4" —
 worked through all five, including a full rebuild of the Results tab
 (bar chart, impact/financial heatmaps, topic matrix — the prototype's
-`ResultsScreen.jsx`, verbatim except one requested cut). That rebuild
-covers most of what step 4 was scoped to do for Results/Matrix; what's
-still open for step 4 is `CalibrationTab.jsx` (still its session-1 shape,
-not the prototype's `CalibrationScreen.jsx`) and persistent filters shared
-across the Calibrate/Results tabs. Step 5 (PDF report builder) is
-untouched. Awaiting the builder's OK before starting either.
+`ResultsScreen.jsx`, verbatim except one requested cut). Step 4
+(`CalibrationTab.jsx` parity, shared filters) and the builder's
+preview-review fixes (Groups A/B, parts 16-17) followed, then **Step 5 —
+the PDF report builder** (part 18): a 4-step wizard (`ReportTab.jsx`) and
+a new `reportPdf.js` module (jsPDF + jspdf-autotable) generating all 6
+spec'd sections with print-themed chart images. Not yet human-verified in
+a real browser — see Known issues.
 
 Report format: PDF (via a browser PDF library), not Word — CLAUDE.md and product-spec.md both updated (v2.0 amended 4).
 
@@ -48,6 +49,90 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 18 (2026-09-22) — Step 5: the PDF report builder.**
+
+New dependencies: `jspdf` and `jspdf-autotable` (v5 functional API —
+`autoTable(doc, {...})`, not the old `doc.autoTable()` method; verified
+directly with a Node smoke test since this sandbox can't click-test a
+real browser PDF flow). No schema/RLS change — `practice_settings` and
+the `logos` bucket's `practice/logo.<ext>` path were already provisioned
+in session 2 part 2 and just needed their first real reader/writer.
+
+**`src/lib/data.js`** — added `fetchPracticeSettings()`,
+`uploadConsultantLogo(file)` (uploads to the existing `logos` bucket,
+upserts the one-row `practice_settings` table), and `fetchReportData(cycleId)`
+— assembles everything the report needs in one call: assessments, IROs
+(via the existing `fetchCycleIros`), `assessment_progress`,
+`group_engagement`, `threshold_changes`, `live_sessions`,
+`live_session_participants`, submitted `submissions`, and raw
+`combined_ratings` rows for the appendix. `fetchCycleIros` doesn't carry
+`calibration_history` (only the single-assessment `fetchDashboard` does),
+so `fetchReportData` fetches it separately, keyed by each IRO's
+calibration id, and attaches it as `iro.calibrationHistory`.
+
+**`src/lib/reportPdf.js`** (new) — the PDF assembly module.
+- Three light/print-theme chart builders, each raw SVG built as a
+  template string with explicit pixel dimensions (not read from a
+  mounted DOM element, since the console's own charts are dark-themed
+  and mounted — these are independent, purpose-built for print): a bar
+  chart of every IRO's effective score, an impact heatmap
+  (severity × likelihood) and a financial heatmap (magnitude ×
+  likelihood), and the topic matrix (material ring + labels). Rasterized
+  to a PNG data URL via Blob → Image → canvas, with an explicit white
+  background fill first (canvas PNG is otherwise transparent).
+- `buildReportPdf({cycle, iros, groupEngagement, thresholdChanges,
+  liveSessions, liveParticipants, submissions, ratings,
+  consultantLogoUrl}, {sections, options})` assembles the six sections in
+  order: cover (logos, client, FY, ESRS version, Provisional/Final stamp),
+  methodology (process steps, scoring rules, thresholds + baselines +
+  `threshold_changes` table), engagement (`group_engagement` table with a
+  "Silent stakeholder" label, basis-for-representation table,
+  expertise-by-respondent table, live-session dates/attendees table gated
+  by the personal-data option), results (bar chart + two heatmaps, the
+  topic matrix, a full IRO table), calibration (`calibration_history`
+  table, per-IRO sign-off table, optional approval-details block), and
+  appendix (ratings + justifications filtered by full/flagged/excluded,
+  experts' overall comments). Every page gets a footer: financial
+  year/ESRS version/date bottom-left, PROVISIONAL-or-FINAL + page number
+  bottom-right — `PROVISIONAL`/`FINAL` computed the same way Calibrate &
+  Results does (every IRO's `reviewed_with_owner` set), never
+  `cycles.stage`.
+- Page breaks: each of the 6 sections calls a `startSection()` helper
+  that adds a page *before* the section starts (except the first) — not
+  an unconditional `addPage()` at the end of each section, which would
+  leave a trailing blank page after whichever section happened to be
+  ticked last. Caught and fixed during my own review before this was
+  ever run, no leftover fragile cleanup code.
+
+**`src/components/ReportTab.jsx`** — the four-step wizard: financial-year
+selector; Step 1 two preset cards (Audit pack = all 6 sections, Client
+report = cover/engagement/results/calibration only); Step 2 per-section
+toggles plus a consultant-logo upload (a plain file input, not the
+reused `LogoUpload.jsx` — that component's label text is specific to the
+questionnaire-logo context and would be wrong here); Step 3 personal-data
+toggle (off by default), justifications scope (full/flagged/excluded),
+IRO scope (all/material-only/one ESRS topic), optional approval details,
+a free-text note per enabled section; Step 4 preview (`doc.output('bloburl')`
+in an iframe) and download (`doc.save(...)`).
+
+**Verification limits, disclosed:** this sandbox cannot open a real
+browser to click through the wizard or open a generated PDF. What *was*
+verified: `npm run build` and `npx oxlint src` clean (same three
+pre-existing prototype warnings only); `jspdf-autotable` v5's functional
+API and `doc.output('bloburl')` both confirmed working via isolated Node
+smoke tests; a full manual line-by-line review of `reportPdf.js` for
+scoping/API-usage bugs and the page-break logic specifically. Actual
+*visual* correctness of the generated PDF (spacing, chart legibility,
+whether "professional, compact" per spec's design intent is met) has not
+been human-verified — worth a real check on the deploy preview before
+this is called production-ready.
+
+**Disclosed simplifications:** approval details, personal-data and
+justification-scope are implemented as straightforward toggles, not a
+more elaborate system; jsPDF pulls in `html2canvas` as a transitive
+dependency (visible in the build output as a separate chunk) though
+nothing in this codebase calls it directly.
+
 **Part 17 (2026-09-21) — Group B: Calibrate & Results simplified, per-IRO sign-off, the new Responses screen.**
 
 **Group B.7 — Calibrate & Results.**
@@ -950,7 +1035,7 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Results tab rebuilt from the prototype (bar chart, impact/financial heatmaps, topic matrix, CSV/PNG export) — done in part 11 as a direct builder fix, ahead of step 4 proper
 - [x] Step 4 — `CalibrationTab.jsx` confirmed at parity with the prototype's `CalibrationScreen.jsx` structure (part 13), its per-topic sign-off wording matched (part 13), and E/S/G + material/not-material filters shared between Results and Calibrate via `CalibrateResultsTab.jsx`'s new `FilterBar` (part 14) — assessment-source filtering already existed via the picker above the tab in App.jsx
 - [x] Spec v2.0 amended 9 — Calibrate & Results has no stage banner/global sign-off (per-IRO sign-off restored, genuinely records who via `reviewed_with_owner_by`), thresholds editable any time, and the new Responses screen is built (part 17, Group B) — known gaps: overall comments not shown per-IRO, IRO table has no PNG export, "Open in Calibrate" doesn't deep-link to the row
-- [ ] Step 5 — PDF report builder (old step 6)
+- [x] Step 5 — PDF report builder: 4-step wizard, jsPDF + jspdf-autotable, all 6 sections, print-themed SVG charts (part 18) — not visually verified in a real browser (sandbox limit, disclosed)
 - [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
@@ -1029,7 +1114,7 @@ schema — every new field the flow needed already existed).
 - [ ] (v2.0 revision) Build Review Hub — render Tool A's screens exactly, including About you and Save and continue later
 - [ ] (v2.0 revision) Build Live session Intro flow and Questionnaire — justifications, Save and pause, Finish session
 - [x] (v2.0 revision) Build the Calibrate & Results workspace — Calibrate, Results and Matrix tabs (merged into one workspace with a Results/Calibrate switcher, per the restore plan below), stage banner, two thresholds with Apply and reason — done across parts 7, 13-15
-- [ ] (v2.0 revision) Build the Report builder — Word (.docx), six sections, two presets, logo slots, personal data off by default
+- [x] (v2.0 revision) Build the Report builder — PDF (spec v2.0 amended 4 changed this from Word), six sections, two presets, logo slots, personal data off by default — part 18
 - [ ] (v2.0 revision) Add the GDPR consent checkbox and data statement to the invitation, participant and stakeholder contact forms
 - [ ] (v2.0 revision) Local test pass — full signed-in click-through in a browser that can reach Supabase
 - [ ] (v2.0 revision) Acceptance criteria pass — all 25 criteria in spec v2.0 Section 13
@@ -1100,21 +1185,30 @@ schema — every new field the flow needed already existed).
 - New assessment's draft auto-save (row created and kept in sync from the moment mode+perspective are picked, so abandoning the wizard never loses progress — Section 8) is not implemented; the assessment row is created once, at the end of the wizard
 - Before inviting any real expert, the builder gets a short GDPR check (business reason: audit traceability; anonymise-on-request approach). Does not block the build
 - Open non-blocking spec questions (spec Section 15): ESRS 2026 act text check, sample export to the assurance provider, Word report accent colour, the skipped-criteria averaging rule
+- **New 2026-09-22 (part 18):** the PDF report builder (`ReportTab.jsx`/
+  `reportPdf.js`) has not been human-verified — this sandbox has no
+  browser to click through the wizard or open a generated PDF. Build/lint
+  are clean, `jspdf-autotable`'s functional API and `doc.output('bloburl')`
+  were confirmed via Node smoke tests, and the module was manually
+  reviewed for scoping/logic bugs, but actual visual output (page layout,
+  chart legibility, spacing) needs a real look on the deploy preview
+  before treating this as production-ready.
 - **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
 
 ## Notes for next session
 **Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-Spec v2.0 amended 9 is fully merged and built against (part 16-17, Groups
-A and B of the builder's preview-review fixes). Calibrate & Results is now
-stage-free (per-IRO sign-off, thresholds editable any time); the Responses
-screen exists for the first time. Next up per the original plan is
-**Step 5 — the PDF report builder** (docs/product-spec.md Section 3,
-Section 8 "Report builder": four-step flow — preset, sections, options,
-preview/download; white pages, tables for topics/stakeholders, chart
-images on white, footer with round/ESRS version/date/page
-number/Provisional-or-Final). Nothing built here yet — `ReportTab.jsx` is
-still a stub. Needs the builder's go-ahead before starting, per the
-standing "stop after each round" instruction.
+Spec v2.0 amended 9 is fully merged and built against (parts 16-18: Groups
+A and B of the builder's preview-review fixes, then Step 5). Calibrate &
+Results is stage-free (per-IRO sign-off, thresholds editable any time);
+the Responses screen exists; the PDF report builder (`ReportTab.jsx` +
+`reportPdf.js`) is built — 4-step wizard, all 6 sections, print-themed
+charts. **Not yet human-verified**: no browser in this sandbox to click
+through the wizard or open a generated PDF — build/lint pass, the
+third-party API usage was checked with Node smoke tests, and the module
+was manually reviewed line-by-line, but the actual rendered PDF (layout,
+chart legibility) needs a real look on the deploy preview. That's the one
+open item from the original step plan — everything else in the restore's
+step list is now checked off.
 
 Known simplifications worth revisiting if there's time: E1–G1 expertise
 for participants added via Recipients (currently empty, editable after),

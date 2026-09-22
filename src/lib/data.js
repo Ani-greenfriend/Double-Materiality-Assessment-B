@@ -93,6 +93,33 @@ export async function uploadClientLogo(clientId, file) {
   return urlData.publicUrl;
 }
 
+// ---- Practice settings — one row, the consultant's own logo for the report cover ----
+
+export async function fetchPracticeSettings() {
+  assertConfigured();
+  const { data, error } = await supabase.from('practice_settings').select('id, consultant_logo_url').limit(1).maybeSingle();
+  if (error) throw new Error(`practice_settings query failed: ${error.message}`);
+  return data ?? { id: null, consultant_logo_url: null };
+}
+
+export async function uploadConsultantLogo(file) {
+  assertConfigured();
+  const existing = await fetchPracticeSettings();
+  const ext = file.name.split('.').pop();
+  const path = `practice/logo.${ext}`;
+  const { error: upError } = await supabase.storage.from('logos').upload(path, file, { upsert: true });
+  if (upError) throw new Error(`logo upload failed: ${upError.message}`);
+  const { data: urlData } = supabase.storage.from('logos').getPublicUrl(path);
+  if (existing.id) {
+    const { error } = await supabase.from('practice_settings').update({ consultant_logo_url: urlData.publicUrl }).eq('id', existing.id);
+    if (error) throw new Error(`practice_settings update failed: ${error.message}`);
+  } else {
+    const { error } = await supabase.from('practice_settings').insert({ consultant_logo_url: urlData.publicUrl });
+    if (error) throw new Error(`practice_settings insert failed: ${error.message}`);
+  }
+  return urlData.publicUrl;
+}
+
 // ---- Cycles and assessments overview — cycles joined to their client, with
 // each assessment's response summary (invitation status counts for surveys,
 // live session status for live sessions, submission counts for both) ----
@@ -796,6 +823,71 @@ export async function fetchInvitationName(invitationId) {
   const { data, error } = await supabase.from('invitations').select('name').eq('id', invitationId).single();
   if (error) throw new Error(`invitations query failed: ${error.message}`);
   return data.name;
+}
+
+// ---- Report builder (Section 8) — everything the six report sections
+// need, assembled in one call. Reuses fetchCycleIros for the IRO/topic
+// data (same aggregateIro/aggregateTopic math the console already uses),
+// and the Responses screen's assessment_progress/group_engagement views
+// for Section 3 (Engagement). Adds what neither already carries:
+// calibration_history per IRO (fetchCycleIros/fetchDashboard don't
+// include it — only fetchDashboard's single-assessment version does),
+// threshold_changes for the whole cycle, live session facilitator/dates,
+// attendees, and submitted responses (basis_for_representation for silent
+// stakeholders, overall_comment for the appendix). ----
+export async function fetchReportData(cycleId) {
+  assertConfigured();
+  const { data: assessments, error: aError } = await supabase
+    .from('assessments')
+    .select('id, name, type, slug, perspective_filter, status, start_date, end_date')
+    .eq('cycle_id', cycleId);
+  if (aError) throw new Error(`assessments query failed: ${aError.message}`);
+  const assessmentIds = assessments.map((a) => a.id);
+
+  const [cycleIros, progressRes, groupEngRes, thresholdChangesRes, liveSessionsRes, submissionsRes, ratingsRes] = await Promise.all([
+    fetchCycleIros(cycleId),
+    assessmentIds.length ? supabase.from('assessment_progress').select('*').in('assessment_id', assessmentIds) : Promise.resolve({ data: [] }),
+    assessmentIds.length ? supabase.from('group_engagement').select('*').in('assessment_id', assessmentIds) : Promise.resolve({ data: [] }),
+    supabase.from('threshold_changes').select('*').eq('cycle_id', cycleId).order('changed_at', { ascending: true }),
+    assessmentIds.length ? supabase.from('live_sessions').select('id, assessment_id, facilitator, started_at, finished_at, status').in('assessment_id', assessmentIds) : Promise.resolve({ data: [] }),
+    assessmentIds.length ? supabase.from('submissions').select('id, assessment_id, source, stakeholder_group, expertise_topics, title, basis_for_representation, overall_comment, invitation_id, live_session_id, submitted_at').in('assessment_id', assessmentIds).eq('status', 'submitted') : Promise.resolve({ data: [] }),
+    assessmentIds.length ? supabase.from('combined_ratings').select('submission_id, source, iro_id, criterion_key, value, justification, stakeholder_group').in('assessment_id', assessmentIds) : Promise.resolve({ data: [] }),
+  ]);
+  if (progressRes.error) throw new Error(`assessment_progress query failed: ${progressRes.error.message}`);
+  if (groupEngRes.error) throw new Error(`group_engagement query failed: ${groupEngRes.error.message}`);
+  if (thresholdChangesRes.error) throw new Error(`threshold_changes query failed: ${thresholdChangesRes.error.message}`);
+  if (liveSessionsRes.error) throw new Error(`live_sessions query failed: ${liveSessionsRes.error.message}`);
+  if (submissionsRes.error) throw new Error(`submissions query failed: ${submissionsRes.error.message}`);
+  if (ratingsRes.error) throw new Error(`combined_ratings query failed: ${ratingsRes.error.message}`);
+
+  const calibrationIds = cycleIros.iros.map((i) => i.calibration?.id).filter(Boolean);
+  let historyRows = [];
+  if (calibrationIds.length) {
+    const { data, error } = await supabase.from('calibration_history').select('*').in('calibration_id', calibrationIds).order('changed_at', { ascending: true });
+    if (error) throw new Error(`calibration_history query failed: ${error.message}`);
+    historyRows = data;
+  }
+  const iros = cycleIros.iros.map((iro) => ({ ...iro, calibrationHistory: historyRows.filter((h) => h.calibration_id === iro.calibration?.id) }));
+
+  const liveSessionIds = liveSessionsRes.data.map((s) => s.id);
+  let liveParticipants = [];
+  if (liveSessionIds.length) {
+    const { data, error } = await supabase.from('live_session_participants').select('*').in('live_session_id', liveSessionIds).is('removed_at', null);
+    if (error) throw new Error(`live_session_participants query failed: ${error.message}`);
+    liveParticipants = data;
+  }
+
+  return {
+    assessments,
+    iros,
+    progress: progressRes.data,
+    groupEngagement: groupEngRes.data,
+    thresholdChanges: thresholdChangesRes.data,
+    liveSessions: liveSessionsRes.data,
+    liveParticipants,
+    submissions: submissionsRes.data,
+    ratings: ratingsRes.data,
+  };
 }
 
 // ---- Stakeholders: master map + who actually participated in this assessment ----

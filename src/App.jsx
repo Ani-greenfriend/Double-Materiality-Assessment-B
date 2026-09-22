@@ -310,7 +310,7 @@ export default function App() {
               onChanged={reloadCyclesAndAssessments}
             />
           )}
-          {tab === 'report' && <ReportTab />}
+          {tab === 'report' && <ReportTab cycles={cycles} />}
           {tab === 'calibrate-results' && (
             <div>
               {assessments.length > 0 && (
