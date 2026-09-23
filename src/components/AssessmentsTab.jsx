@@ -37,7 +37,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled }) {
+export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -233,7 +233,10 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         });
         await snapshotTopicsIntoIros(created.id, topicsForSnapshot);
         setAdjustingId(created.id);
-        setActiveAssessment({ id: created.id, slug: created.slug, name: surveyMeta.name, type: assessmentMode, justificationMode, mandatory });
+        setActiveAssessment({
+          id: created.id, slug: created.slug, name: surveyMeta.name, type: assessmentMode, justificationMode, mandatory,
+          perspectiveFilter, welcomeText, taskText, description: surveyMeta.description, startDate: surveyMeta.startDate, endDate: surveyMeta.endDate,
+        });
       }
       setFlowStep('recipients');
     } catch (err) {
@@ -326,7 +329,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       setActiveIros(iros);
       setActiveAssessment(assessment);
       setLiveSession({ ...ls, participants: active });
-      const progress = await fetchLiveSessionProgress(assessment.id, ls.id);
+      const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
       setSessionProgress(progress);
       setFlowStep(progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
     } catch (err) {
@@ -346,6 +349,22 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     onDeepLinkHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLink, assessments]);
+
+  // Clicking "Assessments" in the left nav while already on this tab is a
+  // no-op tab change (tab stays 'assessments', so this component never
+  // remounts) — resetSignal is an incrementing counter the shell bumps on
+  // every click of that nav item, forcing back to the overview from
+  // anywhere (wizard, Review Hub, a running live session) with no stale
+  // in-progress state left behind.
+  useEffect(() => {
+    if (!resetSignal) return;
+    resetDraft();
+    setActiveAssessment(null);
+    setLiveSession(null);
+    setSessionProgress(null);
+    setFlowStep('overview');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
 
   // ---- Review Hub ----
 

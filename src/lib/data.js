@@ -1309,9 +1309,48 @@ function topicJustificationRowsFromComponentState({ submissionId, ratings, justi
     .map((iroId) => ({ submission_id: submissionId, iro_id: iroId, justification: justifications[iroId] }));
 }
 
+// submissions.stakeholder_group has no single natural value for a live
+// session (one submission covers the whole group, which can span several
+// stakeholder groups) — resolve it from the active participants' groups
+// (their own group, or the silent-stakeholder group they represent),
+// deduplicated and joined, so the NOT NULL column always gets a real,
+// meaningful value instead of failing the insert.
+async function resolveLiveSessionStakeholderGroup(liveSessionId) {
+  const { data: participants, error: pError } = await supabase
+    .from('live_session_participants')
+    .select('represents_group_id, stakeholder_member_id')
+    .eq('live_session_id', liveSessionId)
+    .is('removed_at', null);
+  if (pError) throw new Error(`live_session_participants query failed: ${pError.message}`);
+
+  const groupIds = new Set(participants.filter((p) => p.represents_group_id).map((p) => p.represents_group_id));
+  const memberIds = participants.filter((p) => p.stakeholder_member_id).map((p) => p.stakeholder_member_id);
+  if (memberIds.length) {
+    const { data: members, error: mError } = await supabase
+      .from('stakeholder_members')
+      .select('id, group_id')
+      .in('id', memberIds);
+    if (mError) throw new Error(`stakeholder_members query failed: ${mError.message}`);
+    members.forEach((m) => { if (m.group_id) groupIds.add(m.group_id); });
+  }
+  if (!groupIds.size) return 'Live session participants';
+
+  const { data: groups, error: gError } = await supabase
+    .from('stakeholder_groups')
+    .select('name')
+    .in('id', [...groupIds]);
+  if (gError) throw new Error(`stakeholder_groups query failed: ${gError.message}`);
+  const names = [...new Set(groups.map((g) => g.name))].sort();
+  return names.length ? names.join(', ') : 'Live session participants';
+}
+
 // One live session has exactly one submission (the group's combined
 // ratings) — created as a draft on first save, marked submitted on Finish.
-async function ensureLiveSessionSubmission(assessmentId, liveSessionId) {
+// perspectiveFilter is the assessment's own ('full' | 'impact' | 'financial')
+// — submissions.perspective only accepts 'impact'/'financial' (no "full"),
+// so a mixed-perspective session is tagged 'impact'; the ratings themselves
+// are still scored correctly per IRO regardless of this label.
+async function ensureLiveSessionSubmission(assessmentId, liveSessionId, perspectiveFilter) {
   const { data: existing, error: selError } = await supabase
     .from('submissions')
     .select('id, status, current_topic_index')
@@ -1319,9 +1358,11 @@ async function ensureLiveSessionSubmission(assessmentId, liveSessionId) {
     .maybeSingle();
   if (selError) throw new Error(`submissions query failed: ${selError.message}`);
   if (existing) return existing;
+  const perspective = perspectiveFilter === 'financial' ? 'financial' : 'impact';
+  const stakeholderGroup = await resolveLiveSessionStakeholderGroup(liveSessionId);
   const { data, error } = await supabase
     .from('submissions')
-    .insert({ assessment_id: assessmentId, source: 'expert_live_session', live_session_id: liveSessionId, status: 'draft' })
+    .insert({ assessment_id: assessmentId, source: 'expert_live_session', live_session_id: liveSessionId, status: 'draft', perspective, stakeholder_group: stakeholderGroup })
     .select('id, status, current_topic_index')
     .single();
   if (error) throw new Error(`submissions insert failed: ${error.message}`);
@@ -1330,9 +1371,9 @@ async function ensureLiveSessionSubmission(assessmentId, liveSessionId) {
 
 // Resume support for Questionnaire.jsx's initialRatings/initialIndex/
 // initialJustifications props — reads back whatever "Save and pause" wrote.
-export async function fetchLiveSessionProgress(assessmentId, liveSessionId) {
+export async function fetchLiveSessionProgress(assessmentId, liveSessionId, perspectiveFilter) {
   assertConfigured();
-  const submission = await ensureLiveSessionSubmission(assessmentId, liveSessionId);
+  const submission = await ensureLiveSessionSubmission(assessmentId, liveSessionId, perspectiveFilter);
 
   const { data: ratingRows, error: rError } = await supabase
     .from('ratings')

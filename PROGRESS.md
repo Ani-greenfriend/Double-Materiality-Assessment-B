@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-22 — session 2, part 19 (Report PDF redesign: professional layout, ESRS-topic-grouped materiality determination)
+**Last updated:** 2026-09-23 — session 2, part 20 (three PR #5 testing bugs fixed: live session kickoff crash, blank Review Hub after creating a new assessment, Assessments nav not resetting to overview)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,81 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 20 (2026-09-23) — Three PR #5 testing bugs, found by the builder on a fresh test session.**
+
+**1. Kicking off an Expert live session failed:** `submissions` insert error
+`null value in column "stakeholder_group"`. Root cause:
+`ensureLiveSessionSubmission` (data.js) only ever wrote
+`assessment_id`/`source`/`live_session_id`/`status` — `stakeholder_group`
+and `perspective` are both `NOT NULL` on `submissions` (confirmed live via
+`information_schema.columns` and the table's check constraints), and
+neither had ever been supplied. Reproduced against every one of the 4 live
+sessions already in the test data (zero `expert_live_session` submission
+rows existed anywhere — every kickoff had been failing, not just some).
+Fixed:
+- New `resolveLiveSessionStakeholderGroup(liveSessionId)` — a live
+  session's one submission covers the whole group, which can span several
+  stakeholder groups, so there's no single natural value; it resolves the
+  distinct group names from the active participants (their own group via
+  `stakeholder_member_id` → `stakeholder_members.group_id`, or the group
+  they represent via `represents_group_id` for a silent stakeholder),
+  joins them, and falls back to "Live session participants" only if none
+  resolve. Verified against the real test data — every existing session
+  resolves real group names, never the fallback.
+- `perspective` only accepts `impact`/`financial` (checked constraint) —
+  no `full`, so a mixed-perspective live session (`assessment.perspective_filter
+  = 'full'`) is tagged `impact`; disclosed limitation, not a schema change
+  (`submissions`' schema is Tool A's, never touched from here per
+  CLAUDE.md). The ratings themselves still score correctly per IRO
+  regardless of this label — it only affects this one summary field.
+- `fetchLiveSessionProgress`/`ensureLiveSessionSubmission` now take
+  `perspectiveFilter`; threaded from `AssessmentsTab.jsx`'s
+  `enterLiveSession` (`assessment.perspectiveFilter`).
+
+**2. Review Hub's Introduction and Rating Criteria tabs rendered empty**
+right after creating a new assessment (worked fine when opened from the
+Assessment overview list). Root cause: `handleCreate`'s post-creation
+`setActiveAssessment(...)` (AssessmentsTab.jsx) only carried
+`id`/`slug`/`name`/`type`/`justificationMode`/`mandatory` — dropping
+`welcomeText`/`taskText` (and `perspectiveFilter`/`description`/
+`startDate`/`endDate`) even though the assessment was created *with* real
+text seconds earlier. `ExpertAssessmentCreated`'s "Preview" button feeds
+that same stale in-memory object straight to Review Hub without a
+refetch, so the tabs had nothing to show. Fixed by including all six
+fields (already available as local state/`surveyMeta` at that point, no
+extra round trip) in the post-creation `setActiveAssessment`.
+
+**3. Clicking "Assessments" in the left nav didn't return to the
+overview** if you were already on that tab (mid-wizard, in Review Hub, or
+running a live session) — `setTab('assessments')` is a no-op when `tab`
+is already `'assessments'`, so `AssessmentsTab` never remounts and its
+internal `flowStep` stays wherever it was. Same class of bug the
+Stakeholders nav item already had a fix for (`openGroupId` lifted to
+`App.jsx` so the nav click can reset it). Fixed the same way: a new
+`assessmentsResetSignal` counter in `App.jsx`, bumped on every click of
+the Assessments nav item; `AssessmentsTab` takes it as a `resetSignal`
+prop and a small effect resets `flowStep` to `'overview'` and clears
+`activeAssessment`/`liveSession`/`sessionProgress`/the wizard draft
+(`resetDraft()`) whenever it changes — abandoning any in-progress wizard,
+which is the correct behaviour for a top-level nav click, not a "resume
+where I left off" feature.
+
+**Verification:** `npm run build` and `npx oxlint src` clean (same three
+pre-existing warnings). For bug 1 specifically — the one that touches the
+database — checked live via Supabase MCP rather than trusting the code
+read alone: confirmed `submissions.stakeholder_group`/`perspective`'s
+exact `NOT NULL`/check-constraint definitions, confirmed `authenticated`
+already has an unrestricted INSERT policy on `submissions` (no RLS
+change needed), and ran the new group-resolution join against every real
+live session in the test data to confirm it always finds real group
+names. Bugs 2 and 3 are pure frontend state-flow fixes, verified by
+reading the exact data path end to end (traced `activeAssessment`'s
+value through every step from creation to Review Hub) rather than
+inspecting the DB, since nothing about them is server-side; still not
+click-tested in a live browser (sandbox limitation, as with everything
+else this session) — the builder's next test session on the fresh deploy
+preview is the real confirmation.
+
 **Part 19 (2026-09-22) — Report PDF redesign: professional layout, ESRS materiality determination.**
 
 The builder tried the generated PDF on the deploy preview and called it

@@ -61,6 +61,11 @@ export default function App() {
   // loaded, then clears it.
   const [assessmentsDeepLink, setAssessmentsDeepLink] = useState(null);
 
+  // Bumped on every "Assessments" nav click so AssessmentsTab can reset to
+  // its overview even when the tab is already selected (see the matching
+  // effect there) — the same problem openGroupId below solves for Stakeholders.
+  const [assessmentsResetSignal, setAssessmentsResetSignal] = useState(0);
+
   // Lifted out of StakeholdersTab so the sidebar nav click can reset it —
   // otherwise clicking "Stakeholders" while inside a specific group's detail
   // view would do nothing, since the tab is already selected.
@@ -236,7 +241,7 @@ export default function App() {
           {TABS.map(({ key, label, Icon }) => (
             <button
               key={key}
-              onClick={() => { setTab(key); if (key === 'stakeholders') setOpenGroupId(null); }}
+              onClick={() => { setTab(key); if (key === 'stakeholders') setOpenGroupId(null); if (key === 'assessments') setAssessmentsResetSignal((n) => n + 1); }}
               title={label}
               className={`flex items-center gap-3 text-[13px] font-medium px-3 py-2.5 rounded-lg transition-colors ${tab === key ? 'bg-emerald text-app-black' : 'text-text-primary hover:bg-surface'}`}
             >
@@ -299,6 +304,7 @@ export default function App() {
               onGoToStakeholders={() => { setTab('stakeholders'); setOpenGroupId(null); }}
               deepLink={assessmentsDeepLink}
               onDeepLinkHandled={() => setAssessmentsDeepLink(null)}
+              resetSignal={assessmentsResetSignal}
             />
           )}
           {tab === 'responses' && (
