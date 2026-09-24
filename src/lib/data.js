@@ -1283,13 +1283,22 @@ function componentKeyToDbKey(k) {
 }
 
 function ratingRowsFromComponentState({ submissionId, assessmentId, ratings, justifications, justificationMode }) {
-  const rows = [];
+  // `likelihood` and `financialLikelihood` both write to the same DB column
+  // (ratings.criterion_key has no separate financialLikelihood value) — if
+  // an IRO's local rating state ever carries both (Questionnaire.jsx is
+  // supposed to prevent this at the source, but a stale in-memory session
+  // from before that fix, or any other future source, could still produce
+  // it), two rows would target the same (submission_id, iro_id,
+  // criterion_key) conflict key in one upsert batch, which Postgres refuses
+  // outright. Deduping here, keyed by the actual DB column, is a second,
+  // independent guard — the last value for a given db key wins.
+  const byKey = new Map();
   for (const [iroId, r] of Object.entries(ratings || {})) {
     for (const componentKey of CRITERION_KEYS) {
       if (!(componentKey in r)) continue;
       const raw = r[componentKey];
       const justification = justificationMode === 'per_criterion' ? (justifications?.[iroId]?.[componentKey] || null) : null;
-      rows.push({
+      byKey.set(`${iroId}:${componentKeyToDbKey(componentKey)}`, {
         submission_id: submissionId,
         assessment_id: assessmentId,
         iro_id: iroId,
@@ -1299,7 +1308,7 @@ function ratingRowsFromComponentState({ submissionId, assessmentId, ratings, jus
       });
     }
   }
-  return rows;
+  return [...byKey.values()];
 }
 
 function topicJustificationRowsFromComponentState({ submissionId, ratings, justifications, justificationMode }) {

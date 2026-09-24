@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 27 (Sign-off only's UI presentation built — nav hiding, locked screens for Dashboard/Stakeholders/Topics/Report, read-only rendering across Assessments/Responses/Calibrate & Results — closing the gap flagged in parts 24/26; also merged PR #5's follow-up work (Groups 2-5) into main via a new PR #6, reconciling main's own post-merge doc updates along the way)
+**Last updated:** 2026-09-24 — session 2, part 28 (real bug fix, found on the deploy preview: every live-session Finish/autosave was failing with a Postgres upsert error — no live-session ratings were ever actually persisting. Root cause fixed in Questionnaire.jsx, with a second defensive dedup in data.js so already-open browser tabs recover without losing their in-progress session.)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,69 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 28 (2026-09-24) — Real bug, found live on the deploy preview: live-session ratings never actually saved.**
+
+The builder hit this on PR #6's Netlify preview while finishing a real
+Expert live session (5 mixed-perspective topics): a "ratings upsert
+failed: ON CONFLICT DO UPDATE command cannot affect row a second time"
+error banner, with the questionnaire's own "All 5 topics rated" summary
+screen still showing underneath it (that screen is a pre-save preview,
+not a claim of success — the click that actually saves, "To Results →",
+is what failed). Screenshot confirmed the error was real, not a one-off.
+
+**Root cause, traced to `Questionnaire.jsx`'s `initialValuesFor(iro)`**:
+it unconditionally returned all six possible criterion keys (`scale`,
+`scope`, `irreversibility`, `likelihood`, `magnitude`,
+`financialLikelihood`) for every IRO, regardless of that IRO's actual
+type — even though only two to four of those are ever meant to apply
+(`CRITERIA_FOR[iro.iroType]` already encodes the real subset, and is what
+the criteria *inputs* correctly render). `next()`/`prev()`/`exitSession()`
+all merge the full `values` object into `ratings[iro.id]` unfiltered, so
+every IRO's local rating state ended up carrying both `likelihood` and
+`financialLikelihood` — and `ratings.criterion_key` has no separate
+`financialLikelihood` value (a known, documented simplification —
+`componentKeyToDbKey()` in data.js maps both to the single db column
+`likelihood`). One `ratings` upsert batch with two rows both targeting
+the same `(submission_id, iro_id, criterion_key)` conflict key is exactly
+what Postgres refuses with that error — and since the write is a single
+statement, it fails atomically: **the entire batch is rejected, not just
+the offending IRO's rows.** Given autosave (`onProgress`) fires on every
+topic navigation and resubmits the *whole* `ratings` object each time,
+this broke as soon as a session's second topic was touched — meaning, in
+practice, **no live-session ratings have ever actually reached the
+database this session**, only silently failing until the final "To
+Results" click surfaced the error where it could be seen.
+
+**Fixed at the root** in `Questionnaire.jsx`: `initialValuesFor` now
+returns only the keys `CRITERIA_FOR[iro.iroType]` actually lists for that
+IRO, via `Object.fromEntries`, instead of a fixed six-key object — an
+impact-type IRO's local state can never again pick up a stray
+`financialLikelihood`, and vice versa.
+
+**Second, independent guard added in `data.js`**'s
+`ratingRowsFromComponentState`: rows are now built into a `Map` keyed by
+the actual DB column (`` `${iroId}:${dbKey}` ``) instead of a plain array,
+so even if some other future path ever produces both component keys for
+one IRO, the upsert batch itself can't carry a duplicate target — last
+value wins, and for a financial-type IRO that's `financialLikelihood`
+(processed after `likelihood` in `CRITERION_KEYS`' fixed order), i.e. the
+intended value survives the dedup. This isn't redundant with the
+Questionnaire.jsx fix: it also protects **any browser tab that already
+has a tainted `ratings` object in memory from before this fix ships** —
+the builder's own in-progress session, stuck on the summary screen at
+the time of the report, should now save successfully on a simple retry
+of "To Results →" once this deploys, with no data re-entry needed. Traced
+this by hand (no way to click-test a live upsert from this sandbox): the
+fix closes the root cause for every fresh session going forward, and the
+dedup independently repairs any state that was already poisoned by the
+bug before the fix landed.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). No schema/RLS change. Not click-tested in a live browser
+(sandbox limitation) — the builder's retry on the deploy preview is the
+real confirmation this time, same as for every other live-session flow
+this session.
+
 **Part 27 (2026-09-24) — PR #6 opened (Groups 2-5 to main), main's post-merge docs reconciled, and Sign-off only's UI presentation built.**
 
 **PR status.** Commits since PR #5 merged (Groups 2-5, `c647f8a`..`a2377f4`) were never on `main` — this branch kept going past the PR #5 merge without a follow-up PR. Checked, confirmed, and opened

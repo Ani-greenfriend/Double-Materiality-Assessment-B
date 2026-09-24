@@ -93,18 +93,24 @@ const CRITERIA_FOR = {
   ],
 };
 
+// Only the keys this IRO's own type actually rates — never the full set.
+// `likelihood` and `financialLikelihood` both write to the same DB column
+// (ratings.criterion_key has no separate financialLikelihood value), so an
+// IRO carrying both in its local rating state produces two rows targeting
+// the same (submission_id, iro_id, criterion_key) conflict key in one
+// upsert batch, which Postgres refuses outright ("ON CONFLICT DO UPDATE
+// command cannot affect row a second time") — every criterion here must
+// stay scoped to what CRITERIA_FOR[iro.iroType] actually lists.
 function initialValuesFor(iro) {
   const defaults = { scale: 2.5, scope: 2.5, irreversibility: 2.5, likelihood: 2.5, magnitude: 2.5, financialLikelihood: 2.5 };
+  const keys = CRITERIA_FOR[iro.iroType].map((c) => c.key);
   const live = iro.assessments.filter((a) => a.assessor === 'Live session');
-  if (!live.length) return defaults;
   const avg = (key) => {
+    if (!live.length) return defaults[key];
     const vals = live.map((a) => a[key]).filter((v) => v !== null && v !== undefined);
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : defaults[key];
   };
-  return {
-    scale: avg('scale'), scope: avg('scope'), irreversibility: avg('irreversibility'),
-    likelihood: avg('likelihood'), magnitude: avg('magnitude'), financialLikelihood: avg('financialLikelihood'),
-  };
+  return Object.fromEntries(keys.map((key) => [key, avg(key)]));
 }
 
 export default function Questionnaire({
