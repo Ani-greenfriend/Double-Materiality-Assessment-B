@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 29 (two more PR #6 preview bugs fixed: Recipients' Continue button wrongly blocked excluding everyone; assessment delete silently refused two real assessments because the RLS policy blocked on any submission, not just submitted ones — one of the two, "b", is now genuinely deleted; "Acme Corp"/acme-2026 stays, correctly refused, untouched)
+**Last updated:** 2026-09-24 — session 2, part 30 (Responses screen fix: it was defaulting to a leftover empty test cycle-year (FY2027, 0 assessments) instead of the year with real, filled-in data (FY2025) — filtered the financial-year selector to years with assessments, matching Dashboard's own convention)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,52 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 30 (2026-09-24) — Responses screen "doesn't work" bug: defaulted to an empty test year.**
+
+Builder reported Responses not showing the live session they'd just
+filled in and finished (the one from part 28/29's fix — confirmed working
+end to end: `assessment_progress` for it shows `live_session_status:
+'finished'`, `attended_count: 5`, `topics_rated_count: 3` of 3, all
+correct). The underlying data pipeline was never the problem.
+
+**Root cause**: this Supabase project has accumulated several cycles from
+earlier test sessions, three of them completely empty — FY2027 and FY2024
+(0 assessments each) and a leftover **FY1** (a stray value from before the
+financial-year field was constrained to a 2022–2027 dropdown, also 0
+assessments). `ResponsesTab.jsx`'s year selector built its list from
+*every* cycle unconditionally (`cycles.map(c => c.financialYear)`, sorted
+descending) and defaulted to `[0]` — the numerically highest year, **FY2027**,
+which has nothing in it. The live session actually finished under FY2025
+(shared with "Finance test expert"), two years below the default. Opening
+Responses landed on a genuinely empty year and looked exactly like a
+broken screen, even though switching the year dropdown to 2025 would have
+shown everything correctly the whole time.
+
+Dashboard already avoids this exact trap — its own financial-year selector
+(`App.jsx`'s `financialYearsWithAssessments`) filters to `c.assessments.length
+> 0` before picking a default. `ResponsesTab.jsx` never had the same
+filter. Fixed by applying the identical filter there, so the year selector
+(and its default) only ever considers years with real content — an empty
+cycle-year can no longer become the default, or appear as an option at
+all, in either screen now.
+
+**Not a data bug, not a regression from parts 28/29** — confirmed by
+reading `assessment_progress` directly for the live session's own
+`assessment_id` before changing anything: every number was already
+correct. This was purely a "which year is showing" UX bug, real enough to
+look completely broken to someone testing it live.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). No schema/RLS change — pure frontend.
+
+**Flagged, not cleaned up**: the three empty test cycles (FY2027, FY2024,
+FY1) are stray fixtures from earlier sessions' testing, not currently
+reachable or visible anywhere in the UI (cycles are database-only per
+CLAUDE.md, no delete-cycle path exists), so there's nothing in-app to
+clean them up with. Harmless now that Responses/Dashboard both filter
+past them, but worth a manual Supabase-dashboard cleanup at some point if
+the builder wants a tidier project — not blocking anything.
+
 **Part 29 (2026-09-24) — Two more PR #6 preview bugs, both found live by the builder.**
 
 **1. Recipients couldn't finish with everyone excluded.**

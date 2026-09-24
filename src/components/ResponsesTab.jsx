@@ -205,7 +205,14 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
 // sourceGap already existed, built for Calibrate's detail panel — reused
 // here rather than duplicated).
 export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSession, onOpenCalibrate, onChanged, readOnly }) {
-  const financialYears = [...new Set(cycles.map((c) => c.financialYear))].sort((a, b) => b - a);
+  // Years with at least one assessment only — same convention as Dashboard's
+  // own financial-year selector (App.jsx's financialYearsWithAssessments).
+  // Without this filter, an empty cycle-year (e.g. a stray financial year
+  // that was picked once in the wizard but never used) could sort ahead of
+  // every real one and become the default — the screen would then open on
+  // a genuinely empty year and look broken, even with real, filled-in
+  // responses sitting under a different year.
+  const financialYears = [...new Set(cycles.filter((c) => c.assessments.length > 0).map((c) => c.financialYear))].sort((a, b) => b - a);
   const [financialYear, setFinancialYear] = useState(financialYears[0] ?? null);
   const [data, setData] = useState({ assessments: [], progress: [], groupEngagement: [], iros: [] });
   const [loading, setLoading] = useState(true);
