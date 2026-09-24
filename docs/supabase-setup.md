@@ -554,11 +554,12 @@ docs/access-matrix.md Section 5 and CLAUDE.md's own summary both saying
 in the instruction that started this stage: those columns are already
 documented (Part 8/17 of this file's history, and PROGRESS.md) as retired
 and staying unused, "same treatment as `cycles.stage`" — reusing them for
-an unrelated new gate would contradict that. **Flagging this for
-docs/access-matrix.md's own maintainer**: its Section 5 schema-delta row
-and CLAUDE.md's schema-delta summary line both still say "repurpose";
-they're now out of sync with what's actually built and should be corrected
-at the next access-matrix.md revision. Migration: `v3_access_results_signoff`.
+an unrelated new gate would contradict that. **Resolved 2026-09-24**:
+docs/access-matrix.md and CLAUDE.md were both corrected on `main` (via a
+direct upload, merged into this branch) to say "new columns, do not
+repurpose" — no longer out of sync with what's actually built; the
+flag above is kept as history, not a still-open item. Migration:
+`v3_access_results_signoff`.
 
 ### Storage — `avatars` bucket (new, private — separate from the public-read `logos` bucket)
 - `public = false` — unlike `logos`, no public tool ever needs an avatar
