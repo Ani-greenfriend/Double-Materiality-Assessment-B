@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aggregateIro, aggregateTopic, hasImpactAxis, assessmentSeverity } from '../lib/calc';
+import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR } from '../lib/topics';
 import { ResultsIcon } from './icons';
 import { updateCycleThresholds } from '../lib/data';
@@ -11,18 +11,6 @@ function pillarOf(topicId) {
 function pillarColor(topicId) {
   return PILLAR_COLOR[pillarOf(topicId)]?.text ?? '#8B8B98';
 }
-
-// Topic Matrix quadrant fills — CLAUDE.md's actual brand triad (emerald
-// #5ED996, accent blue #4C6FFF, Material/risk orange #D79A4C), not the
-// red/purple stand-ins used before. "Both" gets the orange already reserved
-// for "Material" elsewhere in this file (the Heatmap's threshold zone, the
-// material-topic ring below) since it's the highest-priority quadrant.
-const MATERIAL_QUADRANT_COLOR = {
-  none: 'rgba(139,139,152,0.08)',
-  impact: 'rgba(76,111,255,0.16)',
-  financial: 'rgba(94,217,150,0.16)',
-  both: 'rgba(215,154,76,0.22)',
-};
 
 function downloadCsv(filename, rows) {
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
@@ -84,35 +72,34 @@ async function exportChartsAsPng(charts) {
 
 // Ported from reference-prototype/src/components/ResultsScreen.jsx. Kept
 // verbatim except: (a) the builder's direct request to drop the "TOPIC
-// SUMMARY" ESRS-topic cards, keeping only the bar chart, the two heatmaps
-// and the topic matrix; (b) a `thresholds` prop threaded into every
-// aggregateIro/aggregateTopic call so isMaterial reflects the cycle's real
-// threshold instead of the prototype's hardcoded default; (c) scoredIros
-// and SidePanel read `agg.effectiveValue` (v2.0's calc.js already prefers
-// the calibrated value there) instead of a separate `calibrations` prop —
-// there's no such separate map in the v2.0 shape, calibration is embedded
-// per-iro and calc.js already resolves it; (d) financialPoints reads
+// SUMMARY" ESRS-topic cards; (b) a `thresholds` prop threaded into every
+// aggregateIro call so isMaterial reflects the cycle's real threshold
+// instead of the prototype's hardcoded default; (c) scoredIros reads
+// `agg.effectiveValue` (v2.0's calc.js already prefers the calibrated value
+// there) instead of a separate `calibrations` prop — there's no such
+// separate map in the v2.0 shape, calibration is embedded per-iro and
+// calc.js already resolves it; (d) financialPoints reads
 // `a.likelihood`, not `a.financialLikelihood` — the latter was retired as
 // a criterion key in v2.0 (a risk/opportunity's likelihood IS `likelihood`,
 // same key as an impact IRO's); (e) PDF export dropped per CLAUDE.md's Arms
 // section ("Results keeps the prototype's PNG and CSV downloads; the
-// report builder is the PDF export") — CSV and PNG only; (f) the E/S/G and
-// material/not-material filters moved from local state to props —
-// CalibrateResultsTab.jsx now owns them so the same filter selection
-// applies to the Calibrate tab too, per the builder's direct request for
-// filters shared across the workspace, not just this screen; (g) the
-// threshold number inputs are wired to a real Apply-with-reason flow
-// (CLAUDE.md Business Rules: "editable at any time... via Apply with a
-// reason logged to threshold_changes") instead of being a disconnected
-// local preview — the prototype's own inputs never persisted anywhere,
-// which is exactly why they could drift from the Calibrate & Results
-// header's display; now both always read the same cycle-stored value, and
-// the only way they differ is a live, unapplied edit in progress;
-// (h) scoredIros no longer drops IROs with no
-// score — every topic shows in the primary bar chart, unrated ones
-// included, per the builder's direct request; an unrated bar renders at
-// 0 width with a "–" label instead of being hidden.
-export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, onChanged, readOnly }) {
+// report builder is the PDF export") — CSV and PNG only; (f) the threshold
+// number inputs are wired to a real Apply-with-reason flow (CLAUDE.md
+// Business Rules: "editable at any time... via Apply with a reason logged
+// to threshold_changes") instead of being a disconnected local preview —
+// the prototype's own inputs never persisted anywhere, which is exactly
+// why they could drift from the Calibrate & Results header's display; now
+// both always read the same cycle-stored value, and the only way they
+// differ is a live, unapplied edit in progress; (g) scoredIros no longer
+// drops IROs with no score — every topic shows in the primary bar chart,
+// unrated ones included, per the builder's direct request; an unrated bar
+// renders at 0 width with a "–" label instead of being hidden; (h) the
+// topic matrix (the third chart, plotting one dot per ESRS topic) was cut
+// per the builder's direct request — this screen keeps only the bar chart
+// and the two heatmaps, which plot every rated IRO directly. The E/S/G and
+// material/not-material filters CalibrateResultsTab.jsx passes down are no
+// longer used here (they still apply to CalibrationTab.jsx's row list).
+export default function ResultsScreen({ iros, thresholds, cycle, userId, onChanged, readOnly }) {
   const [impactTh, setImpactTh] = useState(thresholds?.impact ?? 3.0);
   const [financialTh, setFinancialTh] = useState(thresholds?.financial ?? 3.0);
   const [thresholdReason, setThresholdReason] = useState('');
@@ -151,14 +138,11 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
     }
   }
 
-  const [hoverTopic, setHoverTopic] = useState(null);
-  const [pinned, setPinned] = useState(null);
-  const [downloadSections, setDownloadSections] = useState({ bar: true, heatmaps: true, matrix: true });
+  const [downloadSections, setDownloadSections] = useState({ bar: true, heatmaps: true });
   const [downloadFormat, setDownloadFormat] = useState('csv'); // 'csv' | 'png'
   const [downloading, setDownloading] = useState(false);
   const impactSvgRef = useRef(null);
   const financialSvgRef = useRef(null);
-  const matrixSvgRef = useRef(null);
 
   // Every IRO appears here, rated or not — per the builder's direct
   // request, an unrated topic isn't hidden from the primary chart, it just
@@ -170,19 +154,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
     })
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1)), [iros, thresholds]);
 
-  const topicIds = [...new Set(iros.map((i) => i.topic))];
-  const allTopics = topicIds.map((id) => ({ id, ta: aggregateTopic(id, iros, thresholds), meta: ESRS_TOPICS.find((t) => t.id === id) }));
-  // A topic only earns a dot once at least one of its IROs has actually been
-  // rated — otherwise it's sitting at the (1,1) baseline purely because
-  // nothing was assessed yet, which would misleadingly look like "rated low."
-  const ratedTopics = allTopics.filter((t) => t.ta && t.ta.iros.some((i) => i.assessments.length > 0));
-  const unratedCount = allTopics.length - ratedTopics.length;
-  const topics = ratedTopics
-    .filter((t) => activeCats.includes(t.meta?.cat))
-    .filter((t) => (t.ta.isMaterial && showMaterial) || (!t.ta.isMaterial && showNotMaterial));
-
   const maxScore = Math.max(5, ...scoredIros.map((x) => x.score).filter((s) => s !== null));
-  const active = pinned ?? hoverTopic;
 
   // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
   // magnitude/likelihood for financial IROs. These are the raw dimensions
@@ -225,25 +197,16 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
           ...financialPoints.map((p) => ['Financial', p.label, p.topic, TYPE_LABEL[p.iroType], p.x.toFixed(2), p.y.toFixed(2)]),
         ]);
       }
-      if (downloadSections.matrix) {
-        downloadCsv('topic-matrix.csv', [
-          ['ESRS Topic', 'Impact score', 'Financial score', 'Material', 'IROs in this topic'],
-          ...topics.map((t) => [t.meta?.name ?? t.id, t.ta.impactScore.toFixed(2), t.ta.financialScore.toFixed(2), t.ta.isMaterial ? 'Yes' : 'No', t.ta.iros.map((i) => i.name).join(' | ')]),
-        ]);
-      }
       return;
     }
 
-    // PNG only covers the two heatmaps and the topic matrix — those are the
-    // actual charts (SVG). The bar chart is a plain list of bars, not a
-    // chart with axes to export as an image; CSV still covers it above.
+    // PNG only covers the two heatmaps — those are the actual charts (SVG).
+    // The bar chart is a plain list of bars, not a chart with axes to
+    // export as an image; CSV still covers it above.
     const charts = [];
     if (downloadSections.heatmaps) {
       charts.push({ svgEl: impactSvgRef.current, filename: 'impact-heatmap.png' });
       charts.push({ svgEl: financialSvgRef.current, filename: 'financial-heatmap.png' });
-    }
-    if (downloadSections.matrix) {
-      charts.push({ svgEl: matrixSvgRef.current, filename: 'topic-matrix.png' });
     }
     if (!charts.length) return;
     setDownloading(true);
@@ -268,10 +231,10 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
           <b className="text-text-primary">Financial score</b> = magnitude × (likelihood ÷ 5) — the same expected-value logic, with no override.
         </p>
         <p className="mb-2">
-          Each topic below is plotted at its average Impact score (x-axis) and average Financial score (y-axis). A topic only appears once at least one of its IROs has actually been rated.
+          The two heatmaps below plot every rated IRO on its own two raw dimensions — severity/likelihood for impact, magnitude/likelihood for financial — with a reference line at 3.
         </p>
         <p>
-          The dashed lines mark your two thresholds (adjustable below the chart, default 3.0). A topic in the <b className="text-text-primary">top-right quadrant clears both</b> — material from both directions.
+          Your two materiality thresholds (adjustable below, default 3.0) decide which scores in the bar chart above count as <b className="text-text-primary">Material</b>.
         </p>
       </DmaMascot>
 
@@ -284,21 +247,36 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
 
       {/* PRIMARY — BAR CHART */}
       <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">PRIMARY — IROs BY SCORE</p>
-      <div className="bg-surface rounded-2xl p-4 mb-6">
-        {scoredIros.map(({ iro, score }) => {
+      <div className="bg-surface rounded-2xl p-4 mb-1">
+        {scoredIros.map(({ iro, score, agg }) => {
           const color = pillarColor(iro.topic);
+          // Material vs not material is the one status that matters most on
+          // this chart — every bar was the same pillar color before, so a
+          // just-under-threshold IRO looked identical to a clearly material
+          // one. Only a material bar keeps its full pillar color; a
+          // not-material one dims to grey, and the label spells it out.
+          const barColor = score === null ? '#3A3842' : agg.isMaterial ? color : '#3A3842';
           return (
             <div key={iro.id} className="flex items-center gap-3 mb-2.5 last:mb-0">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
               <span className="text-[13px] font-semibold w-48 truncate">{iro.name}</span>
               <div className="flex-1 bg-surface-2 rounded h-5 relative overflow-hidden">
-                <div className="h-full rounded" style={{ width: score !== null ? `${(score / maxScore) * 100}%` : '0%', background: color }} />
+                <div className="h-full rounded" style={{ width: score !== null ? `${(score / maxScore) * 100}%` : '0%', background: barColor }} />
               </div>
+              <span
+                className="text-[10px] font-bold w-[74px] text-right uppercase tracking-wide shrink-0"
+                style={{ color: score === null ? '#5B5B66' : agg.isMaterial ? '#D79A4C' : '#5B5B66' }}
+              >
+                {score === null ? '–' : agg.isMaterial ? 'Material' : 'Not material'}
+              </span>
               <span className="text-[13px] font-bold w-10 text-right">{score !== null ? score.toFixed(1) : '–'}</span>
             </div>
           );
         })}
       </div>
+      <p className="text-[11px] text-text-secondary mb-6">
+        <span style={{ color: '#D79A4C' }}>●</span> Material (score ≥ threshold) · <span style={{ color: '#5B5B66' }}>●</span> Not material
+      </p>
 
       {/* SECONDARY — HEATMAPS */}
       <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">SECONDARY — IMPACT &amp; FINANCIAL HEATMAPS</p>
@@ -317,18 +295,14 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         />
       </div>
 
-      {/* TERTIARY — TOPIC MATRIX */}
-      <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-1">TERTIARY — TOPIC MATRIX</p>
-      <p className="text-[12px] text-text-secondary mb-2">
-        Each dot is one ESRS topic, colour-coded by pillar. <b className="text-text-primary">Hover or click a dot</b> to see exactly which IROs sit behind it, in the panel on the right.
-        {unratedCount > 0 && <span> {unratedCount} topic{unratedCount === 1 ? '' : 's'} not shown yet — no ratings recorded {unratedCount === 1 ? 'for it' : 'for them'} yet.</span>}
-      </p>
+      {/* MATERIALITY THRESHOLDS */}
+      <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-1">MATERIALITY THRESHOLDS</p>
       {!cycle || readOnly ? (
-        <p className="text-[12px] text-text-secondary mb-3">
+        <p className="text-[12px] text-text-secondary mb-6">
           Impact threshold <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b>
         </p>
       ) : (
-        <div className="mb-3">
+        <div className="mb-6">
           <div className="flex gap-3 flex-wrap items-center">
             <span className="text-[12px] font-semibold">Impact threshold</span>
             <input type="number" step="0.1" min="1" max="5" value={impactTh} onChange={(e) => setImpactTh(parseFloat(e.target.value) || 3)} className="w-14 bg-surface-2 rounded px-2 py-1 text-[12px] font-semibold" />
@@ -351,39 +325,16 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         </div>
       )}
 
-      <div className="grid grid-cols-[1fr_260px] gap-3 mb-6">
-        <div className="bg-surface rounded-2xl p-4">
-          <Matrix
-            topics={topics} impactTh={impactTh} financialTh={financialTh}
-            onHover={setHoverTopic} onPin={(id) => setPinned((p) => (p === id ? null : id))}
-            svgRef={matrixSvgRef}
-          />
-        </div>
-        <div className="bg-surface rounded-2xl p-4">
-          {active ? (
-            <SidePanel topic={topics.find((t) => t.id === active)} thresholds={thresholds} />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center py-8">
-              <span className="text-[24px] mb-2">👆</span>
-              <p className="text-[12.5px] font-semibold text-text-secondary">Hover or tap a dot<br />to see its IROs</p>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* DOWNLOAD */}
       <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(160deg, rgba(76,111,255,0.1), var(--color-surface))', border: '1px solid rgba(76,111,255,0.25)' }}>
         <p className="text-[14px] font-bold mb-1">⭳ Download the data behind these charts</p>
-        <p className="text-[12px] text-text-secondary mb-3">Same detail as the hover panels — which IRO belongs to which dot, with its scores and material status. Pick what you need.</p>
+        <p className="text-[12px] text-text-secondary mb-3">Same detail as the charts above — each IRO's scores and material status. Pick what you need.</p>
         <div className="flex items-center gap-4 flex-wrap mb-3">
           <label className="text-[12.5px] font-medium flex items-center gap-1.5">
             <input type="checkbox" checked={downloadSections.bar} onChange={() => setDownloadSections((s) => ({ ...s, bar: !s.bar }))} disabled={downloadFormat !== 'csv'} /> Bar chart (IROs by score)
           </label>
           <label className="text-[12.5px] font-medium flex items-center gap-1.5">
             <input type="checkbox" checked={downloadSections.heatmaps} onChange={() => setDownloadSections((s) => ({ ...s, heatmaps: !s.heatmaps }))} /> Impact &amp; Financial heatmaps
-          </label>
-          <label className="text-[12.5px] font-medium flex items-center gap-1.5">
-            <input type="checkbox" checked={downloadSections.matrix} onChange={() => setDownloadSections((s) => ({ ...s, matrix: !s.matrix }))} /> Topic matrix
           </label>
         </div>
         <div className="flex items-center gap-1.5 mb-4">
@@ -405,7 +356,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         )}
         <button
           onClick={handleDownload}
-          disabled={downloading || (downloadFormat === 'csv' ? (!downloadSections.bar && !downloadSections.heatmaps && !downloadSections.matrix) : (!downloadSections.heatmaps && !downloadSections.matrix))}
+          disabled={downloading || (downloadFormat === 'csv' ? (!downloadSections.bar && !downloadSections.heatmaps) : !downloadSections.heatmaps)}
           className="text-[13px] font-bold rounded-xl px-5 py-2.5 disabled:opacity-40"
           style={{ background: '#4C6FFF', color: '#F5F6FA' }}
         >
@@ -522,151 +473,3 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   );
 }
 
-function Matrix({ topics, impactTh, financialTh, onHover, onPin, svgRef }) {
-  const W = 460, H = 300, M = 34;
-  const plotW = W - M - 12, plotH = H - M - 24;
-  const sx = (v) => M + ((v - 1) / 4) * plotW;
-  const sy = (v) => (H - 34) - ((v - 1) / 4) * plotH;
-  const ix = sx(impactTh), fy = sy(financialTh);
-
-  // Real bounding-box collision avoidance — estimates each label's actual
-  // pixel width from its text length, flips the label to the left of the dot
-  // when there isn't room to the right before the plot edge, and nudges it
-  // up/down in small steps until its box doesn't overlap any label already
-  // placed. Point-distance alone (the old approach) let long labels overlap
-  // even when their dots were far enough apart.
-  const FONT = 9.5, CHAR_W = 5.4, LINE_H = 12;
-  const placedBoxes = [];
-  function boxesOverlap(a, b) {
-    return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
-  }
-  const positioned = topics.map(({ id, ta, meta }) => {
-    const cx = sx(ta.impactScore ?? 1), cy0 = sy(ta.financialScore ?? 1);
-    const r = ta.isMaterial ? 8 : 5.5;
-    const rawLabel = (meta?.name ?? id).replace(/^[A-Z]\d\s·\s/, '');
-    const label = rawLabel.length > 26 ? rawLabel.slice(0, 24) + '…' : rawLabel;
-    const labelW = label.length * CHAR_W + 6;
-    const fitsRight = cx + r + 4 + labelW <= W - 4;
-    const anchorLeft = !fitsRight;
-    const textX = anchorLeft ? cx - r - 4 : cx + r + 4;
-
-    let cy = cy0;
-    let step = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const box = anchorLeft
-        ? { x1: textX - labelW, x2: textX + 2, y1: cy - LINE_H / 2, y2: cy + LINE_H / 2 }
-        : { x1: textX - 2, x2: textX + labelW, y1: cy - LINE_H / 2, y2: cy + LINE_H / 2 };
-      if (!placedBoxes.some((p) => boxesOverlap(p, box))) {
-        placedBoxes.push(box);
-        break;
-      }
-      step += 1;
-      // Alternate up/down, growing each attempt, and clamp inside the plot.
-      const dir = step % 2 === 0 ? 1 : -1;
-      cy = Math.max(16, Math.min(H - 40, cy0 + dir * Math.ceil(step / 2) * (LINE_H + 1)));
-      if (step > 40) { placedBoxes.push(box); break; }
-    }
-    return { id, ta, meta, cx, cy, r, label, textX, anchorLeft };
-  });
-
-  return (
-    <div>
-      <div className="flex items-center gap-4 flex-wrap mb-2">
-        {[
-          ['Not material', MATERIAL_QUADRANT_COLOR.none],
-          ['Material — Impact only', MATERIAL_QUADRANT_COLOR.impact],
-          ['Material — Financial only', MATERIAL_QUADRANT_COLOR.financial],
-          ['Material — Both', MATERIAL_QUADRANT_COLOR.both],
-        ].map(([label, color]) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <span className="rounded-sm block shrink-0" style={{ width: 11, height: 11, background: color }} />
-            <span className="text-[10.5px] font-medium text-text-secondary">{label}</span>
-          </div>
-        ))}
-      </div>
-      <div className="relative">
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W} / ${H}`, height: 'auto', display: 'block' }}>
-        <rect x={M} y={10} width={ix - M} height={fy - 10} fill={MATERIAL_QUADRANT_COLOR.financial} />
-        <rect x={ix} y={10} width={M + plotW - ix} height={fy - 10} fill={MATERIAL_QUADRANT_COLOR.both} />
-        <rect x={M} y={fy} width={ix - M} height={H - 34 - fy} fill={MATERIAL_QUADRANT_COLOR.none} />
-        <rect x={ix} y={fy} width={M + plotW - ix} height={H - 34 - fy} fill={MATERIAL_QUADRANT_COLOR.impact} />
-        <line x1={ix} y1={10} x2={ix} y2={H - 34} stroke="#2A2830" strokeDasharray="3 2" />
-        <line x1={M} y1={fy} x2={M + plotW} y2={fy} stroke="#2A2830" strokeDasharray="3 2" />
-
-        {/* Labelled directly on the chart, not just in the legend below — what
-            each of the four squares means, at a glance. */}
-        <text x={M + 5} y={22} fontSize="8" fontWeight="700" fill="#5ED996" opacity="0.85">FINANCIAL ONLY</text>
-        <text x={M + plotW - 5} y={22} textAnchor="end" fontSize="8" fontWeight="700" fill="#D79A4C" opacity="0.9">MATERIAL — BOTH</text>
-        <text x={M + 5} y={H - 40} fontSize="8" fontWeight="700" fill="#8B8B98" opacity="0.75">NOT MATERIAL</text>
-        <text x={M + plotW - 5} y={H - 40} textAnchor="end" fontSize="8" fontWeight="700" fill="#4C6FFF" opacity="0.85">IMPACT ONLY</text>
-        {[0, 1, 2, 3, 4, 5].map((v) => (
-          <text key={`x${v}`} x={sx(Math.max(1, v))} y={H - 22} textAnchor="middle" fontSize="7.5" fill="#5B5B66">{v}</text>
-        ))}
-        {[0, 1, 2, 3, 4, 5].map((v) => (
-          <text key={`y${v}`} x={M - 6} y={sy(Math.max(1, v)) + 3} textAnchor="end" fontSize="7.5" fill="#5B5B66">{v}</text>
-        ))}
-        <text x={M + plotW / 2} y={H - 6} textAnchor="middle" fontSize="10" fontWeight="700" fill="#ACACB8">Impact materiality →</text>
-        <text x={12} y={H / 2 - 17} textAnchor="middle" fontSize="10" fontWeight="700" fill="#ACACB8" transform={`rotate(-90 12 ${H / 2 - 17})`}>Financial materiality →</text>
-
-        {positioned.map(({ id, ta, meta, cx, cy, r, label, textX, anchorLeft }) => {
-          const color = PILLAR_COLOR[meta?.cat]?.text ?? '#8B8B98';
-          return (
-            <g key={id} style={{ cursor: 'pointer' }} onMouseEnter={() => onHover(id)} onMouseLeave={() => onHover(null)} onClick={() => onPin(id)}>
-              {cy !== sy(ta.financialScore ?? 1) && (
-                <line x1={cx} y1={sy(ta.financialScore ?? 1)} x2={cx} y2={cy} stroke={color} strokeOpacity="0.4" strokeWidth="1" />
-              )}
-              <circle cx={cx} cy={cy} r={r} fill={color} stroke={ta.isMaterial ? '#D79A4C' : 'none'} strokeWidth={ta.isMaterial ? 2.5 : 0} />
-              <text x={textX} y={cy + 3} textAnchor={anchorLeft ? 'end' : 'start'} fontSize={FONT} fontWeight="600" fill="#F5F6FA" style={{ pointerEvents: 'none' }}>
-                {label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      {topics.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-[12px] font-medium text-text-secondary text-center max-w-[220px] bg-app-black bg-opacity-80 rounded-lg px-3 py-2">
-            No topics to plot yet — either nothing has been rated, or your E/S/G and material/not-material filters are hiding everything.
-          </p>
-        </div>
-      )}
-      </div>
-
-      <div className="flex items-center gap-4 flex-wrap mt-2 pt-2 border-t border-border-apus">
-        {['E', 'S', 'G'].map((c) => (
-          <div key={c} className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ background: PILLAR_COLOR[c].text }} />
-            <span className="text-[10.5px] font-medium text-text-secondary">{c === 'E' ? 'Environmental' : c === 'S' ? 'Social' : 'Governance'}</span>
-          </div>
-        ))}
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#8B8B98', border: '2px solid #D79A4C' }} />
-          <span className="text-[10.5px] font-medium text-text-secondary">Material (ringed &amp; larger)</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SidePanel({ topic, thresholds }) {
-  if (!topic) return null;
-  return (
-    <div>
-      <p className="font-bold text-[14px] mb-2.5">{topic.meta?.name ?? topic.id}</p>
-      {topic.ta.iros.map((iro) => {
-        const agg = aggregateIro(iro, thresholds);
-        const score = agg.effectiveValue;
-        return (
-          <div key={iro.id} className="border-t border-border-apus pt-2.5 mt-2.5 first:border-t-0 first:mt-0 first:pt-0">
-            <p className="text-[13px] font-semibold">{iro.name}</p>
-            <p className="text-[11.5px] font-medium text-text-secondary mt-0.5">
-              {TYPE_LABEL[iro.iroType]} · {score !== null ? score.toFixed(1) : '–'} ·{' '}
-              <span style={{ color: agg.isMaterial ? '#D79A4C' : undefined, fontWeight: agg.isMaterial ? 700 : 500 }}>{agg.isMaterial ? 'Material' : 'Not material'}</span>
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}

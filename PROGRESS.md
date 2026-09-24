@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 32 (built `GlobalHeader.jsx` — a real, sticky profile+notification header on every screen except Assessments, replacing a disconnected Dashboard-only prototype stub that never rendered anywhere else and wasn't wired to real profile data).
+**Last updated:** 2026-09-24 — session 2, part 33 (Results screen: cut the Topic Matrix per the builder's direct request, keeping only the bar chart and the two Impact/Financial heatmaps; relocated the Apply+reason threshold editor out of the matrix section so that CLAUDE.md business rule stays intact; the bar chart now visually marks Material vs Not material — dimmed grey bar plus an explicit label — instead of every bar looking the same pillar color regardless of status).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,54 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 33 (2026-09-24) — Results: cut the Topic Matrix, keep bar chart + heatmaps; mark Material vs Not material on the bar chart.**
+
+Builder: "leave out the combined matrix and keep focus on balkendiagramm
+and financial and impact matrix" — cut the third chart (Topic Matrix, one
+dot per ESRS topic) from the live Results screen, keeping the bar chart
+("Balkendiagramm") and the two Impact/Financial heatmaps. Mid-edit, a
+second instruction landed with a screenshot of the bar chart: "mark
+material vs not material" — every bar was the same pillar (E/S/G) color
+regardless of whether its score actually cleared the threshold, so a
+below-threshold IRO (e.g. 2.7 against a 3.0 threshold) looked identical to
+a clearly material one.
+
+**Topic Matrix removal**: deleted the `Matrix`/`SidePanel` component
+functions, the `MATERIAL_QUADRANT_COLOR` constant, and all the
+topic-level aggregation this screen only computed to feed them
+(`aggregateTopic`, `allTopics`/`ratedTopics`/`unratedCount`/`topics`,
+`hoverTopic`/`pinned`/`active`, `matrixSvgRef`) — none of it was used by
+the bar chart or heatmaps. The `activeCats`/`showMaterial`/
+`showNotMaterial` filter props from `CalibrateResultsTab.jsx`'s shared
+`FilterBar` (parts 18/19) are now unused here — left in place since
+`CalibrateResultsTab.jsx` still passes them and `CalibrationTab.jsx` still
+needs them, just dropped from `ResultsScreen`'s own destructuring.
+
+**Threshold editing had to move, not disappear**: CLAUDE.md's Business
+Rules require the two materiality thresholds stay "editable at any time...
+via Apply with a reason logged to `threshold_changes`" — that Apply+reason
+UI lived inside the matrix section, so cutting the chart would have
+silently cut the only place to edit thresholds too. Pulled it out into its
+own "MATERIALITY THRESHOLDS" block, unchanged otherwise (same
+`updateCycleThresholds` call, same dirty-state/Apply/Cancel flow). Also
+rewrote the DmaMascot explainer and the Download panel's copy, both of
+which referenced the now-gone matrix ("each topic below is plotted...",
+"same detail as the hover panels").
+
+**Bar chart material marking**: `scoredIros` already carried `agg.isMaterial`
+per row (used for the CSV export) but the UI never showed it — every bar
+used the same pillar color whether material or not. Now a not-material
+bar's fill dims to grey (`#3A3842`) instead of its pillar color, and a new
+label column spells out "MATERIAL" (orange, `#D79A4C` — the same color
+CLAUDE.md reserves for Material/risk everywhere else) or "NOT MATERIAL"
+(muted grey) per row, plus a one-line legend under the chart.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings,
+one moved line number). No schema/RLS change — pure frontend. The PDF
+report's own topic-matrix chart (`reportPdf.js`, spec'd Section 4) was
+left untouched — this request was specifically about the live Results
+screen, not the formal report deliverable.
+
 **Part 32 (2026-09-24) — Built the persistent profile+notification header; it never existed outside Dashboard.**
 
 Builder reported "I cannot see the profile setup on top of Admin & Roles
