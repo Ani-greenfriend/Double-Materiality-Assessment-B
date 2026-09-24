@@ -1,21 +1,34 @@
 import { useState } from 'react';
 import { aggregateIro, hasImpactAxis, MAGNITUDE_BANDS, CALC_METHODOLOGY_VERSION } from '../lib/calc';
 import { PILLAR_COLOR, TYPE_LABEL, TYPE_COLOR, pillarFor } from '../lib/topics';
-import { saveCalibrationAdjustment, resetCalibrationToCalculated, signOffCalibration, revokeCalibrationSignOff, updateCalibrationFields } from '../lib/data';
-import { CalibrationIcon } from './icons';
+import { saveCalibrationAdjustment, resetCalibrationToCalculated, setReviewedWithOwner, updateCalibrationFields } from '../lib/data';
 import DmaMascot from './DmaMascot';
 
 function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
-export default function CalibrationTab({ iros, onChanged }) {
+// v2.0 amended 9: no global stage banner, no cycle-level sign-off — sign-off
+// is per IRO, as in the prototype, and calibration is always available (no
+// more stage-gated read-only state).
+export default function CalibrationTab({ iros, thresholds, cycleId, userId, onChanged, activeCats, showMaterial, showNotMaterial }) {
   const [openId, setOpenId] = useState(null);
 
-  const flagged = iros.filter((iro) => {
-    const agg = aggregateIro(iro);
+  // The E/S/G and material/not-material filters are shared with Results
+  // (CalibrateResultsTab.jsx owns the state) — same selection, same
+  // criteria: a topic clears the filter if its own agg.isMaterial matches.
+  const scopedIros = !activeCats
+    ? iros
+    : iros.filter((iro) => {
+        const agg = aggregateIro(iro, thresholds);
+        return activeCats.includes(pillarFor(iro.topic)) && (agg.isMaterial ? showMaterial : showNotMaterial);
+      });
+
+  const flagged = scopedIros.filter((iro) => {
+    const agg = aggregateIro(iro, thresholds);
     return agg.overrideTriggered || agg.discrepancy;
   });
+  const signedOffCount = iros.filter((iro) => iro.calibration?.reviewed_with_owner).length;
 
   if (!iros.length) {
     return (
@@ -35,32 +48,34 @@ export default function CalibrationTab({ iros, onChanged }) {
         <p>The original calculated value is always kept, and any change needs a stated reason — nothing is overwritten silently.</p>
       </DmaMascot>
 
-      <h2 className="text-[24px] font-bold flex items-center gap-3 mb-1">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #E8B26B, #D79A4C)' }}>
-          <CalibrationIcon size={19} />
-        </span>
-        Calibration
-      </h2>
       <p className="text-[12px] text-text-secondary mb-1">This step is done together with leadership or subject-matter experts — review the calculated results and adjust only where the group agrees it's needed.</p>
-      <p className="text-[12px] text-text-secondary mb-5">{flagged.length} of {iros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
+      <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {scopedIros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
+      <p className="text-[12px] text-text-secondary mb-5">{signedOffCount} of {iros.length} IROs signed off.</p>
 
+      {scopedIros.length === 0 ? (
+        <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No topics match the current filters.</div>
+      ) : (
       <div className="flex flex-col gap-2 bg-surface rounded-2xl p-2">
-        {iros.map((iro) => (
+        {scopedIros.map((iro) => (
           <CalibrationRow
             key={iro.id}
             iro={iro}
+            thresholds={thresholds}
+            cycleId={cycleId}
+            userId={userId}
             isOpen={openId === iro.id}
             onToggle={() => setOpenId((id) => (id === iro.id ? null : iro.id))}
             onChanged={onChanged}
           />
         ))}
       </div>
+      )}
     </div>
   );
 }
 
-function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
-  const agg = aggregateIro(iro);
+function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, onChanged }) {
+  const agg = aggregateIro(iro, thresholds);
   const calculated = hasImpactAxis(iro.iroType) ? agg.impactScore : agg.financialScore;
   const cal = iro.calibration;
   const history = iro.calibrationHistory ?? [];
@@ -71,14 +86,12 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
   const [adjusting, setAdjusting] = useState(false);
   const [draftValue, setDraftValue] = useState(cal?.calibrated_value ?? calculated ?? 2.5);
   const [draftNotes, setDraftNotes] = useState('');
-  const [signing, setSigning] = useState(false);
-  const [signerName, setSignerName] = useState('');
 
   const flagged = agg.overrideTriggered || agg.discrepancy;
   const isCalibrated = cal?.calibrated_value !== null && cal?.calibrated_value !== undefined;
-  const isSignedOff = !!cal?.signed_off_by;
-  const currentValue = isCalibrated ? cal.calibrated_value : calculated;
-  const moderatorBlocked = cal?.moderator && cal.moderator === cal.owner;
+  const isReviewedWithOwner = !!cal?.reviewed_with_owner;
+  const currentValue = agg.effectiveValue;
+  const moderatorBlocked = cal?.moderator && cal.moderator === cal.owner && cal.moderator;
 
   async function run(fn) {
     setBusy(true);
@@ -103,37 +116,22 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
     const fromValue = isCalibrated ? cal.calibrated_value : calculated;
     if (!window.confirm(`Calibrate "${iro.name}" from ${fmt(fromValue)} to ${draftValue.toFixed(1)}?`)) return;
     await run(async () => {
-      await saveCalibrationAdjustment({ iroId: iro.id, calibration: cal, fromValue, toValue: draftValue, notes: draftNotes, changedBy: cal?.moderator || cal?.owner || 'Unspecified' });
+      await saveCalibrationAdjustment({ iroId: iro.id, cycleId, calibration: cal, fromValue, toValue: draftValue, notes: draftNotes, changedBy: cal?.moderator || cal?.owner || 'Unspecified' });
       setAdjusting(false);
     });
   }
 
   async function resetToCalculated() {
     if (!window.confirm('Reset to the calculated value? The history trail is kept.')) return;
-    await run(() => resetCalibrationToCalculated({ iroId: iro.id, calibration: cal, fromValue: cal.calibrated_value, changedBy: cal?.moderator || cal?.owner || 'Unspecified' }));
+    await run(() => resetCalibrationToCalculated({ iroId: iro.id, cycleId, calibration: cal, fromValue: cal.calibrated_value, changedBy: cal?.moderator || cal?.owner || 'Unspecified' }));
   }
 
-  async function confirmSignOff() {
-    if (!signerName.trim()) return;
-    await run(async () => {
-      await signOffCalibration({ iroId: iro.id, calibration: cal, signedOffBy: signerName.trim() });
-      setSigning(false);
-      setSignerName('');
-    });
-  }
-
-  async function revokeSignOff() {
-    if (window.confirm('Revoke sign-off? This topic will need re-approval before it counts as finalized.')) {
-      await run(() => revokeCalibrationSignOff(cal.id));
-    }
-  }
-
-  async function setBandValue(value) {
-    await run(() => updateCalibrationFields({ iroId: iro.id, calibration: cal, patch: { band_value: value } }));
+  async function toggleReviewedWithOwner() {
+    await run(() => setReviewedWithOwner({ iroId: iro.id, cycleId, calibration: cal, reviewed: !isReviewedWithOwner, changedBy: userId }));
   }
 
   async function setField(field, value) {
-    await run(() => updateCalibrationFields({ iroId: iro.id, calibration: cal, patch: { [field]: value } }));
+    await run(() => updateCalibrationFields({ iroId: iro.id, cycleId, calibration: cal, patch: { [field]: value } }));
   }
 
   return (
@@ -144,7 +142,7 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
           <span className="text-[12.5px] font-semibold" style={{ color: pillar.text }}>{iro.name}</span>
           {flagged && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5 border border-text-secondary text-text-secondary">Needs review</span>}
           {isCalibrated && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#4C6FFF' }}>Calibrated</span>}
-          {isSignedOff && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#5ED996' }}>✓ Signed off</span>}
+          {isReviewedWithOwner && <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: '#07070B', color: '#5ED996' }}>✓ Signed off</span>}
         </div>
         <span className="text-[11px]" style={{ color: pillar.text }}>{fmt(calculated)} {isOpen ? '▲' : '▼'}</span>
       </button>
@@ -172,10 +170,10 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
             {isCalibrated && <span style={{ color: '#4C6FFF' }}> · Calibrated: {fmt(cal.calibrated_value)}</span>}
           </p>
 
-          {isSignedOff && (
+          {isReviewedWithOwner && (
             <div className="rounded-lg px-3 py-2.5 mb-3.5 flex items-center justify-between" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
-              <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Signed off by <b>{cal.signed_off_by}</b> at {fmt(currentValue)} · {new Date(cal.signed_off_at).toLocaleDateString()}</p>
-              <button onClick={revokeSignOff} disabled={busy} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0">Revoke</button>
+              <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Signed off at {fmt(currentValue)} · {cal.reviewed_with_owner_at ? new Date(cal.reviewed_with_owner_at).toLocaleDateString() : ''}</p>
+              <button onClick={toggleReviewedWithOwner} disabled={busy} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0 disabled:opacity-40">Revoke</button>
             </div>
           )}
 
@@ -186,21 +184,22 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
                 <input defaultValue={cal?.owner ?? ''} onBlur={(e) => setField('owner', e.target.value)} className="w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none" />
               </div>
               <div>
-                <p className="text-[10.5px] text-text-secondary mb-1">MODERATOR (must differ from owner)</p>
+                <p className="text-[10.5px] text-text-secondary mb-1">MODERATOR (should differ from owner)</p>
                 <input defaultValue={cal?.moderator ?? ''} onBlur={(e) => setField('moderator', e.target.value)} className={`w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none border ${moderatorBlocked ? 'border-badge-amber' : 'border-transparent'}`} />
-                {moderatorBlocked && <p className="text-[10.5px] text-badge-amber mt-1">Moderator cannot match the IRO owner — assign a different reviewer.</p>}
+                {moderatorBlocked && <p className="text-[10.5px] text-badge-amber mt-1">Moderator matches the IRO owner — a warning, not a block; consider a different reviewer.</p>}
               </div>
             </div>
           )}
 
           {!hasImpactAxis(iro.iroType) && (
             <div className="mb-3.5">
-              <p className="text-[10.5px] text-text-secondary mb-1.5">MAGNITUDE BAND</p>
-              <div className="flex gap-1.5 flex-wrap">
+              <p className="text-[10.5px] text-text-secondary mb-1.5">WHAT THE MAGNITUDE SCALE MEANS</p>
+              <p className="text-[11px] text-text-secondary mb-1.5">Magnitude is rated 1–5 during the survey or session, not chosen here — this is reference only, for context while calibrating.</p>
+              <div className="flex flex-col gap-1 bg-app-black rounded-lg px-3 py-2.5">
                 {MAGNITUDE_BANDS.map((b) => (
-                  <button key={b.value} onClick={() => setBandValue(b.value)} disabled={busy} className={`text-[11px] rounded-md px-2.5 py-1.5 ${cal?.band_value === b.value ? 'bg-emerald text-app-black font-semibold' : 'border border-border-apus text-text-secondary'}`}>
-                    {b.label} · {b.value}
-                  </button>
+                  <p key={b.value} className="text-[11px] text-text-secondary">
+                    <b className="text-text-primary">{b.value}</b> — {b.label}
+                  </p>
                 ))}
               </div>
             </div>
@@ -228,27 +227,17 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
 
           {error && <p className="text-[11.5px] text-badge-amber mb-2">{error}</p>}
 
-          {!adjusting && !signing ? (
+          {!adjusting ? (
             <div className="flex gap-2 flex-wrap">
-              <button onClick={openAdjust} disabled={isSignedOff || busy} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40">
+              <button onClick={openAdjust} disabled={busy} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40">
                 {isCalibrated ? 'Edit calibration' : 'Adjust this topic'}
               </button>
               {isCalibrated && (
-                <button onClick={resetToCalculated} disabled={isSignedOff || busy} className="text-[12px] text-text-secondary px-3 py-1.5 disabled:opacity-40">↺ Reset to calculated</button>
+                <button onClick={resetToCalculated} disabled={busy} className="text-[12px] text-text-secondary px-3 py-1.5 disabled:opacity-40">↺ Reset to calculated</button>
               )}
-              {!isSignedOff && (
-                <button onClick={() => setSigning(true)} disabled={busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 ml-auto" style={{ background: '#5ED996', color: '#07070B' }}>✓ Sign off this result</button>
+              {!isReviewedWithOwner && (
+                <button onClick={toggleReviewedWithOwner} disabled={busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 ml-auto disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>✓ Sign off this result</button>
               )}
-            </div>
-          ) : signing ? (
-            <div className="bg-app-black rounded-xl p-4">
-              <p className="text-[11.5px] text-text-secondary mb-2.5">This confirms the result at <b className="text-text-primary">{fmt(currentValue)}</b> is approved as final. Editing or resetting later will revoke this sign-off automatically.</p>
-              <p className="text-[10.5px] text-text-secondary mb-1">YOUR NAME</p>
-              <input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Full name" autoFocus className="w-full bg-surface-2 rounded-lg px-3 py-2 text-[12.5px] outline-none mb-3" />
-              <div className="flex gap-2">
-                <button onClick={confirmSignOff} disabled={!signerName.trim() || busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>Confirm sign-off</button>
-                <button onClick={() => setSigning(false)} className="text-[12px] text-text-secondary px-3 py-1.5">Cancel</button>
-              </div>
             </div>
           ) : (
             <div className="bg-app-black rounded-xl p-4">
@@ -270,3 +259,4 @@ function CalibrationRow({ iro, isOpen, onToggle, onChanged }) {
     </div>
   );
 }
+

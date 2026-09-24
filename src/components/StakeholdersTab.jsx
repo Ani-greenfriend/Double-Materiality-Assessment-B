@@ -1,63 +1,45 @@
-import { StakeholderIcon } from './icons';
+import { useState, useEffect } from 'react';
+import StakeholderModule from './StakeholderModule';
+import { loadStakeholderMapForModule, saveStakeholderMapForModule } from '../lib/data';
 
-export default function StakeholdersTab({ master, participation }) {
-  const totalRatings = participation.reduce((sum, p) => sum + p.ratingCount, 0);
+// Section 8: "Stakeholders (master map — independent of any single cycle)".
+// StakeholderModule.jsx is the ported prototype screen — this wrapper owns
+// the Supabase-backed state it expects (stakeholderMap/setStakeholderMap
+// behave exactly like a React useState pair, per the prototype's own
+// contract). Silent stakeholders (spec v2.0 amended 5) are ordinary entries
+// in this same map, marked `type: 'silent'` — no separate panel or scope.
+export default function StakeholdersTab({ openGroupId, setOpenGroupId, onGoNext, onChanged }) {
+  const [stakeholderMap, setStakeholderMapLocal] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadStakeholderMapForModule()
+      .then(setStakeholderMapLocal)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function setStakeholderMap(updater) {
+    setStakeholderMapLocal((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveStakeholderMapForModule(next)
+        .then(() => onChanged?.())
+        .catch((err) => setError(err.message));
+      return next;
+    });
+  }
+
+  if (loading) return <p className="text-[13px] text-text-secondary">Loading…</p>;
 
   return (
     <div>
-      <h2 className="text-[24px] font-bold flex items-center gap-3 mb-1">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #B08CFF, #9B7FE0)' }}>
-          <StakeholderIcon size={19} />
-        </span>
-        Stakeholders
-      </h2>
-      <p className="text-[12px] text-text-secondary mb-5">Who's in the master map, and who actually rated this assessment.</p>
-
-      <p className="text-[13px] font-semibold mb-2">Participation in this assessment</p>
-      {participation.length === 0 ? (
-        <div className="bg-surface border border-border-apus rounded-2xl p-6 text-[13px] text-text-secondary mb-6">
-          No ratings recorded for this assessment yet.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2 mb-6">
-          {participation.map((p) => (
-            <div key={p.group} className="bg-surface border border-border-apus rounded-xl p-3.5 flex items-center justify-between">
-              <span className="text-[13px] font-medium">{p.group}</span>
-              <span className="text-[12px] text-text-secondary">{p.ratingCount} criteria answered · {totalRatings ? Math.round((p.ratingCount / totalRatings) * 100) : 0}% of ratings</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <p className="text-[13px] font-semibold mb-2">Master stakeholder map</p>
-      {master.length === 0 ? (
-        <div className="bg-surface border border-border-apus rounded-2xl p-6 text-[13px] text-text-secondary">
-          No stakeholder groups defined yet.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {master.map((g) => (
-            <div key={g.id} className="bg-surface border border-border-apus rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[13px] font-semibold">{g.name}</span>
-                <span className="text-[10.5px] text-text-secondary">{(g.perspectives ?? []).join(' · ')}</span>
-              </div>
-              {g.members.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  {g.members.map((m) => (
-                    <div key={m.id} className="text-[11.5px] text-text-secondary flex flex-wrap gap-x-2">
-                      <span className="text-text-primary font-medium">{m.name}</span>
-                      <span>{m.role}</span>
-                      {m.company && <span>· {m.company}</span>}
-                      {(m.pillars ?? []).length > 0 && <span>· {m.pillars.join('/')}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {error && <p className="text-[12px] text-badge-amber mb-4">{error}</p>}
+      <StakeholderModule
+        stakeholderMap={stakeholderMap} setStakeholderMap={setStakeholderMap}
+        openGroupId={openGroupId} setOpenGroupId={setOpenGroupId}
+        onGoNext={onGoNext}
+      />
     </div>
   );
 }
