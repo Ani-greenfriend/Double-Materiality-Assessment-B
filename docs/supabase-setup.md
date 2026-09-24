@@ -756,11 +756,106 @@ Migrations, in order: `v3_access_rls_clients_practice_stakeholders_topics`,
 `v3_access_rls_live_sessions`, `v3_access_rls_team_members`,
 `v3_access_fix_search_path`.
 
-**Not built yet**: Groups 3–5 (Settings → Admin & Roles, Settings →
-Profile, the formal Half A refusal test written up as a full pasted
-transcript in PROGRESS.md — the spot-checks above cover several of
-Section 6's `no` cells already but aren't the complete enumerated list
-Group 5 calls for).
+**Not built yet**: Groups 4–5 (Settings → Profile, the formal Half A
+refusal test written up as a full pasted transcript in PROGRESS.md — the
+spot-checks above and in Group 3 below cover several of Section 6's `no`
+cells already but aren't the complete enumerated list Group 5 calls for).
+
+### Group 3 — Settings → Admin & Roles (2026-09-24, part 24)
+
+**Real gap found and fixed before building the screen**: access-matrix.md's
+`team_members` per-table section (Section 1.2) says `name`/`phone_number`/
+`avatar_url` are editable on **own row only**, for every role including Tool
+Owner/Admin — but Group 2's `update team_members` RLS policy
+(`is_full_access() OR auth_user_id = auth.uid()`) lets any full-access user
+attempt an UPDATE on *any* row, and `enforce_team_members_protections()`
+only guarded `is_owner`/`is_admin`/`active`/`access_level`/`can_signoff_*`/
+`role_title` — leaving `name`/`phone_number`/`avatar_url`/`email` on another
+person's row writable by any Owner/Admin/Full-access caller, contradicting
+the matrix outright (not an ambiguous reading — the table is explicit).
+Fixed via `v3_access_team_members_own_row_fields_and_email_lock`
+(`create or replace function` on the same trigger, additive — no new
+trigger, no RLS change): two new guards ahead of the existing ones — `email`
+can never be changed through the app by anyone (it must keep matching the
+Supabase Auth identity the auth-link trigger matches against — no per-table
+row says otherwise, and every existing UI/data.js path already treats it as
+immutable); `name`/`phone_number`/`avatar_url` can only change on the
+caller's own row (`old.auth_user_id = auth.uid()`), regardless of role.
+
+**Verified live**, same rolled-back-transaction impersonation pattern as
+Group 2: Anika (full access) editing her own `name`/`phone_number` — allowed;
+Anika attempting the same on a second, temporary `team_members` row —
+blocked by the new guard; Anika attempting to change her own `email` — blocked.
+Further checks built for this screen specifically, using temporary
+`auth.users` rows created and rolled back inside the same transaction (this
+project has no other real Auth identity yet to test against): a full-access,
+non-admin caller attempting to INSERT a new `team_members` row — blocked by
+the `create team_members` policy (`is_owner_user() OR is_admin_user()`); the
+same caller attempting to self-grant `is_admin` — blocked by the existing
+self-change guard; attempting to grant `is_admin` to a *different* row —
+blocked (`Only the Tool Owner can grant or revoke Admin`); a Sign-off-only
+caller's `SELECT` on `team_members` — returns only their own row, confirming
+the `read team_members` policy's `own row` branch. Positive paths: an Admin
+(not Owner) successfully creating a new team member and setting another
+row's `access_level`/`can_signoff_results` — allowed, matching the matrix's
+"Admin: yes" cells — while the same Admin's attempt to grant `is_admin` to
+that row, or deactivate their own, are both blocked. `get_advisors` (security)
+re-run clean — no new findings from this one function replacement.
+
+**Built (frontend, no other schema change this part):**
+- `src/lib/data.js` — `fetchOwnTeamMember`, `listTeamMembers`,
+  `updateOwnProfile`, `uploadAvatar`, `createTeamMember`,
+  `updateTeamMemberAccess`, `updateTeamMemberAdmin`,
+  `updateTeamMemberActive`. `avatar_url` stores the storage **path**, not a
+  URL — the `avatars` bucket is private (unlike the public-read `logos`
+  bucket), so every read resolves stored paths to a fresh signed URL
+  (`createSignedUrls`, batched; 7-day expiry, self-healing on next read).
+- `App.jsx` — the login gate CLAUDE.md's Hard Rule requires: fetches the
+  caller's own `team_members` row once the session resolves; `null` (no row)
+  or `active: false` renders `NoAccessScreen.jsx` ("No access yet — ask your
+  Admin" / "Access deactivated") instead of the app shell, sign-out only.
+  This is the piece that makes every role/table boundary Group 2 built
+  actually reachable through the UI, not just enforceable at the API.
+- `SettingsMenu.jsx` — replaces the sidebar's plain email-and-sign-out block
+  with an avatar dropdown (Profile · Admin & Roles, shown only for Tool
+  Owner/Admin · Sign out) — Settings is not a left-rail nav item, per
+  instruction. The "Profile" entry is wired but its screen isn't built yet
+  (placeholder text) — that's Group 4.
+- `AdminRolesTab.jsx` — the Tool Owner/Admin-only team table: search, a
+  role/permission legend, "+ New team member" (email/name/role
+  title/access level, with the two sign-off checkboxes only for Sign-off
+  only), and per-row editable access level, sign-off permissions, role
+  title, an Admin toggle (locked with a tooltip for Admin viewers, for the
+  Owner's own row, and for anyone's own row — matching the trigger), and an
+  Active toggle (locked on one's own row) — deactivate only, no delete path
+  anywhere in this screen, per CLAUDE.md. Also refuses at the component
+  level for a non-Owner/Admin caller who somehow reaches the route (defense
+  in depth — the underlying `read team_members` RLS does allow any
+  full-access caller to read all rows, so the *screen-level* refusal for
+  plain Full-access carries real weight here, not just cosmetic hiding).
+
+**Known gap, flagged rather than built**: access-matrix.md's people table
+lists Sign-off only's screens as Topics/Assessments/Responses/Calibrate &
+Results (read-only, with Dashboard/Report "locked, not just hidden"), and
+user-stories.md's Topics story describes a Sign-off-only reviewer opening
+"Topics" to read and sign off "this round's topic selection" — which, per
+the Group 2 resolution, actually means the assessment's own `iros` (Review &
+Customise's output, `assessments.iro_list_signed_off`), not the master
+`topic_library` admin screen (`TopicsTab.jsx`) Sign-off only has no access
+to at all. None of that role-gated nav visibility or read-only rendering for
+the other five screens (Dashboard/Stakeholders/Topics/Assessments/
+Responses/Calibrate & Results/Report) was built this part — it isn't one of
+the five access-stage groups as scoped (Group 3 is Admin & Roles only,
+Group 4 is Profile + the avatar dropdown), it would touch nearly every
+existing screen, and Sign-off only's own Half B screen test is already
+on record as deferred with no named holder. The database-layer refusal is
+real regardless (Group 2's RLS already returns zero rows from
+`topic_library`/`assessment_progress`/`group_engagement` etc. to a
+Sign-off-only caller) — only the UI's *presentation* of that refusal (hiding
+nav items, a stated "locked" message instead of a silently empty screen) is
+outstanding. Flagged for a builder decision: fold this into Group 5, add it
+as an explicit Group 6, or leave it until a named Sign-off-only holder
+exists and Half B is unblocked anyway.
 
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by

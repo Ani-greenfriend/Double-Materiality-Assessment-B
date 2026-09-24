@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 23 (access stage Group 2 — RLS policies — built, verified live, and pushed; three access-matrix.md contradictions resolved by builder decision)
+**Last updated:** 2026-09-24 — session 2, part 24 (access stage Group 3 — Settings → Admin & Roles — built, verified live, pushed; the login gate and avatar-dropdown shell it depends on landed with it; a real team_members RLS gap found and fixed)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,102 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 24 (2026-09-24) — Access stage, Group 3 of 5: Settings → Admin & Roles, plus the shared login gate and avatar-dropdown shell it needs to be reachable at all.**
+
+**Real gap found before building anything, fixed first.** Re-reading
+access-matrix.md's `team_members` per-table section while building the
+Admin & Roles screen surfaced an unambiguous mismatch with what Group 2
+(part 23) actually shipped: the matrix says `name`/`phone_number`/
+`avatar_url` are editable **on the caller's own row only — for every
+role, including Tool Owner/Admin**. Group 2's `update team_members` RLS
+policy (`is_full_access() OR auth_user_id = auth.uid()`) lets any
+full-access caller attempt an UPDATE on *any* row, and the protection
+trigger only guarded the admin-facing columns (`is_owner`/`is_admin`/
+`active`/`access_level`/`can_signoff_*`/`role_title`) — leaving
+`name`/`phone_number`/`avatar_url`, plus `email` (not listed as editable
+by anyone, anywhere, in the matrix), writable on someone else's row by
+any Owner/Admin/Full-access caller. Not a contradiction needing a
+decision — the matrix is explicit and nothing else in the spec docs
+disagrees — so fixed outright: `v3_access_team_members_own_row_fields_and_email_lock`
+(same trigger function, `create or replace`, no new trigger and no RLS
+change) adds two guards ahead of the existing ones: `email` can never
+change through the app for anyone (it has to keep matching the identity
+the auth-link trigger matches against); `name`/`phone_number`/`avatar_url`
+can only change on the caller's own row, regardless of role.
+
+**Verified live**, same rolled-back-transaction impersonation pattern as
+part 23 — full detail and every test's exact result in
+docs/supabase-setup.md's new Group 3 section. Summary: Anika editing her
+own name/phone — works; the same on someone else's row — blocked;
+Anika changing her own email — blocked. Built two temporary `auth.users`
+rows inside the rolled-back transaction (this project has no other real
+Auth identity yet) to genuinely impersonate a plain Full-access caller
+and an Admin caller, not just Anika (Owner) — confirmed: full-access
+(non-admin) can't create a team member, can't self-grant `is_admin`,
+can't grant `is_admin` to anyone else; a Sign-off-only caller's read
+returns only their own row; an Admin (not Owner) *can* create a team
+member and set another row's access level/sign-off permissions (matching
+"Admin: yes"), but still can't grant `is_admin` or deactivate themselves.
+Every one of these matches the matrix's per-role, per-column table
+exactly. `get_advisors` (security) re-run clean.
+
+**Built:**
+- **The login gate** (CLAUDE.md Hard Rule, not previously built —
+  `App.jsx` had zero awareness of `team_members` until now, any
+  authenticated session saw the full app regardless of role). Fetches the
+  caller's own row once the session resolves; no row or `active: false`
+  renders a new `NoAccessScreen.jsx` ("No access yet — ask your Admin" /
+  "Access deactivated") instead of the app shell, sign-out only. This is
+  what makes every table-level boundary Group 2 already enforces actually
+  visible in the UI, not just true at the API.
+- **`SettingsMenu.jsx`** — replaces the sidebar's plain email+sign-out
+  block with an avatar dropdown: Profile (every role, wired but not built
+  yet — placeholder text, that's Group 4) · Admin & Roles (Tool
+  Owner/Admin only) · Sign out. Settings is not a left-rail nav item, per
+  instruction — pulled forward from Group 4 because Group 3's own screen
+  needs somewhere to be reached from; Group 4 finishes the dropdown's
+  other half.
+- **`AdminRolesTab.jsx`** — search, a role/permission legend, "+ New team
+  member" (email/name/role title/access level, sign-off checkboxes only
+  for Sign-off only — the email must already have a Supabase Auth login,
+  per CLAUDE.md's Option A), and a per-row editable table: access level,
+  the two sign-off permissions, role title, an Admin toggle (locked +
+  tooltip for an Admin viewer, for the Owner's own row, and for anyone's
+  own row), an Active toggle (locked on one's own row, deactivate only,
+  no delete path). Also refuses at the component level for a
+  non-Owner/Admin caller who somehow reaches the route — real defense in
+  depth here, since the underlying `read team_members` RLS does let any
+  full-access caller read all rows; the screen-level refusal is what
+  actually keeps plain Full-access out.
+- `src/lib/data.js`: `fetchOwnTeamMember`, `listTeamMembers`,
+  `updateOwnProfile`, `uploadAvatar`, `createTeamMember`,
+  `updateTeamMemberAccess`, `updateTeamMemberAdmin`,
+  `updateTeamMemberActive`. `avatar_url` stores the storage **path**
+  (the bucket is private, unlike `logos`) — reads resolve it to a fresh
+  signed URL, batched via `createSignedUrls`, 7-day expiry.
+
+**Flagged, not built — a decision needed, not a guess:** access-matrix.md
+and user-stories.md describe Sign-off only's screens as Topics (read +
+conditional sign-off — really the assessment's own `iros`/Review &
+Customise output, not the `topic_library` admin list per the Group 2
+resolution)/Assessments/Responses/Calibrate & Results, all read-only,
+with Dashboard and Report "locked, not just hidden from nav." None of
+that role-gated nav visibility or read-only rendering across the other
+seven screens was built this part — it isn't one of the five groups as
+scoped (Group 3 = Admin & Roles only), it would touch nearly every
+existing component, and Sign-off only's Half B screen test is already on
+record as deferred with no named holder yet. The database already
+refuses the data underneath (Group 2's RLS returns zero rows to a
+Sign-off-only caller from `topic_library`/the Dashboard's/Report's
+source tables) — only the UI's *presentation* of that refusal is
+outstanding. See docs/supabase-setup.md's Group 3 section for the full
+writeup; needs the builder's call on whether this is Group 5's job, a
+new Group 6, or waits for a named Sign-off-only holder regardless.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). Migration this part:
+`v3_access_team_members_own_row_fields_and_email_lock`.
+
 **Part 23 (2026-09-24) — Access stage, Group 2 of 5: RLS policies, built, verified live, pushed.**
 
 Builder gave three direct decisions resolving the contradictions flagged in
@@ -1505,8 +1601,8 @@ left the actual spec-derived rules alone). `npm run build` and
 **Access stage (docs/access-matrix.md + docs/user-stories.md, five groups):**
 - [x] Group 1 — schema delta: `team_members` + seed, audit columns on 5 tables, `assessments.iro_list_signed_off*`, `cycles.results_signed_off*` (new columns, not a repurposing — see part 21), `avatars` bucket + policies, the auth-link trigger — done, part 21
 - [x] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, the `team_members` policies themselves — done and verified live, part 23. Sign-off only's table-level refusals on Dashboard/Report are a frontend routing concern (Group 3/4 territory — the tables those screens read, e.g. `assessment_progress`/`group_engagement`, aren't in Sign-off only's per-table grants, so the refusal is already mechanically true; the screen-level "refuse outright, not an empty screen" UX still needs building)
-- [ ] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only)
-- [ ] Group 4 — Settings → Profile (every role) + the avatar-dropdown header menu
+- [x] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only) — done and verified live, part 24; the login gate and avatar-dropdown shell were pulled forward from Group 4 since Group 3's screen needs them to be reachable
+- [ ] Group 4 — Settings → Profile (every role) — the avatar-dropdown header menu's shell already exists (part 24); this finishes its "Profile" entry
 - [ ] Group 5 — the refusal test, Half A (every `no` cell attempted through the API as Anika's session and as an unrecognised identity, pasted into this file) — Half B (the named-person screen test) is explicitly deferred for Sign-off only, no holder named yet
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
@@ -1713,36 +1809,40 @@ Out of scope in CLAUDE.md: "In-app email invitations... Option A
 (Supabase-dashboard invite...) is what ships" — that line will need to
 change or gain an exception for this).
 
-**Access stage — Group 2 done and pushed (part 23).** Group 1 (schema
-delta, part 21) and Group 2 (RLS policies, part 23) are both complete and
-live-verified. The three access-matrix.md contradictions flagged in part
-22 (topic_library/invitations/cycles Sign-off-only read access) were
-resolved by direct builder decision and access-matrix.md Section 6 rule 2
-corrected with a dated note — see part 23 for the full detail. Both gaps
-(`submissions` UPDATE frozen-once-submitted, `iros` DELETE no-responses
-guard) are fixed and tested.
+**Access stage — Groups 2 and 3 done and pushed (parts 23-24).** Group 1
+(schema delta, part 21), Group 2 (RLS policies, part 23) and Group 3
+(Admin & Roles, part 24) are all complete and live-verified. The three
+access-matrix.md contradictions flagged in part 22 were resolved by
+direct builder decision (part 23). A real, unambiguous RLS gap
+(`team_members.name`/`phone_number`/`avatar_url`/`email` writable beyond
+"own row only") was found and fixed while building Group 3 (part 24) —
+see docs/supabase-setup.md's Group 3 section for the exact fix and its
+live verification. The login gate ("No access yet"/deactivated screen)
+and the avatar-dropdown Settings menu both now exist — Group 3 pulled
+them forward from Group 4 since its own screen needed somewhere to be
+reached from.
 
-**Next: Group 3 — Settings → Admin & Roles (Tool Owner/Admin only).** Per
-docs/user-stories.md's "Tool Owner/Admin — Settings → Admin & Roles"
-stories and access-matrix.md: search, "+ New team member" for an
-already-invited email (writes a `team_members` row, `access_level` set at
-creation), a legend, a team table with an access-level dropdown,
-Sign-off-only rows getting two independent checkboxes
-(`can_signoff_topics`/`can_signoff_results`), an Admin toggle column
-editable by Tool Owner only (Admin sees it locked with a tooltip — the
-`enforce_team_members_protections()` trigger backs this at the database
-layer regardless of what the UI shows), and Active toggle (deactivate,
-never delete). No dependency on invitation-link features — confirmed in
-part 23.
+**Next: Group 4 — Settings → Profile (every role).** The dropdown's
+"Profile" entry is already wired (`App.jsx`, `tab === 'profile'`) but
+still shows a placeholder — build the real screen: avatar upload (to the
+already-provisioned private `avatars` bucket, via `uploadAvatar` in
+data.js — already built, unused until this lands), Edit/Save for
+name/phone_number (own row only, per the part-24 fix — `updateOwnProfile`
+already built), email displayed but never editable, `role_title`
+displayed but not editable here (only Owner/Admin can set it, via Admin &
+Roles — matches the matrix's own-row exception list, which doesn't
+include `role_title`), member since (`created_at`), and a read-only
+access-level line in plain language (per user-stories.md: "Full access"
+or "Sign-off only," and for Sign-off only, which of the two permissions
+specifically they hold).
 
-**Then Group 4 — Settings → Profile (every role) + the avatar-dropdown
-header menu.** Avatar upload (to the new private `avatars` bucket from
-Group 1), Edit/Save, name, role display, email non-editable, phone,
-member since, a read-only access-level line in plain language (per
-user-stories.md: "Full access" or "Sign-off only," and for Sign-off only,
-which of the two permissions specifically). Settings goes behind an
-avatar dropdown in the header (Profile · Admin & Roles if Owner/Admin ·
-Sign out), not a left-rail nav item, per CLAUDE.md/user-stories.md.
+**Flagged during Group 3, still open**: whether/when to build role-gated
+nav visibility and read-only rendering for Sign-off only across
+Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate &
+Results/Report — not one of the five groups as scoped, large if taken on,
+and blocked on a named holder for its own screen test regardless. See
+part 24 and docs/supabase-setup.md's Group 3 section. Needs a builder
+call: Group 5, a new Group 6, or wait.
 
 **Then Group 5 — the refusal test, Half A.** Every `no` cell in
 access-matrix.md Section 6's 13 rules, attempted through the API as

@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabaseConfigError } from './lib/supabaseClient';
 import {
-  getSession, onAuthStateChange, signOut, fetchAssessments, fetchDashboard, fetchStakeholderMaster,
-  fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot, fetchClients,
+  getSession, onAuthStateChange, fetchAssessments, fetchDashboard, fetchStakeholderMaster,
+  fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot, fetchClients, fetchOwnTeamMember,
 } from './lib/data';
 import Login from './components/Login';
+import NoAccessScreen from './components/NoAccessScreen';
 import ApusLogo from './components/ApusLogo';
 import Dashboard from './components/Dashboard';
 import StakeholdersTab from './components/StakeholdersTab';
@@ -13,6 +14,8 @@ import AssessmentsTab from './components/AssessmentsTab';
 import ResponsesTab from './components/ResponsesTab';
 import CalibrateResultsTab from './components/CalibrateResultsTab';
 import ReportTab from './components/ReportTab';
+import AdminRolesTab from './components/AdminRolesTab';
+import SettingsMenu from './components/SettingsMenu';
 import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, ResponsesIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
 
 // Nav item set and order per product-spec.md Section 8 "App shell and
@@ -33,6 +36,11 @@ const TABS = [
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+  // Access stage (docs/access-matrix.md): the caller's own team_members row —
+  // undefined = loading, null = no matching row ("No access yet"). Fetched
+  // once session resolves; this is the app's default-deny gate, built
+  // explicitly rather than relied on RLS alone (CLAUDE.md Hard Rule).
+  const [me, setMe] = useState(undefined);
   const [assessments, setAssessments] = useState([]);
   const [assessmentId, setAssessmentId] = useState(null);
   const [iros, setIros] = useState([]);
@@ -104,13 +112,22 @@ export default function App() {
     fetchStakeholderMaster().then(setStakeholderMaster).catch((err) => setLoadError(err.message));
   }, []);
 
-  useEffect(() => {
+  const reloadMe = useCallback(() => {
     if (!session) return;
+    fetchOwnTeamMember(session.user.id).then(setMe).catch((err) => { setMe(null); setLoadError(err.message); });
+  }, [session]);
+
+  useEffect(() => {
+    reloadMe();
+  }, [reloadMe]);
+
+  useEffect(() => {
+    if (!session || !me || !me.active) return;
     reloadAssessments();
     reloadCycles();
     reloadStakeholderMaster();
     fetchClients().then(setClients).catch((err) => setLoadError(err.message));
-  }, [session, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
+  }, [session, me, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
 
   // Financial years that actually have assessments, newest first — the pool
   // the selector (and its default) draws from.
@@ -162,6 +179,12 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center text-[13px] text-text-secondary">Loading…</div>;
   }
   if (!session) return <Login />;
+
+  if (me === undefined) {
+    return <div className="min-h-screen flex items-center justify-center text-[13px] text-text-secondary">Loading…</div>;
+  }
+  if (me === null) return <NoAccessScreen email={session.user.email} />;
+  if (!me.active) return <NoAccessScreen email={session.user.email} deactivated />;
 
   const currentAssessment = assessments.find((a) => a.id === assessmentId) ?? null;
   // Dashboard.jsx (ported verbatim) expects two things the DB doesn't give
@@ -230,12 +253,13 @@ export default function App() {
           )}
         </button>
 
-        {!collapsed && (
-          <div className="px-4 pb-4 mb-2 border-b border-border-apus">
-            <p className="text-[10.5px] text-text-secondary truncate mb-1.5">{session.user.email}</p>
-            <button onClick={signOut} className="text-[11.5px] text-text-secondary hover:text-text-primary">Sign out</button>
-          </div>
-        )}
+        <SettingsMenu
+          me={me}
+          collapsed={collapsed}
+          tab={tab}
+          onOpenProfile={() => setTab('profile')}
+          onOpenAdminRoles={() => setTab('admin-roles')}
+        />
 
         <nav className="flex flex-col gap-1 px-2 flex-1">
           {TABS.map(({ key, label, Icon }) => (
@@ -317,6 +341,12 @@ export default function App() {
             />
           )}
           {tab === 'report' && <ReportTab cycles={cycles} />}
+          {tab === 'admin-roles' && <AdminRolesTab me={me} onChanged={reloadMe} />}
+          {tab === 'profile' && (
+            <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">
+              Settings → Profile is next up (access stage Group 4) — not built yet.
+            </div>
+          )}
           {tab === 'calibrate-results' && (
             <div>
               {assessments.length > 0 && (

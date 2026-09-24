@@ -1525,3 +1525,137 @@ export async function fetchAssessmentsForOverview() {
     };
   });
 }
+
+// ---- team_members — access stage Groups 3/4 (Settings → Admin & Roles,
+// Settings → Profile). `avatars` is a private bucket (unlike the public-read
+// `logos` bucket) — `avatar_url` stores the storage PATH, not a public URL;
+// every read resolves it to a fresh signed URL, since a private bucket's
+// objects have no stable public address. ----
+
+const AVATAR_SIGNED_URL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for a session, short enough to self-heal if ever revoked
+
+function mapTeamMember(row, avatarUrl) {
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id,
+    email: row.email,
+    name: row.name,
+    phoneNumber: row.phone_number,
+    avatarPath: row.avatar_url,
+    avatarUrl: avatarUrl ?? null,
+    roleTitle: row.role_title,
+    accessLevel: row.access_level,
+    isAdmin: row.is_admin,
+    isOwner: row.is_owner,
+    canSignoffTopics: row.can_signoff_topics,
+    canSignoffResults: row.can_signoff_results,
+    active: row.active,
+    createdAt: row.created_at,
+  };
+}
+
+async function resolveAvatarUrls(paths) {
+  const distinct = [...new Set(paths.filter(Boolean))];
+  if (distinct.length === 0) return {};
+  const { data, error } = await supabase.storage.from('avatars').createSignedUrls(distinct, AVATAR_SIGNED_URL_SECONDS);
+  if (error) throw new Error(`avatar signed URL batch failed: ${error.message}`);
+  const map = {};
+  data.forEach((entry, i) => { if (!entry.error) map[distinct[i]] = entry.signedUrl; });
+  return map;
+}
+
+// The caller's own team_members row — the login gate (App.jsx checks for
+// null = "No access yet", `active: false` = deactivated) and Profile both
+// read through this. Returns null if no row matches this auth identity yet.
+export async function fetchOwnTeamMember(authUserId) {
+  assertConfigured();
+  const { data, error } = await supabase.from('team_members').select('*').eq('auth_user_id', authUserId).maybeSingle();
+  if (error) throw new Error(`team_members query failed: ${error.message}`);
+  if (!data) return null;
+  const urls = await resolveAvatarUrls([data.avatar_url]);
+  return mapTeamMember(data, urls[data.avatar_url]);
+}
+
+// Every team_members row — Settings → Admin & Roles (Tool Owner/Admin only;
+// RLS also allows any full-access read, but the screen itself is nav-gated
+// to Owner/Admin per access-matrix.md's people table).
+export async function listTeamMembers() {
+  assertConfigured();
+  const { data, error } = await supabase.from('team_members').select('*').order('created_at', { ascending: true });
+  if (error) throw new Error(`team_members query failed: ${error.message}`);
+  const urls = await resolveAvatarUrls(data.map((r) => r.avatar_url));
+  return data.map((row) => mapTeamMember(row, urls[row.avatar_url]));
+}
+
+// Own-row only, per access-matrix.md's team_members section (name,
+// phone_number, avatar_url — enforced again server-side by
+// enforce_team_members_protections()).
+export async function updateOwnProfile(id, { name, phoneNumber }) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ name, phone_number: phoneNumber }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+export async function uploadAvatar(authUserId, teamMemberId, file) {
+  assertConfigured();
+  const ext = file.name.split('.').pop();
+  const path = `${authUserId}/avatar.${ext}`;
+  const { error: upError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+  if (upError) throw new Error(`avatar upload failed: ${upError.message}`);
+  const { error: updError } = await supabase.from('team_members').update({ avatar_url: path }).eq('id', teamMemberId);
+  if (updError) throw new Error(`team_members update failed: ${updError.message}`);
+  const urls = await resolveAvatarUrls([path]);
+  return urls[path];
+}
+
+// "+ New team member" (Admin & Roles) — the email must already have a
+// Supabase Auth identity (invited via the dashboard, per CLAUDE.md's Option
+// A); the auth-link trigger fills in auth_user_id the first time that
+// person logs in. Owner/Admin only — matches the INSERT policy.
+export async function createTeamMember({ email, name, roleTitle, accessLevel, canSignoffTopics, canSignoffResults }) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('team_members')
+    .insert({
+      email,
+      name,
+      role_title: roleTitle || null,
+      access_level: accessLevel,
+      can_signoff_topics: accessLevel === 'signoff' ? !!canSignoffTopics : false,
+      can_signoff_results: accessLevel === 'signoff' ? !!canSignoffResults : false,
+    })
+    .select('*')
+    .single();
+  if (error) throw new Error(`team_members insert failed: ${error.message}`);
+  return mapTeamMember(data, null);
+}
+
+// Access level, sign-off permissions, role title — any row, Owner/Admin only
+// (enforced again by the trigger).
+export async function updateTeamMemberAccess(id, { roleTitle, accessLevel, canSignoffTopics, canSignoffResults }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('team_members')
+    .update({
+      role_title: roleTitle || null,
+      access_level: accessLevel,
+      can_signoff_topics: accessLevel === 'signoff' ? !!canSignoffTopics : false,
+      can_signoff_results: accessLevel === 'signoff' ? !!canSignoffResults : false,
+    })
+    .eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+// is_admin — Tool Owner only, never on one's own row (both enforced by the trigger).
+export async function updateTeamMemberAdmin(id, isAdmin) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ is_admin: isAdmin }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+// active — Owner/Admin, never on one's own row (both enforced by the trigger). Deactivate, never delete.
+export async function updateTeamMemberActive(id, active) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ active }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
