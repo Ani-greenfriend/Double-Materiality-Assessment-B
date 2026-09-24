@@ -498,14 +498,16 @@ their own policies exist for completeness/direct access rather than
 because the cascade needs them. Migration:
 `v2_delete_drafts_by_assessment_status`.
 
-## Access stage (2026-09-24, session 2 part 21, Group 1 — schema delta)
+## Access stage (2026-09-24, session 2 parts 21–23)
 
 Per docs/access-matrix.md and docs/user-stories.md (authoritative for
 every role/table/policy — read those first, this is a schema log only).
-This is Group 1 of 5; Group 2 (RLS policies) has not landed yet, so
-`team_members` currently has RLS enabled with **zero policies** (default
-deny for every role, including `authenticated` — safe, not a gap) until
-Group 2 adds the real ones.
+Part 21 = Group 1 (schema delta, below). Part 23 = Group 2 (RLS policies,
+documented further down this section) — every table's `authenticated`
+policies were rewritten role-aware; no `anon` policy or grant was touched
+anywhere (Tool A's public survey depends on those, per CLAUDE.md's Hard
+Rules). Groups 3–5 (Admin & Roles / Profile screens, the refusal test)
+are not built yet.
 
 ### team_members — New. Owned by Tool B. The people, and how a login finds its person.
 | Column | Type | Notes |
@@ -604,6 +606,161 @@ actually exploitable, but the stray grant was revoked anyway for
 cleanliness: `revoke execute on function
 public.link_team_member_on_auth_signup() from anon, authenticated,
 public;` — migration `v3_access_revoke_stray_grant`.
+
+### Group 2 — RLS policies (2026-09-24, part 23)
+
+**Two builder decisions this round resolved three access-matrix.md
+internal contradictions** (Section 6 rule 2's blanket Sign-off-only read
+grant disagreed with `topic_library`'s and `invitations`' own per-table
+sections; `cycles` read was ungated in rule 2 but narrowly conditional in
+its own section) — access-matrix.md Section 6 rule 2 is corrected in
+place with a "resolved by builder 2026-09-24" note; nothing here
+duplicates that, see the doc itself.
+
+**Helper functions** (all `SET search_path = public`, all revoked from
+`anon`/`public`, granted only to `authenticated`):
+- `tm_active_row()` — `SECURITY DEFINER`, `STABLE`; the one function that
+  actually reads `team_members`, bypassing its own RLS to do so (the
+  standard Supabase pattern for a role table whose policies would
+  otherwise need to read itself to evaluate). Returns the caller's own
+  row via `auth_user_id = auth.uid()`, or nothing.
+- `is_full_access()`, `is_signoff_only()`, `can_signoff_topics()`,
+  `can_signoff_results()`, `is_owner_user()`, `is_admin_user()`,
+  `current_team_member_id()` — thin `SECURITY INVOKER` wrappers over
+  `tm_active_row()`, each returning a single boolean/uuid. Used directly
+  inside every policy below instead of repeating the same subquery.
+
+**Every table's `authenticated` policies were dropped and rebuilt**
+role-aware (no `anon` policy, grant, or the tables' schema touched
+anywhere — same boundary as always). Shape, table by table:
+- **clients, practice_settings, topic_library, stakeholder_groups,
+  stakeholder_members**: `is_full_access()` only, every action. Sign-off
+  only has no access to any of these five — confirmed against the
+  per-table sections, not the (now-corrected) rule 2.
+- **assessments, iros**: read = `is_full_access() OR is_signoff_only()`;
+  every write = `is_full_access()` only. `iros` DELETE gains the "only if
+  the assessment has no responses" guard access-matrix.md always
+  specified but the live policy never actually had (`qual` was bare
+  `true`) — builder-confirmed fix, verified live (below).
+- **cycles**: read = `is_full_access() OR can_signoff_results()` —
+  narrower than every other table Sign-off only can see; holding only
+  `can_signoff_topics` grants no `cycles` access at all, confirmed by the
+  builder rather than widened for convenience. Every write =
+  `is_full_access()` only. The old cycle-stage-gated policies from the
+  pre-restore build (`authenticated update cycles`, `... revoke cycle
+  sign-off`) are dropped, not just superseded — `cycles.stage` stays
+  unused, no reason to leave dead rules referencing it.
+- **calibrations**: read = `is_full_access() OR is_signoff_only()` (any
+  permission, or none — this table alone grants Sign-off only read
+  regardless, per its own section). Write (RLS) = `is_full_access()`
+  only. The finer rule — `calibrated_value`/`band_value` locked while the
+  cycle's `results_signed_off` is true, `owner`/`moderator`/`notes`/
+  `reviewed_with_owner` never locked — is column-level, which
+  `USING`/`WITH CHECK` can't express (they see the whole row, not which
+  columns changed); enforced instead by a `BEFORE UPDATE` trigger,
+  `enforce_results_signoff_lock()`, comparing `OLD`/`NEW` and raising only
+  when a locked column actually changed while the flag is set.
+- **calibration_history, threshold_changes**: `is_full_access()` only,
+  read and the (still app-level, not a real trigger — see the "Delete
+  unfinished drafts" precedent above for the same reasoning) insert.
+  Sign-off only has no access to either — `calibration_history`'s own
+  section says so explicitly, unlike `calibrations` itself.
+- **invitations**: read = `is_full_access()` only (builder decision — no
+  Sign-off-only access at all, GDPR rationale in the per-table section).
+  Write = `is_full_access() AND opened_at IS NULL` for everything general
+  (status, mark sent, etc.); the one exception — anonymising after the
+  fact, which by definition happens once someone has already
+  opened/responded — is the dedicated `anonymise_invitation()` function
+  below, never the general policy.
+- **submissions**: read = `is_full_access() OR is_signoff_only()`. Write
+  (general) = `is_full_access() AND status = 'draft'` — **this is the
+  fixed gap**: the live policy was previously just `true`, meaning a
+  submitted response's content was never actually frozen in the database
+  despite CLAUDE.md's Hard Rule saying it must be; verified live (below).
+  The one exception — clearing a respondent's self-entered `title` on a
+  GDPR request, alongside `invitations.name`/`email` — is
+  `anonymise_submission_title()`, never the general policy.
+- **ratings, topic_justifications**: read = `is_full_access() OR
+  is_signoff_only()`; write keeps each row's existing (already-correct)
+  "parent submission is still a draft" check, with `is_full_access()`
+  added on top.
+- **live_sessions, live_session_participants, attendance_edit_log**: read
+  = `is_full_access() OR is_signoff_only()` ("session results, as part of
+  Assessments/Responses"); every write = `is_full_access()` only.
+- **team_members**: read = `is_full_access()` (all rows) OR
+  `auth_user_id = auth.uid()` (own row — this is how Sign-off only's "own
+  row only" actually resolves, since they fail the first clause). INSERT
+  (add a row for an already-invited email) = `is_owner_user() OR
+  is_admin_user()`. No DELETE policy at all — deactivate, never delete.
+  UPDATE is deliberately broad at the RLS layer (`is_full_access() OR
+  auth_user_id = auth.uid()`, so either "any row" or "my own row" can be
+  attempted) because RLS can't see which columns an UPDATE actually
+  touches — the real rules (rules 8/9 and CLAUDE.md's Hard Rules) are
+  column-level and enforced by a second `BEFORE UPDATE` trigger,
+  `enforce_team_members_protections()`: `is_owner` is never changeable by
+  anyone through the app; `is_admin` and `active` are never changeable by
+  the row's own owner (even the Tool Owner acting on herself); `is_admin`
+  is only changeable by the Tool Owner; `access_level`/`can_signoff_*`/
+  `role_title`/`active` are only changeable by Tool Owner or Admin.
+
+**New functions**, all `SECURITY DEFINER`, `SET search_path = public`,
+revoked from `anon`/`public`, granted only to `authenticated`, each
+checking the caller's own authorization internally and raising if it
+fails (same pattern as Tool A's six link-code functions):
+`sign_off_assessment_topics(p_assessment_id)`,
+`sign_off_cycle_results(p_cycle_id)`, `anonymise_invitation(p_invitation_id)`,
+`anonymise_submission_title(p_submission_id)`. Revoke of a results
+sign-off is deliberately **not** a function — it only ever goes through
+`cycles`' general `is_full_access()`-only UPDATE policy, so Sign-off only
+can never revoke (access-matrix.md rule 6), by construction rather than
+an extra check.
+
+**Verified live, not just read back from the migration SQL** — genuine
+RLS simulation via `set local role authenticated` +
+`request.jwt.claims`, each inside a rolled-back transaction so nothing
+persisted:
+- Anika's session: `is_full_access()` true, reads all rows of
+  `topic_library`/`clients`/`team_members`.
+- An unrecognised identity (a random UUID with no `team_members` row):
+  `is_full_access()`/`is_signoff_only()` both false, zero rows back from
+  `topic_library`/`team_members`/`calibrations`.
+- Attempted to edit a **submitted** submission's `overall_comment` as
+  Anika: 0 rows affected — the frozen-once-submitted fix genuinely blocks
+  it, not just in theory.
+- Temporarily set a real cycle's `results_signed_off = true` (inside the
+  same rolled-back transaction): attempting to change that cycle's
+  calibration's `calibrated_value` raised
+  `enforce_results_signoff_lock()`'s exception exactly as written;
+  updating its `notes` in the same locked state succeeded, confirming the
+  advisory fields are never locked.
+- Attempted to delete a real IRO belonging to an assessment that has
+  submissions: blocked, still exists afterward. Attempted to delete a
+  real IRO belonging to an assessment with **no** submissions (the
+  builder's requested test for the Review & Customise flow): succeeded —
+  the new guard protects exactly the case it's meant to and doesn't touch
+  the common case (removing a topic before anyone has responded).
+
+**Security check after this migration**: `get_advisors` flagged all nine
+new helper/trigger functions for a mutable `search_path` (WARN) — fixed
+immediately with `alter function ... set search_path = public` on each
+(migration `v3_access_fix_search_path`), re-checked clean. The remaining
+`authenticated_security_definer_function_executable` findings on the five
+new functions are expected, same as Tool A's six — each is meant to be
+authenticated-callable and checks the caller's own authorization
+internally.
+
+Migrations, in order: `v3_access_rls_clients_practice_stakeholders_topics`,
+`v3_access_rls_assessments_iros`, `v3_access_rls_cycles`,
+`v3_access_rls_calibrations`, `v3_access_rls_threshold_changes`,
+`v3_access_rls_invitations`, `v3_access_rls_submissions`,
+`v3_access_rls_live_sessions`, `v3_access_rls_team_members`,
+`v3_access_fix_search_path`.
+
+**Not built yet**: Groups 3–5 (Settings → Admin & Roles, Settings →
+Profile, the formal Half A refusal test written up as a full pasted
+transcript in PROGRESS.md — the spot-checks above cover several of
+Section 6's `no` cells already but aren't the complete enumerated list
+Group 5 calls for).
 
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by

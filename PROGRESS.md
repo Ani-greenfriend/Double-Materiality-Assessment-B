@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 22 (builder scope-narrowing note: link-code generator confirmed secure, shared survey-link field removed, personal-link base URL moved to a required env var; access stage Group 2 paused mid-build per instruction)
+**Last updated:** 2026-09-24 — session 2, part 23 (access stage Group 2 — RLS policies — built, verified live, and pushed; three access-matrix.md contradictions resolved by builder decision)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,173 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 23 (2026-09-24) — Access stage, Group 2 of 5: RLS policies, built, verified live, pushed.**
+
+Builder gave three direct decisions resolving the contradictions flagged in
+part 22, then confirmed "resume access-stage Group 2, followed by Groups 3
+to 5... Save point after each group."
+
+**Contradictions resolved (builder decision, 2026-09-24), docs/access-matrix.md
+Section 6 rule 2 corrected to match the per-table sections:**
+1. `topic_library` — Sign-off only has **no** access (removed from rule 2's
+   list).
+2. `invitations` — Sign-off only has **no** access (removed from rule 2's
+   list).
+3. `cycles` — Sign-off only reads `cycles` only via `can_signoff_results`
+   specifically; `can_signoff_topics` alone grants no `cycles` access (was
+   never in rule 2's list, stays governed solely by its own per-table
+   condition). A note in access-matrix.md flags that if a future Topics
+   sign-off screen needs a cycle-level field (e.g. financial year/ESRS
+   version for display), that's a gap to report, not a reason to widen this
+   grant.
+   Also added `iros`/`topic_justifications`/`live_session_participants`/
+   `attendance_edit_log` to rule 2's list — the per-table sections already
+   granted these to Sign-off only but the original rule 2 summary omitted
+   them; genuinely matching "the per-table sections" required adding these,
+   not just removing the two named items. Documented with a dated
+   "resolved by builder 2026-09-24" note in access-matrix.md rather than a
+   silent rewrite.
+
+**Two gaps fixed, as instructed:**
+- `submissions` UPDATE — was `qual: true` (no lock at all), directly
+  contradicting a CLAUDE.md Hard Rule. Now `is_full_access() AND status =
+  'draft'` — frozen for every role once submitted, no exceptions, with the
+  one sanctioned exception (anonymising name/email/title on a GDPR
+  request) routed through a dedicated `SECURITY DEFINER` function instead
+  of a general UPDATE grant.
+- `iros` DELETE — added the "only while the assessment has no responses"
+  guard access-matrix.md specifies (was unconditionally open). Tested
+  exactly as instructed: an IRO whose assessment **has** submissions →
+  delete blocked; an IRO whose assessment has **none** → delete succeeds —
+  both directions verified live (see below), confirming Review & customise
+  topic removal still works on an assessment with no responses.
+
+**Built, in order, all applied live via `mcp__Supabase__apply_migration`:**
+- `v3_access_role_helper_functions` — the RLS self-recursion fix for
+  `team_members`: a `SECURITY DEFINER`, `STABLE` `tm_active_row()` fetches
+  only the caller's own row (`auth_user_id = auth.uid()`), bypassing RLS
+  internally so it can't recurse into the policies it feeds; seven thin
+  `SECURITY INVOKER` wrappers built on top —
+  `is_full_access()`/`is_signoff_only()`/`can_signoff_topics()`/
+  `can_signoff_results()`/`is_owner_user()`/`is_admin_user()`/
+  `current_team_member_id()` — used directly inside every other table's
+  policies from here on.
+- `v3_access_rls_clients_practice_stakeholders_topics` — `clients`,
+  `practice_settings`, `topic_library`, `stakeholder_groups`,
+  `stakeholder_members`: full-access-only (read + write), no Sign-off-only
+  grant on any of the five, per the resolved `topic_library` decision
+  above.
+- `v3_access_rls_assessments_iros` — `assessments`/`iros`: read for both
+  roles, write full-access-only; `iros` DELETE gains the no-responses
+  guard.
+- `v3_access_rls_cycles` — read gated specifically on `can_signoff_results`
+  for Sign-off only (not general signoff access), full-access-only write.
+  Dropped the two dead, pre-restore stage-gated policies still live from
+  before part 17 (`authenticated update cycles` on `stage <> 'signed_off'`
+  and its compensating revoke-sign-off policy) — the UI stopped using
+  `cycles.stage` back in part 17; these were unreferenced dead weight, not
+  a currently-relied-on path.
+- `v3_access_rls_calibrations` — read for both roles; the value lock is a
+  second layer, since RLS's `USING`/`WITH CHECK` can't see which columns an
+  UPDATE actually touches: a new `BEFORE UPDATE` trigger
+  (`enforce_results_signoff_lock()`) raises only if `calibrated_value`/
+  `band_value` changed while the joined cycle's `results_signed_off` is
+  true — `owner`/`moderator`/`notes`/`reviewed_with_owner` stay editable
+  regardless, matching the spec's "a real lock on the two value fields
+  only."
+- `v3_access_rls_threshold_changes` — `calibration_history`/
+  `threshold_changes`: full-access-only, matching access-matrix.md;
+  `calibration_history` deliberately excluded from Sign-off only's read
+  list (per-table section doesn't grant it).
+- `v3_access_rls_invitations` — read gated on `opened_at`, full-access-only;
+  the GDPR anonymise path moved off a general UPDATE grant onto a new
+  `SECURITY DEFINER` function, `anonymise_invitation(p_invitation_id)`
+  (checks `is_full_access()` internally, sets
+  `name='Anonymised'`/`email='anonymised@invalid'`/`anonymised_at=now()`).
+- `v3_access_rls_submissions` — the frozen-once-submitted fix above;
+  title-only anonymisation via a new `anonymise_submission_title
+  (p_submission_id)` function (same pattern, sets `title = null`).
+- `v3_access_rls_live_sessions` — `live_sessions`/`live_session_participants`/
+  `attendance_edit_log`: read for both roles, write full-access-only.
+  `ratings`/`topic_justifications` got the Sign-off-only read grant added
+  to their existing draft-check policies (not rebuilt from scratch — those
+  policies' existing logic for what a draft is stays as-is).
+- `v3_access_rls_team_members` — the table's first-ever policies (fully
+  closed since Group 1): own-row-or-full-access read; column-level
+  protections via a second `BEFORE UPDATE` trigger
+  (`enforce_team_members_protections()`, since this is the same
+  "some columns locked, others aren't" limitation as calibrations) — raises
+  if `is_owner` changes at all (no app path, ever — Supabase dashboard
+  only, per CLAUDE.md); if `is_admin` or `active` changes on one's own row
+  (self-change blocked regardless of role); if `is_admin` changes by anyone
+  but `is_owner_user()`; if `access_level`/`can_signoff_topics`/
+  `can_signoff_results`/`role_title`/`active` changes by anyone but
+  `is_owner_user()` or `is_admin_user()`. Two new `SECURITY DEFINER`
+  functions for the two sanctioned Sign-off-only self-service writes:
+  `sign_off_assessment_topics(p_assessment_id)` and
+  `sign_off_cycle_results(p_cycle_id)` — each checks the caller's specific
+  `can_signoff_*` flag (or full access) internally via `tm_active_row()`
+  and raises otherwise, rather than opening a general UPDATE grant on
+  `assessments`/`cycles`.
+- `v3_access_fix_search_path` — Supabase's advisor flagged all 9 new
+  functions as `function_search_path_mutable` (WARN — no `SET search_path`
+  pinned, a search-path-injection risk pattern even where not concretely
+  exploitable here). Pinned `SET search_path = public` on all 9;
+  `get_advisors` re-run clean afterward.
+
+**Verified live, not just read back from the migration SQL** — this
+sandbox has no browser, so every fix was proven with genuine RLS
+impersonation inside rolled-back transactions (`set_config
+('request.jwt.claims', ...); set local role authenticated; <test>;
+rollback;` — actually evaluates RLS as that user, unlike this session's
+normal Supabase MCP access which runs as a superuser that bypasses RLS
+entirely):
+- Anika (Owner/Admin/Full): `is_full_access()` = true; reads all rows of
+  `topic_library` (10), `team_members` (1), `clients` (2).
+- An unrecognised identity (random UUID, no `team_members` row):
+  `is_full_access()`/`is_signoff_only()` both false; zero rows back from
+  `topic_library`/`team_members`/`calibrations`.
+- Submissions frozen-once-submitted: attempted UPDATE on a real
+  `status='submitted'` row as Anika → 0 rows affected.
+- Calibrations value-lock: temporarily set a real cycle's
+  `results_signed_off = true` inside the transaction; attempting to change
+  that cycle's calibration's `calibrated_value` raised the exact trigger
+  exception; updating `notes` on the same row in the same locked state
+  succeeded (1 row) — proving the lock is column-scoped, not row-wide.
+- `iros` DELETE guard, both directions, exactly as instructed: an IRO
+  whose assessment has submissions → delete blocked (row still present
+  after); an IRO whose assessment has none → delete succeeded (row gone
+  after).
+
+**Checked against the v2.1 deferral instruction**: none of the remaining
+Groups 3-5 depend on `Copy personal link`, `Mark as sent`, invitation
+statuses, the "not opened after 5 days" flag, or anything reading
+`invitations.link_code` — Group 3 (Admin & Roles) and Group 4 (Profile)
+are both entirely about `team_members`, unrelated to invitations; Group 5
+(refusal test) only exercises policies already built, including the
+`invitations` read/anonymise policies above, not the per-invitation UI
+features named in the deferral. Nothing new added under "Deferred to
+v2.1" — the only deferred item stays the v2.1 shared-link feature itself
+(noted in part 22, still waiting on the regenerated CLAUDE.md).
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings)
+— no frontend files touched this part, schema/RLS-only, run as a sanity
+check regardless since `docs/access-matrix.md` cites `src/`-facing
+behaviour. Migrations, in order: `v3_access_role_helper_functions`,
+`v3_access_rls_clients_practice_stakeholders_topics`,
+`v3_access_rls_assessments_iros`, `v3_access_rls_cycles`,
+`v3_access_rls_calibrations`, `v3_access_rls_threshold_changes`,
+`v3_access_rls_invitations`, `v3_access_rls_submissions`,
+`v3_access_rls_live_sessions`, `v3_access_rls_team_members`,
+`v3_access_fix_search_path`.
+
+**Not yet built**: Group 3 (Settings → Admin & Roles), Group 4 (Settings →
+Profile + the avatar-dropdown header menu), Group 5 (the refusal test
+write-up — Half A's mechanical groundwork is substantially covered by the
+live verification above, but the full enumerated pass against every `no`
+cell in access-matrix.md Section 6's 13 rules hasn't been assembled as its
+own pass yet; Half B stays deferred, no named Sign-off-only holder).
+
 **Part 22 (2026-09-24) — Builder scope-narrowing note: link codes, no shared survey link, required env var; access stage Group 2 paused.**
 
 Builder interrupted mid-Group-2 with an explicit "do not widen this
@@ -1337,7 +1504,7 @@ left the actual spec-derived rules alone). `npm run build` and
 
 **Access stage (docs/access-matrix.md + docs/user-stories.md, five groups):**
 - [x] Group 1 — schema delta: `team_members` + seed, audit columns on 5 tables, `assessments.iro_list_signed_off*`, `cycles.results_signed_off*` (new columns, not a repurposing — see part 21), `avatars` bucket + policies, the auth-link trigger — done, part 21
-- [ ] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, Sign-off only's table-level refusals on Dashboard/Report, the `team_members` policies themselves (currently zero — the table is fully closed until this lands)
+- [x] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, the `team_members` policies themselves — done and verified live, part 23. Sign-off only's table-level refusals on Dashboard/Report are a frontend routing concern (Group 3/4 territory — the tables those screens read, e.g. `assessment_progress`/`group_engagement`, aren't in Sign-off only's per-table grants, so the refusal is already mechanically true; the screen-level "refuse outright, not an empty screen" UX still needs building)
 - [ ] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only)
 - [ ] Group 4 — Settings → Profile (every role) + the avatar-dropdown header menu
 - [ ] Group 5 — the refusal test, Half A (every `no` cell attempted through the API as Anika's session and as an unrecognised identity, pasted into this file) — Half B (the named-person screen test) is explicitly deferred for Sign-off only, no holder named yet
@@ -1467,11 +1634,14 @@ schema — every new field the flow needed already existed).
   instead of silently falling back. See Notes for next session for the
   full detail.
 - **The app itself does not yet know about `team_members`.** Nothing in
-  `src/` reads or writes it — the whole app still runs on the pre-access-stage
-  model (any authenticated user has full access, per the existing blanket
-  `authenticated ...` RLS policies, which Group 2 hasn't touched yet
-  either). This is expected mid-stage, not a regression: Group 1 only
-  built the schema everything else attaches to.
+  `src/` reads or writes it — Group 2 (part 23) replaced every table's
+  blanket `authenticated ...` policy with real role-scoped ones, so access
+  is now genuinely enforced at the database layer for anyone Group 3 adds
+  as Sign-off only, but the UI itself has no login-aware nav, no "No
+  access yet" screen, and no Settings yet. Anika, as the only current
+  `team_members` row (`access_level='full'`), sees no behaviour change.
+  This is expected mid-stage, not a regression — Groups 3-4 build the
+  screens that make the new policies visible/usable.
 - **Sign-off only has no named holder yet** for either `can_signoff_topics`
   or `can_signoff_results`. Its mechanism goes live in the database and
   policies in Group 2 regardless, per the confirmed approach in
@@ -1543,52 +1713,52 @@ Out of scope in CLAUDE.md: "In-app email invitations... Option A
 (Supabase-dashboard invite...) is what ships" — that line will need to
 change or gain an exception for this).
 
-**Access stage — paused mid-Group-2, builder said not to widen scope
-further this round (2026-09-24):** Group 1 (schema delta) is done and
-pushed — see part 21. Group 2 (RLS policies) has only its helper
-functions applied so far (`tm_active_row()` + the `is_full_access()` /
-`is_signoff_only()` / `can_signoff_topics()` / `can_signoff_results()` /
-`is_owner_user()` / `is_admin_user()` / `current_team_member_id()`
-wrappers, all `SECURITY DEFINER`-backed to avoid RLS self-recursion on
-`team_members`) — inert until a policy actually references them, so
-nothing changed for any current user. **Not yet applied**: any of the
-actual table policy rewrites, the `sign_off_cycle_results`/
-`sign_off_assessment_topics` functions, the `results_signed_off` lock on
-`calibrations`, or `team_members`'s own policies (still zero — the table
-stays fully closed to everyone until this resumes). Resume by rebuilding
-each table's policies against docs/access-matrix.md Section 6 and its
-per-table sections in Section 1.2 — **both were re-read in full for this
-pass and genuinely disagree with each other in three places**, not yet
-resolved with the builder:
-- Section 6 rule 2's blanket "Sign-off only can read topic_library" vs.
-  topic_library's own per-table section, which says Sign-off only read =
-  **no**. The per-table section and user-stories.md's actual story text
-  ("read this round's topic selection" — the assessment's own snapshot,
-  not the master admin list) both point the same way; planned to follow
-  that and treat rule 2's inclusion of `topic_library` as the imprecise
-  one, but this wasn't built yet, so it's still an open call, not a
-  guess already acted on.
-- Same pattern for `invitations`: rule 2's blanket list includes it,
-  but its own per-table section is unambiguous and gives a real reason —
-  "sign-off-only sees responses (submissions/ratings), never the
-  invitee's name/email." Planned resolution: no Sign-off-only read on
-  `invitations` at all, following the per-table section.
-- `cycles` read for Sign-off only isn't in rule 2's list at all, but its
-  own per-table section gates it specifically on `can_signoff_results`
-  (not general `signoff` access) — narrower than every other table
-  Sign-off only can see. Planned to implement it that narrow.
+**Access stage — Group 2 done and pushed (part 23).** Group 1 (schema
+delta, part 21) and Group 2 (RLS policies, part 23) are both complete and
+live-verified. The three access-matrix.md contradictions flagged in part
+22 (topic_library/invitations/cycles Sign-off-only read access) were
+resolved by direct builder decision and access-matrix.md Section 6 rule 2
+corrected with a dated note — see part 23 for the full detail. Both gaps
+(`submissions` UPDATE frozen-once-submitted, `iros` DELETE no-responses
+guard) are fixed and tested.
 
-Two more things noticed while reading for Group 2, not yet acted on:
-`iros` DELETE currently has **no** "only if the assessment has no
-responses" guard at all (unconditionally open to any authenticated user)
-even though access-matrix.md specifies that condition — real gap, but
-adding it risks breaking the already-tested Review & Customise
-topic-removal flow if a topic can legitimately be deleted after some
-responses exist elsewhere in the same assessment; needs the builder's
-call, not a guess. `submissions` UPDATE currently has **no** "frozen once
-submitted" guard either (`qual: true`) — this one directly contradicts a
-CLAUDE.md Hard Rule with no ambiguity, and is the one item in this list
-safe to just fix outright when Group 2 resumes, not a question.
+**Next: Group 3 — Settings → Admin & Roles (Tool Owner/Admin only).** Per
+docs/user-stories.md's "Tool Owner/Admin — Settings → Admin & Roles"
+stories and access-matrix.md: search, "+ New team member" for an
+already-invited email (writes a `team_members` row, `access_level` set at
+creation), a legend, a team table with an access-level dropdown,
+Sign-off-only rows getting two independent checkboxes
+(`can_signoff_topics`/`can_signoff_results`), an Admin toggle column
+editable by Tool Owner only (Admin sees it locked with a tooltip — the
+`enforce_team_members_protections()` trigger backs this at the database
+layer regardless of what the UI shows), and Active toggle (deactivate,
+never delete). No dependency on invitation-link features — confirmed in
+part 23.
+
+**Then Group 4 — Settings → Profile (every role) + the avatar-dropdown
+header menu.** Avatar upload (to the new private `avatars` bucket from
+Group 1), Edit/Save, name, role display, email non-editable, phone,
+member since, a read-only access-level line in plain language (per
+user-stories.md: "Full access" or "Sign-off only," and for Sign-off only,
+which of the two permissions specifically). Settings goes behind an
+avatar dropdown in the header (Profile · Admin & Roles if Owner/Admin ·
+Sign out), not a left-rail nav item, per CLAUDE.md/user-stories.md.
+
+**Then Group 5 — the refusal test, Half A.** Every `no` cell in
+access-matrix.md Section 6's 13 rules, attempted through the API as
+Anika's session and as an unrecognised identity, pasted into this file —
+part 23's live verification already covers a meaningful subset (frozen
+submissions, the calibration lock, the iros DELETE guard, an unrecognised
+identity's total refusal) but the full enumerated pass against all 13
+rules, plus the `user-stories.md` "Stories that are refusals" table's 11
+numbered rows, hasn't been assembled as its own dedicated write-up yet.
+Half B (the named-person screen test for Sign-off only) stays explicitly
+deferred — no named holder yet.
+
+Checked per the v2.1 deferral instruction: none of Groups 3-5 depend on
+`Copy personal link`, `Mark as sent`, invitation statuses, the "not
+opened after 5 days" flag, or `invitations.link_code` — nothing new to
+list under "Deferred to v2.1."
 
 **PR #5 build status**, unaffected by the above — restore Steps 1–5 are
 all done and pushed (part 20 confirms), the PDF report was redesigned
