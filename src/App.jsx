@@ -8,6 +8,7 @@ import Login from './components/Login';
 import NoAccessScreen from './components/NoAccessScreen';
 import ApusLogo from './components/ApusLogo';
 import Dashboard from './components/Dashboard';
+import GlobalHeader from './components/GlobalHeader';
 import StakeholdersTab from './components/StakeholdersTab';
 import TopicsTab from './components/TopicsTab';
 import AssessmentsTab from './components/AssessmentsTab';
@@ -221,6 +222,11 @@ export default function App() {
     financial: currentAssessment?.cycle?.financialThreshold ?? 3.0,
   };
 
+  // Every assessment across every financial year, not just the one
+  // Dashboard is scoped to — GlobalHeader's "closing soon" notification
+  // needs the whole picture, not one cycle's slice of it.
+  const allAssessmentsForHeader = cycles.flatMap((c) => c.assessments.map((a) => ({ id: a.id, name: a.name, endDate: a.endDate })));
+
   // Section 8, App shell: the two assessment cards open Assessments filtered
   // by perspective; Calibration opens Calibrate & Results on the Calibrate
   // tab; Downloadable result opens the Report builder (not the old Results
@@ -301,6 +307,9 @@ export default function App() {
 
       <main className="flex-1 px-10 py-8 overflow-x-auto">
         <div className="max-w-6xl mx-auto">
+          {tab !== 'assessments' && (
+            <GlobalHeader me={me} assessments={allAssessmentsForHeader} onOpenProfile={() => setTab('profile')} />
+          )}
           {loadError && <p className="text-[12px] text-badge-amber mb-4">{loadError}</p>}
 
           {tab === 'dashboard' && isSignOffOnly && <LockedScreen title="Dashboard" />}

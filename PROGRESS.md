@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 31 (Results/PDF chart colors brought to the real brand triad — emerald/blue/orange, replacing red/purple stand-ins in the Topic Matrix quadrants and removing the white dot-halo in the PDF report's print charts; added on-chart quadrant labels; Dashboard CTA pill now reads "Continue" once there are assessments, matching its own heading).
+**Last updated:** 2026-09-24 — session 2, part 32 (built `GlobalHeader.jsx` — a real, sticky profile+notification header on every screen except Assessments, replacing a disconnected Dashboard-only prototype stub that never rendered anywhere else and wasn't wired to real profile data).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,48 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 32 (2026-09-24) — Built the persistent profile+notification header; it never existed outside Dashboard.**
+
+Builder reported "I cannot see the profile setup on top of Admin & Roles
+that was planned — the top with profile image and notification should
+always be shown as fixed top in any screen except the Assessments," with a
+screenshot of the Dashboard on a narrow viewport where the sidebar's
+`SettingsMenu` dropdown (Profile/Admin & Roles/Sign out, built in Group 4)
+dominates the screen and the Dashboard's own greeting is barely visible.
+
+Grepped for the header the builder was expecting: `Dashboard.jsx` had a
+`ProfileHeader` with a notification bell and an avatar button — but it (a)
+only ever rendered on the Dashboard screen, never anywhere else, (b) was
+never "fixed" (sticky) — it scrolled away with the rest of the page, and
+(c) its avatar button was a leftover reference-prototype stub: local
+`useState('')` name entry, `title="Set up your profile"`, completely
+disconnected from the real `team_members` name/`avatar_url` the actual
+Profile screen (`ProfileTab.jsx`, Group 4) manages. Confirmed this exact
+structure is byte-identical in `reference-prototype/`'s own `Dashboard.jsx`
+— inherited, not a regression, but also predates the real Profile/Admin &
+Roles system this session's Group 3/4 work added, which is why it was
+never hooked up to real data.
+
+**Built `GlobalHeader.jsx`**: real avatar (`me.avatarUrl` or initials,
+same convention as `SettingsMenu.jsx`) + notification bell (closing-soon
+assessments, same 3-day-window logic as the old stub, now computed across
+every financial year's assessments via `cycles.flatMap`, not just the one
+Dashboard happens to be scoped to). `position: sticky; top: 0` inside the
+`max-w-6xl` content column, rendered in `App.jsx` on every tab **except**
+`'assessments'` — product-spec.md Section 8 already reserves that
+screen's top area for the wizard's own step navigation ("shown on every
+wizard screen including the last"), so a second fixed bar there would
+fight it. Clicking the avatar opens the real Profile screen
+(`setTab('profile')`), not a fake inline name editor.
+
+Removed the now-redundant bell/avatar from Dashboard's `ProfileHeader` —
+kept only its "Hello 👋 / Let's see what we have for you today" greeting,
+since the global header covers the rest on every screen including
+Dashboard.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend, one new component.
+
 **Part 31 (2026-09-24) — Results/PDF chart colors brought to the actual brand triad; Dashboard CTA label now matches its own heading.**
 
 Builder asked (with a reference screenshot of another Apus tool's card/

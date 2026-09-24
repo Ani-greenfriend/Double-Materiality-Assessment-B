@@ -3,68 +3,15 @@ import DmaMascot from './DmaMascot';
 import { StakeholderIcon, TopicsIcon, ImpactIcon, FinancialIcon, CalibrationIcon, ResultsIcon } from './icons';
 import { aggregateIro, hasImpactAxis } from '../lib/calc';
 
-function BellIcon() {
+// The notification bell and profile avatar this used to carry (a
+// disconnected local-state "Set up your profile" stub, never wired to real
+// data) moved to GlobalHeader.jsx, which renders on every screen instead of
+// just Dashboard's. This keeps only the greeting.
+function ProfileHeader({ name }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 01-3.46 0" />
-    </svg>
-  );
-}
-
-function ProfileHeader({ assessments }) {
-  const [name, setName] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [bellOpen, setBellOpen] = useState(false);
-
-  const closingSoon = assessments.filter((a) => {
-    if (!a.endDate || a.status) return false;
-    const days = (new Date(a.endDate) - new Date()) / 86400000;
-    return days >= 0 && days <= 3;
-  });
-
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div>
-        <p className="text-[24px] font-bold text-white">
-          {editing ? (
-            <input
-              autoFocus value={name} onChange={(e) => setName(e.target.value)}
-              onBlur={() => setEditing(false)} onKeyDown={(e) => e.key === 'Enter' && setEditing(false)}
-              placeholder="Your name"
-              className="bg-surface-2 rounded px-2 py-0.5 text-[15px] outline-none"
-            />
-          ) : (
-            <>Hello{name ? `, ${name}` : ''} 👋</>
-          )}
-        </p>
-        <p className="text-[12px] text-text-secondary mt-0.5">Let's see what we have for you today.</p>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <button onClick={() => setBellOpen((o) => !o)} className="w-9 h-9 rounded-full bg-surface flex items-center justify-center relative text-text-secondary hover:text-text-primary">
-            <BellIcon />
-            {closingSoon.length > 0 && <span className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full" style={{ background: '#D79A4C' }} />}
-          </button>
-          {bellOpen && (
-            <div className="absolute right-0 top-11 z-20 w-64 bg-surface border border-border-apus rounded-xl p-3 shadow-lg">
-              <p className="text-[11px] font-semibold text-text-secondary mb-2">NOTIFICATIONS</p>
-              {closingSoon.length === 0 ? (
-                <p className="text-[12px] text-text-secondary">Nothing needs your attention right now.</p>
-              ) : (
-                closingSoon.map((a) => (
-                  <p key={a.id} className="text-[12px] mb-1.5 last:mb-0">"{a.name}" closes within 3 days</p>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        <button onClick={() => setEditing(true)} className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: '#4C6FFF22', color: '#4C6FFF' }} title="Set up your profile">
-          {name ? name.slice(0, 2).toUpperCase() : '?'}
-        </button>
-      </div>
+    <div className="mb-6">
+      <p className="text-[24px] font-bold text-white">Hello{name ? `, ${name}` : ''} 👋</p>
+      <p className="text-[12px] text-text-secondary mt-0.5">Let's see what we have for you today.</p>
     </div>
   );
 }
@@ -231,7 +178,7 @@ export default function Dashboard({ assessments, calibrations, iros, stakeholder
         </p>
       </DmaMascot>
 
-      <ProfileHeader assessments={assessments} />
+      <ProfileHeader />
       <StartButton hasAssessments={assessments.length > 0} onGoToAssessment={onGoToAssessment} />
 
       <p className="text-[13px] font-semibold mb-1">The double materiality process</p>
