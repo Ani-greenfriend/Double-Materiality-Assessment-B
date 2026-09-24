@@ -756,10 +756,10 @@ Migrations, in order: `v3_access_rls_clients_practice_stakeholders_topics`,
 `v3_access_rls_live_sessions`, `v3_access_rls_team_members`,
 `v3_access_fix_search_path`.
 
-**Not built yet**: Groups 4–5 (Settings → Profile, the formal Half A
-refusal test written up as a full pasted transcript in PROGRESS.md — the
-spot-checks above and in Group 3 below cover several of Section 6's `no`
-cells already but aren't the complete enumerated list Group 5 calls for).
+**Not built yet**: Group 5 (the formal Half A refusal test written up as a
+full pasted transcript in PROGRESS.md — the spot-checks above and in
+Group 3 below cover several of Section 6's `no` cells already but aren't
+the complete enumerated list Group 5 calls for).
 
 ### Group 3 — Settings → Admin & Roles (2026-09-24, part 24)
 
@@ -857,7 +857,35 @@ outstanding. Flagged for a builder decision: fold this into Group 5, add it
 as an explicit Group 6, or leave it until a named Sign-off-only holder
 exists and Half B is unblocked anyway.
 
-## Notes
+### Group 4 — Settings → Profile (2026-09-24, part 25)
+
+No schema or RLS change — reuses Group 3's `fetchOwnTeamMember`,
+`updateOwnProfile` and `uploadAvatar` (already built and already verified
+live in part 24) and Group 1's private `avatars` bucket, whose storage
+policies were re-confirmed this part (`storage.objects`, `avatars own
+insert/update/delete/read any` — all four scoped to `{authenticated}`
+only, path check `(storage.foldername(name))[1] = auth.uid()::text`,
+matching `uploadAvatar`'s `${authUserId}/avatar.${ext}` path exactly) —
+no live file upload was exercised (this sandbox has no browser), but the
+policy shape leaves nothing to guess at.
+
+**Built:** `ProfileTab.jsx` — avatar upload/change (reusing
+`uploadAvatar`), Edit/Save for name and phone number (own row only, per
+the part-24 fix), email displayed but never editable, role title
+displayed but not editable here (only Owner/Admin can set it, via Admin &
+Roles — matches the matrix's own-row exception list, which excludes
+`role_title`), member since (`created_at`), and a read-only access-level
+line in plain language: for Full access, whether the caller is also Tool
+Owner or Admin and what that adds; for Sign-off only, exactly which of
+`can_signoff_topics`/`can_signoff_results` they hold, or a note that
+neither is granted yet. Wired into the `SettingsMenu.jsx` dropdown's
+already-existing "Profile" entry (`App.jsx`, `tab === 'profile'`),
+replacing the part-24 placeholder — the Settings avatar dropdown is now
+feature-complete for both entries.
+
+Every role reaches Profile (no nav gating needed — it's already
+behind the avatar dropdown, not a left-rail item, and every role is
+allowed to edit their own name/phone/photo).
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel
   failed, response 403`; same restriction noted in earlier sessions for

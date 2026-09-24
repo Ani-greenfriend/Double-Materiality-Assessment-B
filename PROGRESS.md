@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 24 (access stage Group 3 — Settings → Admin & Roles — built, verified live, pushed; the login gate and avatar-dropdown shell it depends on landed with it; a real team_members RLS gap found and fixed)
+**Last updated:** 2026-09-24 — session 2, part 25 (access stage Group 4 — Settings → Profile — built, wired into the avatar dropdown; only Group 5, the refusal-test write-up, remains)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,41 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 25 (2026-09-24) — Access stage, Group 4 of 5: Settings → Profile.**
+
+No schema or RLS change — this reuses Group 3's already-built,
+already-verified `fetchOwnTeamMember`/`updateOwnProfile`/`uploadAvatar`
+and Group 1's private `avatars` bucket. Re-confirmed the bucket's four
+storage policies (`avatars own insert/update/delete`, `avatars read
+any`) are all scoped to `{authenticated}` only, with the path check
+matching `uploadAvatar`'s `${authUserId}/avatar.${ext}` path exactly —
+no live file upload exercised (sandbox has no browser), but the policy
+shape leaves nothing to guess at.
+
+**Built: `ProfileTab.jsx`.** Avatar upload/change; Edit/Save for name and
+phone number (own row only, per part 24's fix — every other role can do
+the same on their own row, no gating needed since Profile is already
+behind the avatar dropdown and every role owns editing their own
+name/phone/photo); email shown but never editable; role title shown but
+not editable here (only Owner/Admin set it, via Admin & Roles — the
+matrix's own-row exception list excludes `role_title`); member since;
+and a read-only access-level line in plain language — for Full access,
+whether the caller is also Tool Owner or Admin and what that adds; for
+Sign-off only, exactly which of the two sign-off permissions they hold,
+or that neither is granted yet. Wired into `SettingsMenu.jsx`'s already-
+existing "Profile" entry, replacing part 24's placeholder — the Settings
+avatar dropdown is now feature-complete for both Profile and Admin &
+Roles.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). This closes Group 4 — **only Group 5 (the refusal test)
+remains** of the five-group access stage. The flagged, undecided item
+from part 24 (role-gated nav/read-only rendering for Sign-off only
+across the other seven screens) is still open — see part 24 and
+docs/supabase-setup.md's Group 3 section; needs the builder's call on
+whether it's Group 5's job, a new Group 6, or waits for a named
+Sign-off-only holder.
+
 **Part 24 (2026-09-24) — Access stage, Group 3 of 5: Settings → Admin & Roles, plus the shared login gate and avatar-dropdown shell it needs to be reachable at all.**
 
 **Real gap found before building anything, fixed first.** Re-reading
@@ -1602,7 +1637,7 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Group 1 — schema delta: `team_members` + seed, audit columns on 5 tables, `assessments.iro_list_signed_off*`, `cycles.results_signed_off*` (new columns, not a repurposing — see part 21), `avatars` bucket + policies, the auth-link trigger — done, part 21
 - [x] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, the `team_members` policies themselves — done and verified live, part 23. Sign-off only's table-level refusals on Dashboard/Report are a frontend routing concern (Group 3/4 territory — the tables those screens read, e.g. `assessment_progress`/`group_engagement`, aren't in Sign-off only's per-table grants, so the refusal is already mechanically true; the screen-level "refuse outright, not an empty screen" UX still needs building)
 - [x] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only) — done and verified live, part 24; the login gate and avatar-dropdown shell were pulled forward from Group 4 since Group 3's screen needs them to be reachable
-- [ ] Group 4 — Settings → Profile (every role) — the avatar-dropdown header menu's shell already exists (part 24); this finishes its "Profile" entry
+- [x] Group 4 — Settings → Profile (every role) — done, part 25; the avatar dropdown (part 24) is now feature-complete for both entries
 - [ ] Group 5 — the refusal test, Half A (every `no` cell attempted through the API as Anika's session and as an unrecognised identity, pasted into this file) — Half B (the named-person screen test) is explicitly deferred for Sign-off only, no holder named yet
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
@@ -1822,19 +1857,24 @@ and the avatar-dropdown Settings menu both now exist — Group 3 pulled
 them forward from Group 4 since its own screen needed somewhere to be
 reached from.
 
-**Next: Group 4 — Settings → Profile (every role).** The dropdown's
-"Profile" entry is already wired (`App.jsx`, `tab === 'profile'`) but
-still shows a placeholder — build the real screen: avatar upload (to the
-already-provisioned private `avatars` bucket, via `uploadAvatar` in
-data.js — already built, unused until this lands), Edit/Save for
-name/phone_number (own row only, per the part-24 fix — `updateOwnProfile`
-already built), email displayed but never editable, `role_title`
-displayed but not editable here (only Owner/Admin can set it, via Admin &
-Roles — matches the matrix's own-row exception list, which doesn't
-include `role_title`), member since (`created_at`), and a read-only
-access-level line in plain language (per user-stories.md: "Full access"
-or "Sign-off only," and for Sign-off only, which of the two permissions
-specifically they hold).
+**Group 4 (Settings → Profile) is also done and pushed (part 25)** —
+`ProfileTab.jsx` reuses Group 3's already-verified data.js functions, no
+new schema/RLS. The Settings avatar dropdown is now feature-complete.
+
+**Next and last: Group 5 — the refusal test, Half A.** Every `no` cell in
+access-matrix.md Section 6's 13 numbered rules, plus the 11-row "Stories
+that are refusals" table in docs/user-stories.md, attempted through the
+API as Anika's session and as an unrecognised identity, with results
+pasted into this file as a formal enumerated write-up. Parts 23-24
+already proved a meaningful subset live (frozen submissions, the
+calibration lock, the iros DELETE guard, an unrecognised identity's total
+refusal, team_members' own-row/email/is_admin/active protections, a
+plain Full-access caller blocked from Admin & Roles writes, a Sign-off-
+only caller's team_members read scoped to their own row) — Group 5 is
+about assembling the complete, explicitly-enumerated pass against every
+rule, not re-discovering what's already confirmed. Half B (the
+named-person screen test for Sign-off only) stays explicitly deferred —
+no named holder yet.
 
 **Flagged during Group 3, still open**: whether/when to build role-gated
 nav visibility and read-only rendering for Sign-off only across

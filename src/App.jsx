@@ -15,6 +15,7 @@ import ResponsesTab from './components/ResponsesTab';
 import CalibrateResultsTab from './components/CalibrateResultsTab';
 import ReportTab from './components/ReportTab';
 import AdminRolesTab from './components/AdminRolesTab';
+import ProfileTab from './components/ProfileTab';
 import SettingsMenu from './components/SettingsMenu';
 import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, ResponsesIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
 
@@ -342,11 +343,7 @@ export default function App() {
           )}
           {tab === 'report' && <ReportTab cycles={cycles} />}
           {tab === 'admin-roles' && <AdminRolesTab me={me} onChanged={reloadMe} />}
-          {tab === 'profile' && (
-            <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">
-              Settings → Profile is next up (access stage Group 4) — not built yet.
-            </div>
-          )}
+          {tab === 'profile' && <ProfileTab me={me} onChanged={reloadMe} />}
           {tab === 'calibrate-results' && (
             <div>
               {assessments.length > 0 && (
