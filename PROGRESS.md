@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 28 (real bug fix, found on the deploy preview: every live-session Finish/autosave was failing with a Postgres upsert error — no live-session ratings were ever actually persisting. Root cause fixed in Questionnaire.jsx, with a second defensive dedup in data.js so already-open browser tabs recover without losing their in-progress session.)
+**Last updated:** 2026-09-24 — session 2, part 29 (two more PR #6 preview bugs fixed: Recipients' Continue button wrongly blocked excluding everyone; assessment delete silently refused two real assessments because the RLS policy blocked on any submission, not just submitted ones — one of the two, "b", is now genuinely deleted; "Acme Corp"/acme-2026 stays, correctly refused, untouched)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,83 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 29 (2026-09-24) — Two more PR #6 preview bugs, both found live by the builder.**
+
+**1. Recipients couldn't finish with everyone excluded.**
+`RecipientsScreen.jsx` (shared by both modes — the same file covers the
+expert-survey path the builder asked to check) disabled its own Continue
+button at `included.length === 0`. The drag mechanics themselves were
+already correct (an empty Included list rendered its own "Everyone has
+been excluded" state fine); Continue being disabled is what actually
+blocked the workflow, and it directly contradicted the already-built Kick
+off guard ("Add who participates first" at `participantCount === 0`, part
+16) — that guard never got a chance to run, since Continue refused to get
+past Recipients in the first place. No schema change needed:
+`createInvitationsFromRecipients`/`addParticipantsFromRecipients` both
+already handle an empty `people` array cleanly. Removed the disabled gate
+and the amber "add at least one person" warning; replaced with a neutral,
+mode-specific note when nobody's included.
+
+**2. Assessment delete silently refused two real assessments.**
+`deleteAssessment` only checked for a Supabase `error`, but an
+RLS-blocked delete matches 0 rows and returns no error at all — the same
+"fails silently" pattern this session already fixed once elsewhere. Root
+cause: the `assessments` DELETE RLS policy blocked on **any**
+`submissions` row for that assessment, draft or submitted. Per the
+builder's decision this part, only a **submitted** response should ever
+block deletion — a draft (plus its ratings, justifications, and any
+paused live-session data) should be deleted along with the assessment,
+not treated as a reason to refuse it.
+
+Identified the two stuck assessments by querying `submissions` grouped by
+`assessment_id` and status:
+- **"Acme Corp"** (`slug: acme-2026`) — 2 **submitted** responses.
+  Correctly refused, before and after this fix — this is the demo the
+  builder said not to touch. Confirmed via a rolled-back impersonated
+  delete attempt only; never actually persisted.
+- **"b"** (`slug: b-a8b2273b`) — 1 **draft** live-session response (the
+  exact stuck submission from part 28's ratings bug). Incorrectly refused
+  before this fix, under the old "any submission blocks" rule.
+
+Fixed: migration `v3_fix_assessment_delete_only_blocks_on_submitted`
+replaces the DELETE policy's `USING` clause to check `status =
+'submitted'` specifically. No new cascade code was needed —
+`submissions.assessment_id`, `ratings.assessment_id`/`.submission_id`,
+`topic_justifications.submission_id`, `live_sessions.assessment_id`,
+`live_session_participants.live_session_id` and `attendance_edit_log`
+(both its FKs) are **all already `ON DELETE CASCADE`** (checked directly
+via `information_schema` before assuming anything) — one `DELETE FROM
+assessments` now correctly removes every dependent row on its own.
+
+**Verified live, not just by reading the policy**: deleted "b" for real
+(impersonated as Anika, this one genuinely committed — confirmed
+afterward that `submissions`/`iros`/`live_sessions` for that assessment
+id all reached 0 rows) while confirming `acme-2026` stayed present and
+untouched throughout, including a separate rolled-back attempt to delete
+it that correctly matched 0 rows.
+
+`deleteAssessment` (data.js) now does `.select('id')` after the delete
+and checks the actual returned rows rather than trusting a missing
+`error` to mean success — a 0-row result throws exactly the message the
+builder specified: "This assessment has submitted responses and can't be
+deleted, to keep the audit trail." The confirm dialog's wording updated
+to match (states the cascade and the real refusal condition, not the old
+"no responses at all"). docs/access-matrix.md's `assessments` delete row
+corrected with a dated "resolved by builder 2026-09-24" note, per
+instruction — CLAUDE.md's own "a cycle/assessment with no responses"
+phrasing is now imprecise in the same way but wasn't touched, since only
+access-matrix.md was asked for; flagged here for whoever next revises
+CLAUDE.md.
+
+Also fixed in passing: a leftover bug in this file's own history — part
+26 or 27's editing had accidentally dropped the opening line of a bullet
+under docs/supabase-setup.md's "## Notes" section (the "Network egress...
+is blocked" sentence started mid-sentence with no subject). Restored
+while already touching that file.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). `get_advisors` (security) re-run clean.
+
 **Part 28 (2026-09-24) — Real bug, found live on the deploy preview: live-session ratings never actually saved.**
 
 The builder hit this on PR #6's Netlify preview while finishing a real

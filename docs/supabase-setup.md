@@ -922,7 +922,70 @@ copies of the same table; this section is the pointer.
 person's own screen test) remains explicitly deferred — no named holder
 exists yet.
 
+### Part 29 (2026-09-24) — two PR #6 preview bugs: Recipients Continue gate, assessments delete
+
+Both found live by the builder clicking through the deploy preview.
+
+**1. Recipients ("Who participates" / "Who receives the questionnaire")
+couldn't finish with everyone excluded** — `RecipientsScreen.jsx` (shared
+by both modes, so the same fix covers the expert-survey path the builder
+asked to check) disabled its own Continue button at `included.length ===
+0`. The drag-to-Excluded mechanics themselves were always fine (the "empty
+Included" state was already rendered correctly); the button was the actual
+block, contradicting the already-built Kick-off guard ("Add who
+participates first" at `participantCount === 0`, part 16) — that guard
+never had a chance to run, since Continue refused to get there. No schema
+change: `createInvitationsFromRecipients`/`addParticipantsFromRecipients`
+both already handle an empty `people` array cleanly (loop over nothing, 0
+created). Removed the `disabled` gate and the amber warning; replaced with
+a neutral note when nobody's included, worded per mode.
+
+**2. Assessment delete silently refused two real assessments** —
+`deleteAssessment` did a plain `.delete()` and only checked for a Supabase
+`error`, but an RLS-blocked delete matches 0 rows and returns no error —
+exactly the "fails silently" pattern already fixed once this session for
+`updateTeamMemberAccess`-adjacent paths. Root cause: the `assessments`
+DELETE policy blocked on **any** `submissions` row for that assessment,
+draft or submitted — but per the builder's decision, only a **submitted**
+response should ever block deletion; a draft (plus its ratings,
+justifications, and any paused live-session data) should be deleted along
+with the assessment, not treated as a reason to refuse. Identified the two
+stuck assessments by querying `submissions` grouped by `assessment_id` and
+status: **"Acme Corp"** (`slug: acme-2026`, 2 **submitted** responses —
+correctly refused, both before and after this fix; this is the demo the
+builder said not to touch, confirmed via a rolled-back impersonated
+delete attempt, never persisted) and **"b"** (`slug: b-a8b2273b`, 1
+**draft** live-session response — incorrectly refused before this fix).
+
+Fixed: `v3_fix_assessment_delete_only_blocks_on_submitted` replaces the
+`assessments` DELETE policy's `USING` clause to check
+`status = 'submitted'` specifically, not "any row." No new cascade code
+needed — `submissions.assessment_id`, `ratings.assessment_id`/
+`.submission_id`, `topic_justifications.submission_id`,
+`live_sessions.assessment_id`, `live_session_participants.live_session_id`
+and `attendance_edit_log` (both FKs) are **all already `ON DELETE
+CASCADE`** (confirmed via `information_schema`), so a single `DELETE FROM
+assessments` now correctly removes every dependent row on its own.
+Verified live: deleted "b" for real (impersonated as Anika, committed,
+not rolled back) and confirmed `submissions`/`iros`/`live_sessions` for
+that assessment all reached 0 rows, while `acme-2026` stayed present and
+untouched throughout.
+
+`deleteAssessment` (data.js) now uses `.select('id')` after the delete and
+checks the returned rows instead of trusting a missing `error` — a 0-row
+result throws the exact message the builder specified: "This assessment
+has submitted responses and can't be deleted, to keep the audit trail."
+The confirm dialog's wording was updated to match (mentions the cascade
+and the real refusal condition, not the old "no responses at all").
+docs/access-matrix.md's `assessments` delete row corrected with a dated
+"resolved by builder 2026-09-24" note, per instruction.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). `get_advisors` (security) re-run clean — no new findings from
+the policy change.
+
 ## Notes
+- Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel
   failed, response 403`; same restriction noted in earlier sessions for
   click-testing). RLS/grants were verified via Supabase MCP `execute_sql`

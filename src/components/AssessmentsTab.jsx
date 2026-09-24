@@ -442,7 +442,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
 
   async function handleDelete(a) {
     if (readOnly) return;
-    if (!window.confirm(`Delete "${a.name}"? This only succeeds if it has no responses at all.`)) return;
+    if (!window.confirm(`Delete "${a.name}"? Any draft responses, their ratings and justifications, and any paused live-session data go with it. This is refused if the assessment has any submitted response, to keep the audit trail.`)) return;
     try {
       await deleteAssessment(a.id);
       reloadAssessments();

@@ -354,10 +354,20 @@ export async function deleteCycle(cycleId) {
 
 // RLS-gated: only succeeds when the assessment has no submissions at all
 // (see docs/supabase-setup.md — "authenticated delete assessments without responses").
+// Refused (RLS) once the assessment has any submitted response — draft
+// submissions, their ratings/justifications, and any live-session data are
+// deleted along with it via ON DELETE CASCADE, no separate cleanup needed
+// here. A refusal returns 0 rows, not an error (RLS-filtered deletes never
+// throw), so this checks the returned row itself rather than trusting a
+// missing `error` to mean success — a silent no-op here would be exactly
+// the "fails silently" bug this replaces.
 export async function deleteAssessment(assessmentId) {
   assertConfigured();
-  const { error } = await supabase.from('assessments').delete().eq('id', assessmentId);
+  const { data, error } = await supabase.from('assessments').delete().eq('id', assessmentId).select('id');
   if (error) throw new Error(`assessments delete failed: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error("This assessment has submitted responses and can't be deleted, to keep the audit trail.");
+  }
 }
 
 // Deletes every DRAFT submission across a cycle's assessments (ratings and

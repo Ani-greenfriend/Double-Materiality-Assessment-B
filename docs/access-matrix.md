@@ -101,11 +101,24 @@ Revoking is logged (who, when) exactly like every other calibration action.
 | read | yes | yes | no |
 | update | yes; editing the topic selection auto-clears `iro_list_signed_off` if set | no | no |
 | change state → `iro_list_signed_off` | yes | **yes — the one write this permission grants** | no |
-| delete | only if the assessment has no responses | no | no |
+| delete | only if the assessment has no **submitted** responses | no | no |
 
 `iro_list_signed_off` is **advisory only** — it does not block starting or continuing an
 assessment, per the earlier confirmed decision. This is a deliberate exception to the
 frozen-row default in Section 7 rule 3.
+
+**Delete rule, resolved by builder 2026-09-24.** This row originally read "only if the
+assessment has no responses" (any status), which silently refused deleting an assessment
+with nothing but abandoned drafts — a real bug, not a deliberate protection: two test
+assessments got stuck exactly this way on the deploy preview. Builder decision: the gate
+is **submitted** responses only. A draft response blocks nothing — deleting the assessment
+cascades to delete it, its `ratings`/`topic_justifications`, and any paused live-session
+data (`live_sessions`, `live_session_participants`, `attendance_edit_log`) along with it,
+via the existing `ON DELETE CASCADE` foreign keys (no separate cleanup path needed). A
+submitted response still refuses the delete outright, to keep the audit trail — the RLS
+policy (`v3_fix_assessment_delete_only_blocks_on_submitted`) and the app both say so
+plainly rather than failing silently: "This assessment has submitted responses and can't
+be deleted, to keep the audit trail."
 
 ### topic_library
 

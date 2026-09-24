@@ -280,14 +280,17 @@ export default function RecipientsScreen({ mode, perspectiveFilter, stakeholderM
 
       <button
         onClick={() => onContinue(included)}
-        disabled={included.length === 0}
-        className="text-[13px] font-semibold rounded-xl px-6 py-3 disabled:opacity-40"
+        className="text-[13px] font-semibold rounded-xl px-6 py-3"
         style={{ background: '#4C6FFF', color: '#F5F6FA' }}
       >
         Continue →
       </button>
       {included.length === 0 && visibleGroups.length > 0 && (
-        <p className="text-[11.5px] mt-2" style={{ color: '#D79A4C' }}>Add or include at least one person above to continue.</p>
+        <p className="text-[11.5px] mt-2 text-text-secondary">
+          {mode === 'expert_live_session'
+            ? 'Nobody is included — you can still continue; Kick off stays blocked until someone is added.'
+            : 'Nobody is included — you can still continue; add recipients here or from Recipients later.'}
+        </p>
       )}
     </div>
   );
