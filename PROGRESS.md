@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 30 (Responses screen fix: it was defaulting to a leftover empty test cycle-year (FY2027, 0 assessments) instead of the year with real, filled-in data (FY2025) — filtered the financial-year selector to years with assessments, matching Dashboard's own convention). Also: diagnosed a materiality question live against the builder's real ratings (no bug — actual/human-rights impacts correctly skip likelihood per spec) and logged a deferred UI fix under Notes for next session — Questionnaire.jsx's Likelihood slider is misleading for those two IRO kinds since whatever's entered is silently discarded; explicitly not building it this session.
+**Last updated:** 2026-09-24 — session 2, part 31 (Results/PDF chart colors brought to the real brand triad — emerald/blue/orange, replacing red/purple stand-ins in the Topic Matrix quadrants and removing the white dot-halo in the PDF report's print charts; added on-chart quadrant labels; Dashboard CTA pill now reads "Continue" once there are assessments, matching its own heading).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,56 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 31 (2026-09-24) — Results/PDF chart colors brought to the actual brand triad; Dashboard CTA label now matches its own heading.**
+
+Builder asked (with a reference screenshot of another Apus tool's card/
+chart styling): use the real brand colors — emerald, blue, orange — on the
+Results page's charts, "like in the example," and pointed out the reference
+example's dots have no white ring around them. Also asked for the Dashboard
+hero CTA to change based on status, and to make the Topic Matrix's four
+quadrants self-explanatory ("what the four squares mean").
+
+**Topic Matrix quadrant fills weren't actually brand colors.** Task #14's
+original quadrant recolor (an earlier session) used the accent blue
+correctly but reused the delete/negative red (`#E0645A`) for "financial
+only" and the live-session purple (`#9B7FE0`) for "material both ways" —
+both borrowed from colors CLAUDE.md reserves for something else, not the
+brand's actual emerald/blue/orange triad. `ResultsScreen.jsx`'s
+`MATERIAL_QUADRANT_COLOR` now uses blue (impact only), emerald (financial
+only), and orange (material both ways — the same orange CLAUDE.md already
+uses for "Material/risk" everywhere else in this file, so the
+highest-priority quadrant now reads as the same color as "Material" does
+everywhere else). Also added small on-chart labels in each quadrant's
+corner (FINANCIAL ONLY / MATERIAL — BOTH / NOT MATERIAL / IMPACT ONLY) so
+the four squares' meaning doesn't require cross-referencing the legend
+below the chart.
+
+**The literal white circles were in the PDF report, not the live app.**
+Grepped for every `stroke` on a `<circle>` in the codebase: the live
+`ResultsScreen.jsx` charts already used a dark stroke (`#100E15`, same as
+the plot background) or no stroke at all — never white. `reportPdf.js`'s
+two print-chart builders (`buildHeatmapSvg`, `buildMatrixSvg`) did draw
+`stroke="#FFFFFF"` on every dot, which shows up as a visible halo wherever
+a dot sits over a colored quadrant/heat-cell fill on the white PDF page —
+exactly the effect the builder was pointing at. Removed the stroke from
+the heatmap dots entirely and brought the matrix dots in line with the
+live app's own convention (ring only on material topics, in the print
+orange `#C77F1A`; no stroke otherwise). `PRINT_PILLAR_COLOR` itself
+(`#1F9A63`/`#C77F1A`/`#3A5BD9`) was already the brand triad — untouched.
+
+**Dashboard CTA**: `StartButton`'s heading/subtitle already changed based
+on `hasAssessments` (pre-existing), but the button pill itself was
+hardcoded "Get started" regardless of state — confirmed byte-identical to
+reference-prototype/'s own `Dashboard.jsx` at the same lines, so this was
+inherited prototype behavior, not a build regression. Changed the pill to
+read "Continue" when `hasAssessments` is true, matching the heading it
+sits next to. Scope kept to the label only — `onGoToAssessment` still
+routes to Stakeholders either way, and no additional CTA states beyond the
+existing binary were requested.
+
+`npm run build` clean both times. No schema/RLS change — pure frontend
+(colors + one label).
+
 **Part 30 (2026-09-24) — Responses screen "doesn't work" bug: defaulted to an empty test year.**
 
 Builder reported Responses not showing the live session they'd just

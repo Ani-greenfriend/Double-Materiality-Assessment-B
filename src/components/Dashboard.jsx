@@ -100,7 +100,7 @@ function StartButton({ hasAssessments, onGoToAssessment }) {
           </div>
         </div>
         <span className="relative z-10 flex items-center gap-2 rounded-full pl-5 pr-2 py-2 text-[13px] font-bold shrink-0 ml-4" style={{ background: '#F5F6FA', color: '#111318' }}>
-          Get started
+          {hasAssessments ? 'Continue' : 'Get started'}
           <span className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: '#111318', color: '#F5F6FA' }}>→</span>
         </span>
       </button>

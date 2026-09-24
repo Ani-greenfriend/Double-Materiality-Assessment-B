@@ -12,15 +12,16 @@ function pillarColor(topicId) {
   return PILLAR_COLOR[pillarOf(topicId)]?.text ?? '#8B8B98';
 }
 
-// Topic Matrix quadrant fills, keyed to CLAUDE.md's existing brand palette —
-// not new colors, just the accent (#4C6FFF), the delete/negative red
-// (#E0645A) doing double duty as "financial" pink, and the purple already
-// reserved for assessments-run stats (#9B7FE0) reused for "material on both."
+// Topic Matrix quadrant fills — CLAUDE.md's actual brand triad (emerald
+// #5ED996, accent blue #4C6FFF, Material/risk orange #D79A4C), not the
+// red/purple stand-ins used before. "Both" gets the orange already reserved
+// for "Material" elsewhere in this file (the Heatmap's threshold zone, the
+// material-topic ring below) since it's the highest-priority quadrant.
 const MATERIAL_QUADRANT_COLOR = {
   none: 'rgba(139,139,152,0.08)',
-  impact: 'rgba(76,111,255,0.14)',
-  financial: 'rgba(224,100,90,0.14)',
-  both: 'rgba(155,127,224,0.16)',
+  impact: 'rgba(76,111,255,0.16)',
+  financial: 'rgba(94,217,150,0.16)',
+  both: 'rgba(215,154,76,0.22)',
 };
 
 function downloadCsv(filename, rows) {
@@ -592,6 +593,13 @@ function Matrix({ topics, impactTh, financialTh, onHover, onPin, svgRef }) {
         <rect x={ix} y={fy} width={M + plotW - ix} height={H - 34 - fy} fill={MATERIAL_QUADRANT_COLOR.impact} />
         <line x1={ix} y1={10} x2={ix} y2={H - 34} stroke="#2A2830" strokeDasharray="3 2" />
         <line x1={M} y1={fy} x2={M + plotW} y2={fy} stroke="#2A2830" strokeDasharray="3 2" />
+
+        {/* Labelled directly on the chart, not just in the legend below — what
+            each of the four squares means, at a glance. */}
+        <text x={M + 5} y={22} fontSize="8" fontWeight="700" fill="#5ED996" opacity="0.85">FINANCIAL ONLY</text>
+        <text x={M + plotW - 5} y={22} textAnchor="end" fontSize="8" fontWeight="700" fill="#D79A4C" opacity="0.9">MATERIAL — BOTH</text>
+        <text x={M + 5} y={H - 40} fontSize="8" fontWeight="700" fill="#8B8B98" opacity="0.75">NOT MATERIAL</text>
+        <text x={M + plotW - 5} y={H - 40} textAnchor="end" fontSize="8" fontWeight="700" fill="#4C6FFF" opacity="0.85">IMPACT ONLY</text>
         {[0, 1, 2, 3, 4, 5].map((v) => (
           <text key={`x${v}`} x={sx(Math.max(1, v))} y={H - 22} textAnchor="middle" fontSize="7.5" fill="#5B5B66">{v}</text>
         ))}

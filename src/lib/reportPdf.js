@@ -80,7 +80,7 @@ function buildHeatmapSvg({ points, xLabel, yLabel, title }) {
     <text x="${sx(v)}" y="${H - BOTTOM + 16}" text-anchor="middle" font-size="10" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">${v}</text>
     <text x="${M - 10}" y="${sy(v) + 3}" text-anchor="end" font-size="10" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">${v}</text>
   `).join('');
-  const dots = points.map((p) => `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="5" fill="${PRINT_PILLAR_COLOR[pillarOf(p.topic)]}" stroke="#FFFFFF" stroke-width="1" />`).join('');
+  const dots = points.map((p) => `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="5" fill="${PRINT_PILLAR_COLOR[pillarOf(p.topic)]}" />`).join('');
   return {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       <rect width="${W}" height="${H}" fill="#FFFFFF"/>
@@ -108,7 +108,7 @@ function buildMatrixSvg({ topics, impactTh, financialTh }) {
     const cx = sx(ta.impactScore ?? 1), cy = sy(ta.financialScore ?? 1);
     const r = ta.isMaterial ? 7 : 5;
     const label = (meta?.name ?? id).length > 22 ? (meta?.name ?? id).slice(0, 20) + '…' : (meta?.name ?? id);
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${PRINT_PILLAR_COLOR[meta?.cat ?? 'E']}" stroke="${ta.isMaterial ? '#C77F1A' : '#FFFFFF'}" stroke-width="${ta.isMaterial ? 2 : 1}" />
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${PRINT_PILLAR_COLOR[meta?.cat ?? 'E']}" stroke="${ta.isMaterial ? '#C77F1A' : 'none'}" stroke-width="${ta.isMaterial ? 2 : 0}" />
       <text x="${cx + r + 4}" y="${cy + 3}" font-size="8.5" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${escapeXml(label)}</text>`;
   }).join('');
   return {
