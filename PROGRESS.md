@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 30 (Responses screen fix: it was defaulting to a leftover empty test cycle-year (FY2027, 0 assessments) instead of the year with real, filled-in data (FY2025) — filtered the financial-year selector to years with assessments, matching Dashboard's own convention)
+**Last updated:** 2026-09-24 — session 2, part 30 (Responses screen fix: it was defaulting to a leftover empty test cycle-year (FY2027, 0 assessments) instead of the year with real, filled-in data (FY2025) — filtered the financial-year selector to years with assessments, matching Dashboard's own convention). Also: diagnosed a materiality question live against the builder's real ratings (no bug — actual/human-rights impacts correctly skip likelihood per spec) and logged a deferred UI fix under Notes for next session — Questionnaire.jsx's Likelihood slider is misleading for those two IRO kinds since whatever's entered is silently discarded; explicitly not building it this session.
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -2214,6 +2214,26 @@ schema — every new field the flow needed already existed).
   preview.
 - **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
 ## Notes for next session
+**Questionnaire.jsx — hide "Likelihood" for actual/potential-human-rights
+impacts (builder instruction, 2026-09-24, explicitly deferred — "just for
+the future not now").** Found while the builder was testing a real live
+session on the PR #6 preview: `CRITERIA_FOR` shows a Likelihood slider for
+every neg_impact/pos_impact IRO regardless of `iro.actual`/
+`potentialHumanRightsImpact`, but `assessmentImpactScore` (calc.js)
+silently discards whatever's entered there for those two cases — per spec,
+"Impact score, actual impact: severity (likelihood treated as 5)" and
+"...human rights impact: severity alone — likelihood is not applied." The
+slider isn't wrong to exist per se, but it's genuinely misleading — it
+looks like a real input that matters and doesn't. Builder confirmed the
+fix direction (remove the field entirely for those two cases, don't fake
+a locked-at-5 value — a locked 5 would look like a real rating nobody
+actually gave) but said not to build it this session. When picked up:
+gate the `likelihood`/`financialLikelihood` entry out of `CRITERIA_FOR`'s
+per-topic criteria list (both `neg_impact` and `pos_impact`) whenever
+`iro.actual || iro.potentialHumanRightsImpact`; no data.js/calc.js change
+needed, since the scoring side already does the right thing — this is
+UI-only, matching what's actually used.
+
 **v2.1 — coming next, not yet built (builder instruction, 2026-09-24):**
 One shared survey link per Expert survey. A participant enters their email
 on it and receives their personal link by email. Personal links,
@@ -2225,72 +2245,31 @@ Out of scope in CLAUDE.md: "In-app email invitations... Option A
 (Supabase-dashboard invite...) is what ships" — that line will need to
 change or gain an exception for this).
 
-**The five-group access stage is complete (parts 21-26).** Group 1
-(schema delta), Group 2 (RLS policies), Group 3 (Admin & Roles), Group 4
-(Profile) and Group 5 (the Half A refusal test — all 13 access-matrix.md
-Section 6 rules and all 11 user-stories.md refusal rows, run live) are
-all done, live-verified, and pushed. The three access-matrix.md
-contradictions flagged in part 22 were resolved by direct builder
-decision (part 23); a real, unambiguous RLS gap
-(`team_members.name`/`phone_number`/`avatar_url`/`email` writable beyond
-"own row only") was found and fixed while building Group 3 (part 24).
-The login gate and the avatar-dropdown Settings menu (Profile · Admin &
-Roles · Sign out) both exist and are feature-complete.
+**Where things stand overall**: the five-group access stage (parts
+21-26), Sign-off only's UI presentation (part 27), and three real bugs
+found live on the PR #6 deploy preview — live-session ratings never
+persisting (part 28), Recipients' Continue gate and assessment delete
+failing silently (part 29), and Responses defaulting to an empty test
+year (part 30) — are all done, live-verified, and pushed. PR #6
+(`claude/restore-prototype-ui` → `main`) is open, green, and being
+actively click-tested by the builder on its deploy preview; still
+subscribed and watching for further findings.
 
-**Two things still genuinely open, both flagged rather than guessed at
-or silently built — see part 26 for the full detail:**
-1. **Role-gated nav/read-only rendering for Sign-off only**, across
-   Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate &
-   Results/Report. The database already refuses the data underneath
-   (proven live, part 26); only the UI's *presentation* of that refusal —
-   hiding nav items, a stated "locked" message instead of an empty or
-   broken screen — isn't built. Not one of the five groups as scoped,
-   would touch nearly every existing screen, and is blocked on a named
-   Sign-off-only holder for its own Half B screen test regardless. Needs
-   a builder call: a new Group 6, fold into a later pass, or wait for a
-   named holder.
-2. **`avatars` bucket's live cross-account delete test (Section 6 rule
-   13)** couldn't be completed from this sandbox — Supabase's storage
-   schema refuses any direct SQL `DELETE` on `storage.objects` regardless
-   of caller, so only the policy *definition* was confirmed (correctly
-   shaped). A real verification needs the actual Storage API — worth a
-   quick real-browser check once a second team member exists to test
-   with, not urgent.
+**One thing still genuinely open**: `avatars` bucket's live
+cross-account delete test (access-matrix.md Section 6 rule 13) couldn't
+be completed from this sandbox — Supabase's storage schema refuses any
+direct SQL `DELETE` on `storage.objects` regardless of caller, so only
+the policy *definition* was confirmed (correctly shaped). Worth a quick
+real-browser check once convenient, not urgent. Sign-off only's Half B
+screen test stays explicitly deferred — no named holder exists yet.
 
-**Half B (the named-person screen test for Sign-off only) stays
-explicitly deferred, as it has throughout** — no named holder exists yet.
-Once the builder names someone for `can_signoff_topics` and/or
-`can_signoff_results` in Admin & Roles, Half B can run for real, and item
-1 above stops being theoretical.
-
-Checked per the v2.1 deferral instruction throughout Groups 3-5: none of
-them depend on `Copy personal link`, `Mark as sent`, invitation statuses,
-the "not opened after 5 days" flag, or `invitations.link_code` — nothing
-to list under "Deferred to v2.1."
-
-**PR #5 build status**, unaffected by the above — restore Steps 1–5 are
-all done and pushed (part 20 confirms), the PDF report was redesigned
-(part 19) and three post-restore testing bugs fixed (part 20). Not yet
-human-verified in a real browser: this sandbox still has no browser, so
-build/lint plus targeted Node smoke tests are the only verification for
-anything UI-shaped — the builder's own click-through on the deploy
-preview remains the real confirmation for all of it.
-
-**Needs the builder's action before the next deploy, not just Claude
-Code's**: `VITE_SURVEY_BASE_URL` must be set in Netlify (this session
-renamed it from `VITE_TOOL_A_URL` and removed its hardcoded fallback
-default, per direct instruction that it "must" come from an env var —
-`buildPersonalLink()` now throws if it's unset, where it previously
-silently fell back to `https://questionnaire-dma.netlify.app`). If the
-old `VITE_TOOL_A_URL` variable is currently set on Netlify, it's now
-unused and can be removed once the new one is confirmed working.
+Checked per the v2.1 deferral instruction throughout every part this
+session: nothing built depends on `Copy personal link`, `Mark as sent`,
+invitation statuses, the "not opened after 5 days" flag, or
+`invitations.link_code` — nothing to list under "Deferred to v2.1."
 
 Hard Rule to hold the line on: copy each prototype component verbatim,
 changing only data wiring, Expert survey/Expert live session wording, and
 explicit v2.0/v2.1 spec changes. If a prototype behaviour and the spec
 conflict, or a spec document conflicts with the real, current schema —
-ask or flag, don't guess. This round's four items (part 22) are a
-worked example of that: link-code generation and the survey-address env
-var were verified/fixed outright since the answer was unambiguous; the
-Group 2 items above were flagged instead, because more than one
-reasonable reading exists.
+ask or flag, don't guess.
