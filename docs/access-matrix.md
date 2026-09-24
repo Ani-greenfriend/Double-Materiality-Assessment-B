@@ -1,6 +1,6 @@
 # Access Matrix — Apus DMA (Consultant Console + Expert Survey, shared database)
 
-**Written against:** product-spec.md (Tool B) v2.0 amended 9 · product-spec.md (Tool A) v2.0 (amended) · supabase-setup.md as of 2026-09-20 (Tool A session 5, v2.0 shared migration) — **flagged as possibly stale**: this file predates the PR #5 restore work (Dashboard, Stakeholders, Topics, wizard, Calibrate & Results, Report builder) and the correction that moved calibration sign-off from cycle-level to per-IRO. Where this matrix and the real, current schema disagree, **the real schema wins** — re-run this skill's confirmation once a fresh supabase-setup.md is available.
+**Written against:** product-spec.md (Tool B) v2.0 amended 9 · product-spec.md (Tool A) v2.0 (amended) · **verified against the real, current supabase-setup.md (post-PR-#5-merge, session 2 part 20) on 24 Sep 2026.** Per-IRO sign-off's real fields (`reviewed_with_owner`/`_at`/`_by`) matched what this file already assumed — no correction needed there. Two things this verification corrected: "Enter expert responses"/`entered_by` was dropped by the builder mid-build and is removed from this matrix; the `results_signed_off` schema delta now adds new columns rather than repurposing the cycle-level columns, which supabase-setup.md documents as already retired and deliberately left unused.
 **Population pattern:** P1-variant, stack (see Section 1.1)
 **Date:** 23 September 2026
 **Author:** Anika (greenfriend)
@@ -160,7 +160,7 @@ frozen-row default in Section 7 rule 3.
 
 | Action | Owner/Admin/Full | Sign-off only |
 |---|---|---|
-| create (live session; also the "Enter expert responses" grid, `entered_by` set) | yes | no |
+| create (live session only — every expert survey response comes through Tool A, no exception; "Enter expert responses"/`entered_by` was proposed then dropped by the builder, do not build) | yes | no |
 | read | yes | yes, read-only |
 | update (while `status = draft`) | yes | no |
 | update (once `status = submitted`) | no — frozen; only the anonymise action on the linked invitation touches personal fields | no |
@@ -293,7 +293,7 @@ Sign-off only's restriction is table-level (whole tables locked), not column-lev
 | `team_members` (new) | `id`, `auth_user_id` (nullable until a login exists), `email` (unique, the seed key), `name`, `phone_number`, `avatar_url`, `role_title`, `access_level` (enum: `full`, `signoff`), `is_admin` bool default false, `is_owner` bool default false, `can_signoff_topics` bool default false, `can_signoff_results` bool default false, `active` bool default true, `created_at`, `updated_at`. Seeded first with Anika's row, `is_owner = true`, `is_admin = true`, `access_level = 'full'`. A trigger matches each new Auth identity's email to a row and sets `auth_user_id`; no matching row means no access. | the people, and how a login finds its person |
 | `clients`, `topic_library`, `iros`, `stakeholder_groups`, `stakeholder_members` | `created_by` → team_members (nullable, existing rows unattributed), `updated_by`, `updated_at` | audit trail, currently missing on these five tables |
 | `assessments` | `iro_list_signed_off` bool default false, `iro_list_signed_off_by` → team_members, `iro_list_signed_off_at` timestamptz | the v2.1 Topics gate, advisory |
-| `cycles` | `results_signed_off` bool default false; **repurpose** the existing `signed_off_at`, `approver_name`, `approver_role`, `minutes_reference` columns as `results_signed_off_at` and the approval-detail fields (renamed, not duplicated) | the v2.1 Results gate, locking |
+| `cycles` | **new** columns `results_signed_off` bool default false, `results_signed_off_at`, `results_signed_off_by` — do not repurpose the existing `signed_off_at`/`approver_name`/`approver_role`/`minutes_reference`/`signed_off_recorded_by`, which are already retired and left unused ("same treatment as `cycles.stage`", per supabase-setup.md); this follows that same convention | the v2.1 Results gate, locking |
 | `avatars` bucket (new, Storage) | private; path scoped per `team_members.id` | Profile photos |
 
 Seed: Anika Lerch's `team_members` row as above. No other named people exist yet to seed.

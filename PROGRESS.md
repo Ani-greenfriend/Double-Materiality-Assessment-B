@@ -1793,6 +1793,22 @@ schema — every new field the flow needed already existed).
 - [ ] (v2.0 revision) Acceptance criteria pass — all 25 criteria in spec v2.0 Section 13
 - [ ] (v2.0 revision) Builder, before inviting any real expert: short GDPR check (legal basis, anonymise-on-request approach)
 - [ ] (v2.0 revision) Deploy to Netlify — **blocked from Claude Code's side in this cloud session: no Netlify MCP connector is available here** (checked via ToolSearch and ListConnectors — only Claude_Code_Remote/Claude_Docs/Supabase/github are connected), contradicting CLAUDE.md's "Netlify MCP is active" line. Builder is connecting the Netlify dashboard to GitHub manually instead (New site → Import from GitHub → this repo; `npm run build` / `dist` already set in netlify.toml; env vars VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to be set in Netlify's UI). If a Netlify connector becomes available to Claude Code in a future session, CLAUDE.md's MCP-deploy path can be used again — otherwise treat Netlify as builder-managed from here on
+- [ ] Read docs/access-matrix.md and docs/user-stories.md in full before touching auth or any RLS policy
+- [ ] Schema delta: create `team_members` (id, auth_user_id, email, name, phone_number, avatar_url, role_title, access_level enum 'full'/'signoff', is_admin, is_owner, can_signoff_topics, can_signoff_results, active, created_at, updated_at); seed one row for Anika Lerch (anikalerch@greenfriend.org), is_owner=true, is_admin=true, access_level='full'
+- [ ] Add created_by/updated_by/updated_at to clients, topic_library, iros, stakeholder_groups, stakeholder_members (currently missing on all five)
+- [ ] Add iro_list_signed_off, iro_list_signed_off_by, iro_list_signed_off_at to assessments (advisory gate — never blocks anything)
+- [ ] Add **new** results_signed_off (bool), results_signed_off_at, results_signed_off_by columns to cycles — do not repurpose the existing signed_off_at/approver_name/approver_role/minutes_reference columns; supabase-setup.md documents those as already retired ("same treatment as cycles.stage") and they stay unused. Locking gate — blocks calibrations.calibrated_value/band_value updates while true, until an explicit, logged Revoke
+- [ ] Create the private `avatars` Storage bucket (separate from the existing public-read `logos` bucket); policy: own avatar for upload/delete, any avatar readable
+- [ ] Build the auth-identity-to-team_members trigger: match a new Supabase Auth login's email to a team_members row and set auth_user_id; no match → "No access yet — ask your Admin" screen, reaching nothing
+- [ ] Build every RLS policy, trigger, and function in docs/access-matrix.md Section 6 (13 numbered rules) — one pass, together with the schema delta above
+- [ ] Build Settings → Admin & Roles (Tool Owner/Admin only; not rendered for Full access or Sign-off only): search, "+ New team member" (adds a row for an already-invited email), the legend, the team table with access-level dropdown and, for Sign-off-only rows, two independent checkboxes (Sign off Topics / Sign off Results); Admin toggle column, editable by Tool Owner only, locked with a tooltip for Admin
+- [ ] Build Settings → Profile (every role): avatar upload, Edit/Save, name, role (display), email (not editable), phone, member since, access level with a one-line plain-language description of what it grants
+- [ ] Put Settings behind the avatar dropdown in the header (Profile · Admin & Roles if Owner/Admin · Sign out) — not a left-rail nav item
+- [ ] Restrict Sign-off only's read access to exactly: Topics, Assessments (read-only), Responses (read-only), Calibrate & Results — Dashboard and Report refused at the table level, not just hidden from nav
+- [ ] Wire cycles.results_signed_off as a real lock on calibrations.calibrated_value/band_value (block the update; Revoke re-opens it, logged) and assessments.iro_list_signed_off as advisory only (never blocks) — these two gates behave differently on purpose, do not make them symmetric
+- [ ] Half A of the refusal test: every `no` cell in docs/access-matrix.md Section 6, attempted through the API as Anika's session and as a logged-out/unrecognised identity — paste the results into this file
+- [ ] Half B of the refusal test, Anika only: sign in, confirm full read/write everywhere, confirm she alone can toggle is_admin, confirm a submitted response is frozen, confirm the results-sign-off lock and revoke work
+- [ ] Note explicitly: Sign-off only's Half B screen test is deferred — no named holder yet for can_signoff_topics or can_signoff_results
 
 ## Build decisions
 - Access stage sign-off gates are asymmetric by deliberate design (part 21):
@@ -1826,7 +1842,8 @@ schema — every new field the flow needed already existed).
   Topic Matrix scatter plot, no CSV/PNG/PDF export. This is a deliberate
   scope cut for a fast first dashboard, not a "port faithfully" violation —
   those pieces are unbuilt, not redesigned.
-
+- Sign-off gates are asymmetric by deliberate design: Topics list sign-off is advisory (a record, never a lock); Results sign-off is a real lock on calibration values until explicitly revoked. This mirrors the earlier removal of the global cycle-stage lock in favour of finer, per-action locks.
+  
 ## Known issues
 - **`VITE_SURVEY_BASE_URL` must be set in Netlify before the next deploy
   or personal-link building breaks.** Part 22 renamed this from
@@ -1902,6 +1919,8 @@ schema — every new field the flow needed already existed).
   "professional and compact") still needs a real look on the deploy
   preview.
 - **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
+- The only PROGRESS.md available to the Project Governor for this pass was a stale 20 Sep, Session-1 snapshot. The real current state (as reported by Claude Code earlier in the build) already includes Dashboard, Stakeholders, Topics, the assessment wizard, Review Hub, live session, Calibrate & Results (with per-IRO sign-off restored per the builder's correction), and the PDF report builder. Reconcile this file's Current state / Last session / session number against git history at the next session start rather than trusting either the stale snapshot or this note blindly.
+- Sign-off only has no named holder (name + email) yet for either can_signoff_topics or can_signoff_results — flagged, not blocking; add a name via Admin & Roles once one exists, then run that role's Half B screen test.
 
 ## Notes for next session
 **v2.1 — coming next, not yet built (builder instruction, 2026-09-24):**
