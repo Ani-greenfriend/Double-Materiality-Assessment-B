@@ -466,31 +466,133 @@ OR'd permissive UPDATE policy, `authenticated revoke cycle sign-off`:
 exactly the `signed_off → calibrating` transition and nothing else about a
 signed-off cycle. Migration: `v2_allow_cycle_revoke_signoff`.
 
-### RLS — "Delete unfinished drafts" (resolved, builder decision 2026-09-20)
+### RLS — "Delete unfinished drafts" (resolved, builder decision 2026-09-20; **superseded 2026-09-23, part 17** — see below)
 Section 8's Cycles and assessments overview specifies a manual "Delete
 unfinished drafts" purge action, but Section 6's access matrix lists
 `submissions` DELETE as **No** for every role, with no carve-out for
 drafts, and no DELETE policy existed on `submissions`, `ratings` or
 `topic_justifications`. Flagged as a spec contradiction earlier this
 session rather than guessed at; the builder confirmed the feature should be
-built, for drafts only. Added three narrow DELETE policies, all requiring
-`status = 'draft'` on the submission and the owning cycle's `stage` to be
-`calibrating` or `signed_off` — submitted rows are never covered by any of
-them, matching Section 7's immutability rule for submitted responses:
-- `authenticated delete draft submissions in calibrating or signed off cycles` on `submissions`
-- `authenticated delete ratings of draft submissions in calibrating or signed off cycles` on `ratings`
-- `authenticated delete topic_justifications of draft submissions in calibrating or signed off cycles` on `topic_justifications`
+built, for drafts only. Originally gated on the owning cycle's `stage`
+(`calibrating`/`signed_off`) — this stayed dormant once the cycle-level
+stage banner was removed from the UI (part 17, below), since no assessment
+was ever reaching a `stage`-gated cycle through the interface anymore.
+**Replaced 2026-09-23 (part 17, Group B.8)** with assessment-status-gated
+policies instead of cycle-stage — matches spec v2.0 amended 9 exactly
+("once the assessment is Closed or Completed") and access-matrix.md rule
+12. Current live policies, all requiring `status = 'draft'` and never
+touching a submitted row:
+- `authenticated delete draft submissions of closed or completed` on `submissions` — the assessment is Closed (`expert_survey`, `end_date` in the past) or Completed (`expert_live_session`, its `live_sessions.status = 'finished'`)
+- `authenticated delete ratings of draft submissions closed or com` on `ratings` — same gate, joined via `submissions`/`assessments`
+- `authenticated delete topic_justifications closed or completed` on `topic_justifications` — same gate
 
 These three tables are shared with Tool A, but the policies are
 `authenticated`-only (Tool B's own consultant login) and don't touch any
 `anon` grant, policy or the tables' schema — outside the "never change
 without going through Tool A" boundary in CLAUDE.md's Hard Rules. In
 practice the app only ever calls the `submissions` delete directly
-(`purgeUnfinishedDrafts` in `src/lib/data.js`); `ratings`/
-`topic_justifications` cascade automatically via their existing `on delete
-cascade` foreign keys, so their own policies exist for completeness/direct
-access rather than because the cascade needs them. Migration:
-`v2_delete_drafts_in_calibrating_or_signed_off`.
+(`purgeUnfinishedDrafts` in `src/lib/data.js`, now scoped to one
+assessment, not a whole cycle); `ratings`/`topic_justifications` cascade
+automatically via their existing `on delete cascade` foreign keys, so
+their own policies exist for completeness/direct access rather than
+because the cascade needs them. Migration:
+`v2_delete_drafts_by_assessment_status`.
+
+## Access stage (2026-09-24, session 2 part 21, Group 1 — schema delta)
+
+Per docs/access-matrix.md and docs/user-stories.md (authoritative for
+every role/table/policy — read those first, this is a schema log only).
+This is Group 1 of 5; Group 2 (RLS policies) has not landed yet, so
+`team_members` currently has RLS enabled with **zero policies** (default
+deny for every role, including `authenticated` — safe, not a gap) until
+Group 2 adds the real ones.
+
+### team_members — New. Owned by Tool B. The people, and how a login finds its person.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid, PK | |
+| auth_user_id | uuid, FK → auth.users, nullable | nullable until the person's first login; set by the trigger below |
+| email | text, unique | the seed key — a row is created by email before the person ever logs in |
+| name, phone_number, avatar_url, role_title | text, nullable | |
+| access_level | text | `full` \| `signoff`, default `full`, checked |
+| is_admin, is_owner, can_signoff_topics, can_signoff_results | bool | all default `false` |
+| active | bool | default `true` |
+| created_at, updated_at | timestamptz | default `now()` |
+
+Seeded: Anika Lerch (`anikalerch@greenfriend.org`), `is_owner = true`,
+`is_admin = true`, `access_level = 'full'`, `auth_user_id` still null until
+she next signs in. Migration: `v3_access_team_members`.
+
+### Audit columns — New, on `clients`, `topic_library`, `iros`, `stakeholder_groups`, `stakeholder_members`
+`created_by`, `updated_by` (both FK → `team_members`, nullable — existing
+rows unattributed), `updated_at` (timestamptz, default `now()`). Migration:
+`v3_access_audit_columns`. `assessments` already had `created_by`/
+`updated_at` from the v2.0 migration and wasn't in this list (no
+`updated_by` added there — out of the user's stated scope this round).
+
+### assessments — New: `iro_list_signed_off`, `iro_list_signed_off_by`, `iro_list_signed_off_at`
+Bool default `false`, FK → `team_members` nullable, timestamptz nullable.
+**Advisory only — this gate never blocks anything**, per spec v2.1: it
+records that the topic selection was reviewed, nothing more. Migration:
+`v3_access_iro_list_signoff`.
+
+### cycles — New: `results_signed_off`, `results_signed_off_by`, `results_signed_off_at`
+Bool default `false`, FK → `team_members` nullable, timestamptz nullable.
+**A real locking gate**: once Group 2 lands, `calibrations.calibrated_value`/
+`.band_value` for that cycle's IROs cannot be updated by anyone except
+through an explicit, logged Revoke. **Deliberately new columns, not a
+repurposing of the existing `signed_off_at`/`approver_name`/`approver_role`/
+`minutes_reference`/`signed_off_recorded_by`** — despite
+docs/access-matrix.md Section 5 and CLAUDE.md's own summary both saying
+"repurpose the existing ... columns," the builder explicitly overrode that
+in the instruction that started this stage: those columns are already
+documented (Part 8/17 of this file's history, and PROGRESS.md) as retired
+and staying unused, "same treatment as `cycles.stage`" — reusing them for
+an unrelated new gate would contradict that. **Flagging this for
+docs/access-matrix.md's own maintainer**: its Section 5 schema-delta row
+and CLAUDE.md's schema-delta summary line both still say "repurpose";
+they're now out of sync with what's actually built and should be corrected
+at the next access-matrix.md revision. Migration: `v3_access_results_signoff`.
+
+### Storage — `avatars` bucket (new, private — separate from the public-read `logos` bucket)
+- `public = false` — unlike `logos`, no public tool ever needs an avatar
+  without a login.
+- RLS on `storage.objects`, scoped to `bucket_id = 'avatars'`: SELECT open
+  to any `authenticated` user (needed to render any team member's avatar in
+  the header everywhere, per access-matrix.md); INSERT/UPDATE/DELETE
+  restricted to the uploader's own folder.
+- Path convention, enforced by the policies themselves (not just
+  client-side): `<auth.uid()>/avatar.<ext>` — `(storage.foldername(name))[1]
+  = auth.uid()::text` in each policy's `USING`/`WITH CHECK`. **Implementation
+  note**: access-matrix.md Section 5 describes this as "path scoped per
+  `team_members.id`"; implemented instead as the auth identity's own
+  `auth.uid()`, which is simpler (no subquery to `team_members` on every
+  storage request) and behaviourally identical — `auth_user_id` uniquely
+  maps to exactly one `team_members` row, so "my auth identity's folder"
+  and "my team_members row's folder" are the same set of files for every
+  real user. Flagged as an implementation-detail deviation, not a behaviour
+  change.
+- Migration: `v3_access_avatars_bucket`.
+
+### Trigger — auth identity → team_members linking
+`link_team_member_on_auth_signup()`, `SECURITY DEFINER`, fires
+`AFTER INSERT ON auth.users`: matches the new identity's email to a
+`team_members` row with a still-null `auth_user_id` and links it. No
+match means no access — the app is responsible for checking for a linked
+row and showing "No access yet — ask your Admin" (Group 3+ work; not yet
+built as of this schema pass). Migration: `v3_access_auth_link_trigger`.
+
+**Security check run after this migration** (same discipline as the
+Responses-views finding in part 17): the Supabase advisor flagged
+`link_team_member_on_auth_signup()` as callable directly via
+`/rest/v1/rpc/...` by both `anon` and `authenticated` — Supabase's default
+`GRANT EXECUTE` on every new `public` schema function. In practice a
+`returns trigger` function can't be invoked this way (Postgres refuses it
+outside a real trigger context — `NEW` is undefined), so this was never
+actually exploitable, but the stray grant was revoked anyway for
+cleanliness: `revoke execute on function
+public.link_team_member_on_auth_signup() from anon, authenticated,
+public;` — migration `v3_access_revoke_stray_grant`.
 
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by

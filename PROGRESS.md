@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-23 — session 2, part 20 (three PR #5 testing bugs fixed: live session kickoff crash, blank Review Hub after creating a new assessment, Assessments nav not resetting to overview)
+**Last updated:** 2026-09-24 — session 2, part 21 (Access stage, Group 1 of 5: team_members + role schema delta, audit columns, iro_list_signed_off, cycles.results_signed_off, avatars bucket, auth-link trigger — RLS itself is Group 2, not yet built)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,98 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 21 (2026-09-24) — Access stage, Group 1 of 5: schema delta.**
+
+Builder instructed the access stage to start, per docs/access-matrix.md
+and docs/user-stories.md (added to main by the Project Governor,
+2026-09-23; merged into this branch's PR #5 the same session — see PR
+merge note below) — the authoritative source for every role, table and
+policy from here on, not CLAUDE.md's summary of them. Both read in full
+before any schema work, as instructed.
+
+**Housekeeping first**: merged `origin/main` into `claude/restore-prototype-ui`
+— a clean merge, zero conflicts (confirmed both locally and via GitHub's
+own `mergeable_state: clean`; an earlier builder report of conflicts on a
+long file list turned out to be the PR's "Files changed" tab misread as a
+conflict list — nothing on that list actually conflicted). Picked up the
+regenerated CLAUDE.md, docs/access-matrix.md, docs/user-stories.md. Found
+and read the git history of a since-deleted `PROGRESS-access-stage-additions.md`
+(main commit `1ff5d8d`, deleted in `b946eaf`) — a note-to-self the Project
+Governor left because it only had a stale, session-1 PROGRESS.md to work
+from; its checklist is the same one the builder pasted directly into
+chat, confirming both point at the same real state.
+
+**Group 1 — schema delta, all six items built and verified live:**
+1. `team_members` table (id, auth_user_id nullable, email unique,
+   name/phone_number/avatar_url/role_title, access_level `full`/`signoff`,
+   is_admin, is_owner, can_signoff_topics, can_signoff_results, active,
+   created_at, updated_at) — RLS enabled, **zero policies yet** (default
+   deny for every role including `authenticated` until Group 2; not a gap,
+   the intended state between these two groups). Seeded Anika Lerch
+   (anikalerch@greenfriend.org), is_owner/is_admin/access_level='full'.
+2. `created_by`/`updated_by` (FK → team_members) + `updated_at` added to
+   `clients`, `topic_library`, `iros`, `stakeholder_groups`,
+   `stakeholder_members` — confirmed missing on all five beforehand via
+   `information_schema.columns`, confirmed present on all five after.
+3. `assessments.iro_list_signed_off`/`_by`/`_at` — advisory only, as
+   specified; never wired to block anything.
+4. `cycles.results_signed_off`/`_by`/`_at` — **new columns, deliberately
+   not a repurposing** of the existing `signed_off_at`/`approver_name`/
+   `approver_role`/`minutes_reference`/`signed_off_recorded_by`. Both
+   docs/access-matrix.md Section 5 and CLAUDE.md's own schema-delta
+   summary say "repurpose" — the builder's own instruction starting this
+   stage explicitly overrode that ("do not repurpose... those are already
+   retired and documented as staying unused"), which matches this file's
+   own history (parts 8/17) better than the stale spec line does. Flagged
+   in docs/supabase-setup.md as a live conflict between the spec docs and
+   what's actually built, for whoever next revises access-matrix.md — not
+   silently resolved, not guessed at.
+5. `avatars` Storage bucket — private (unlike the public-read `logos`
+   bucket), RLS: any `authenticated` user can read any avatar (needed for
+   the header everywhere), upload/update/delete restricted to the
+   uploader's own path. Implemented the path scope as `<auth.uid()>/...`
+   rather than `<team_members.id>/...` as access-matrix.md Section 5
+   literally says — behaviourally identical (one auth identity maps to
+   exactly one team_members row) and avoids a subquery on every storage
+   request; flagged as an implementation-detail deviation in
+   docs/supabase-setup.md, not a behaviour change.
+6. `link_team_member_on_auth_signup()` trigger, `AFTER INSERT ON
+   auth.users`, `SECURITY DEFINER` — matches a new login's email to a
+   still-unlinked `team_members` row. No match means no access; the "No
+   access yet" screen itself is Group 3+ work, not built this pass.
+
+**Security check run immediately after** (same discipline as the
+Responses-views finding in part 17): Supabase's advisor flagged the new
+trigger function as callable directly via `/rest/v1/rpc/...` by `anon`
+and `authenticated` — Supabase's default grant on every new `public`
+function. A `returns trigger` function actually can't be invoked this way
+(Postgres refuses it outside a real trigger — `NEW` is undefined), so
+this was never exploitable, but the stray grant was revoked anyway for
+cleanliness (`v3_access_revoke_stray_grant`).
+
+**Also fixed in passing**: docs/supabase-setup.md's "Delete unfinished
+drafts" section still described the *original* cycle-stage-gated policies
+from session 2 part 2 — superseded back in part 17 (Group B.8) by
+assessment-status-gated ones, but the doc was never updated to say so at
+the time. Corrected now, while already touching this file for the access
+stage.
+
+`npm run build`/`npx oxlint src` not re-run this part — no frontend files
+touched, schema-only. Migrations: `v3_access_team_members`,
+`v3_access_audit_columns`, `v3_access_iro_list_signoff`,
+`v3_access_results_signoff`, `v3_access_avatars_bucket`,
+`v3_access_auth_link_trigger`, `v3_access_revoke_stray_grant`. Everything
+verified live via Supabase MCP (`information_schema`, `pg_policies`,
+`pg_trigger`, `storage.buckets`, `get_advisors`) — not just read from the
+migration SQL after the fact.
+
+**Not yet built — waiting for the builder's OK per the stop-after-Group-1
+instruction**: Group 2 (RLS policies — the 13 numbered rules in
+docs/access-matrix.md Section 6), Group 3 (Settings → Admin & Roles),
+Group 4 (Settings → Profile), Group 5 (the refusal test). `team_members`
+has no working policies yet, so nothing reads or writes it from the app
+until Group 2 lands — this is expected, not a bug to chase.
+
 **Part 20 (2026-09-23) — Three PR #5 testing bugs, found by the builder on a fresh test session.**
 
 **1. Kicking off an Expert live session failed:** `submissions` insert error
@@ -1173,6 +1265,13 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Step 5 — PDF report builder: 4-step wizard, jsPDF + jspdf-autotable, all 6 sections, print-themed SVG charts (part 18) — not visually verified in a real browser (sandbox limit, disclosed)
 - [x] ~~Additive `entered_by` column on `submissions`~~ — moot: "Enter expert responses"/QuantAssessmentGrid dropped by the builder in step 3; every expert response comes through Tool A
 
+**Access stage (docs/access-matrix.md + docs/user-stories.md, five groups):**
+- [x] Group 1 — schema delta: `team_members` + seed, audit columns on 5 tables, `assessments.iro_list_signed_off*`, `cycles.results_signed_off*` (new columns, not a repurposing — see part 21), `avatars` bucket + policies, the auth-link trigger — done, part 21
+- [ ] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, Sign-off only's table-level refusals on Dashboard/Report, the `team_members` policies themselves (currently zero — the table is fully closed until this lands)
+- [ ] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only)
+- [ ] Group 4 — Settings → Profile (every role) + the avatar-dropdown header menu
+- [ ] Group 5 — the refusal test, Half A (every `no` cell attempted through the API as Anika's session and as an unrecognised identity, pasted into this file) — Half B (the named-person screen test) is explicitly deferred for Sign-off only, no holder named yet
+
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
 superseded by the steps above now that the UI itself is being rebuilt from
 the prototype. Kept for reference since the underlying data-layer/RLS work
@@ -1257,6 +1356,14 @@ schema — every new field the flow needed already existed).
 - [ ] (v2.0 revision) Deploy to Netlify — **blocked from Claude Code's side in this cloud session: no Netlify MCP connector is available here** (checked via ToolSearch and ListConnectors — only Claude_Code_Remote/Claude_Docs/Supabase/github are connected), contradicting CLAUDE.md's "Netlify MCP is active" line. Builder is connecting the Netlify dashboard to GitHub manually instead (New site → Import from GitHub → this repo; `npm run build` / `dist` already set in netlify.toml; env vars VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to be set in Netlify's UI). If a Netlify connector becomes available to Claude Code in a future session, CLAUDE.md's MCP-deploy path can be used again — otherwise treat Netlify as builder-managed from here on
 
 ## Build decisions
+- Access stage sign-off gates are asymmetric by deliberate design (part 21):
+  `assessments.iro_list_signed_off` is advisory — a record, never a lock;
+  `cycles.results_signed_off` is a real lock on `calibrations.calibrated_value`/
+  `.band_value` until explicitly revoked. Mirrors the earlier removal of
+  the global cycle-stage lock in favour of finer, per-action locks. New
+  columns on `cycles` for the results gate, not a repurposing of the
+  already-retired `signed_off_at`/`approver_name`/etc. — see part 21 and
+  docs/supabase-setup.md for the full reasoning.
 - Scoped this session down from the full Tier-3 build to a read/write
   dashboard slice (Results + Calibration + Stakeholders, behind minimal
   magic-link auth) per the builder's explicit direction, deferring the
@@ -1282,6 +1389,19 @@ schema — every new field the flow needed already existed).
   those pieces are unbuilt, not redesigned.
 
 ## Known issues
+- **The app itself does not yet know about `team_members`.** Nothing in
+  `src/` reads or writes it — the whole app still runs on the pre-access-stage
+  model (any authenticated user has full access, per the existing blanket
+  `authenticated ...` RLS policies, which Group 2 hasn't touched yet
+  either). This is expected mid-stage, not a regression: Group 1 only
+  built the schema everything else attaches to.
+- **Sign-off only has no named holder yet** for either `can_signoff_topics`
+  or `can_signoff_results`. Its mechanism goes live in the database and
+  policies in Group 2 regardless, per the confirmed approach in
+  docs/access-matrix.md; its screen test (Half B of the refusal test) is
+  deferred and tracked as open in docs/user-stories.md until a real person
+  and email exist — add a name via Admin & Roles (Group 3) once one does,
+  then run that role's Half B.
 - **Live authenticated view untested.** This sandbox can build and lint
   cleanly, and render the logged-out Login screen in a headless browser, but
   cannot complete a magic-link round trip or reach Supabase from a browser
