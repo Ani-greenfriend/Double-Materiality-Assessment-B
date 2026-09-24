@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 25 (access stage Group 4 — Settings → Profile — built, wired into the avatar dropdown; only Group 5, the refusal-test write-up, remains)
+**Last updated:** 2026-09-24 — session 2, part 26 (access stage Group 5 — the Half A refusal test — run live against every rule in docs/access-matrix.md Section 6 and every row in docs/user-stories.md's refusal table; all 13 rules and all 11 stories pass. The five-group access stage is complete.)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,77 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 26 (2026-09-24) — Access stage, Group 5 of 5: the Half A refusal test. Access stage complete.**
+
+Ran every rule in docs/access-matrix.md Section 6 (all 13, numbered) and
+every row in docs/user-stories.md's "Stories that are refusals" table
+(all 11) live against the real database — genuine RLS impersonation
+inside rolled-back transactions, as Anika, as unrecognised/anon
+identities, and (new this part) as temporary but real Sign-off-only,
+plain Full-access and Admin identities, built by inserting throwaway
+`auth.users` + `team_members` rows inside the same rolled-back
+transaction (this project has no other real Auth identity to test
+against). Nothing below was left to "pending, no named holder" — every
+rule that needed a Sign-off-only, Admin or plain-Full-access caller now
+has a real, if temporary, one to test with. No schema, RLS or frontend
+change this part — this is verification only.
+
+**Section 6, all 13 rules — result:**
+
+| # | Rule | Result |
+|---|---|---|
+| 1 | Owner/Admin/Full read/write every workflow table | **Pass.** Anika reads/edits everything (established throughout parts 21-25). |
+| 2 | Sign-off only reads assessments/iros/submissions/ratings/topic_justifications/live_sessions/live_session_participants/attendance_edit_log/calibrations; excluded from topic_library/invitations | **Pass.** A temporary Sign-off-only identity (both permissions) saw real rows in all 9 granted tables (assessments 6, iros 40, submissions 2, ratings 46, live_sessions 4, live_session_participants 9, attendance_edit_log 9, calibrations 6, topic_justifications 0 — table empty, not policy-blocked) and exactly 0 rows from `topic_library`/`invitations`. |
+| 3 | Sign-off only signs off assessment topics only with `can_signoff_topics` | **Pass.** Identity with the permission: `sign_off_assessment_topics()` succeeds. Identity without it: blocked — "Not authorized to sign off the topic list." |
+| 4 | Sign-off only signs off cycle results only with `can_signoff_results`; `cycles` itself only readable with that same permission | **Pass.** Identity with the permission: `sign_off_cycle_results()` succeeds, and `cycles` returns real rows (4). Identity without it: the function is blocked ("Not authorized to sign off results") and `cycles` returns exactly 0 rows. |
+| 5 | `calibrations.calibrated_value`/`.band_value` locked while `cycles.results_signed_off = true`, for Owner/Admin/Full too | **Pass** (verified part 23; re-confirmed by rule 6's setup this part). |
+| 6 | Only Owner/Admin/Full can revoke `results_signed_off`; Sign-off only cannot, even with `can_signoff_results` | **Pass.** A Sign-off-only identity with `can_signoff_results = true` attempted a direct `UPDATE cycles SET results_signed_off = false` — no exception (RLS silently matches 0 rows on UPDATE rather than raising), but a follow-up read confirmed the flag was still `true` — nothing changed. `sign_off_cycle_results()` itself only ever sets the flag to `true` (read its exact body to confirm) — there is no revoke path for this role anywhere, matching the rule exactly. |
+| 7 | Dashboard's/Report's underlying tables refused to Sign-off only | **Pass at the data layer**: `threshold_changes` and `calibration_history` (both Report-only, full-access-only per Group 2) and `topic_library` (Dashboard-only) all return exactly 0 rows to a Sign-off-only caller. **Not yet pass at the presentation layer** — flagged in part 24: the UI doesn't hide the Dashboard/Report nav items or show a stated "locked" message for this role yet; a Sign-off-only user reaching those screens today would see an empty/broken screen, not a refusal message. Still an open item for the builder's call (Group 6, fold into a later pass, or wait for a named holder). |
+| 8 | Only Tool Owner (not Admin) can grant/revoke `is_admin` | **Pass, live** — supersedes the old "confirmed by code review, no second Admin to test" note. A real temporary Admin identity (is_admin=true, is_owner=false) successfully created a team member and set another row's access level, but was blocked granting `is_admin` to that row ("Only the Tool Owner can grant or revoke Admin") and blocked deactivating themselves. |
+| 9 | `is_owner` has no UPDATE path for any role, including the Owner herself | **Pass.** Anika (the real Owner) attempting to change her own `is_owner` — blocked ("is_owner cannot be changed through the app"). |
+| 10 | anon (Tool B) has no access of its own | **Pass** for every Tool-B-exclusive table: `team_members`/`topic_library`/`calibrations`/`stakeholder_members` all return exactly 0 rows to `anon`, and an `anon` INSERT into `team_members` is blocked by RLS. Confirmed the only tables where `anon` *does* have a read policy (`assessments`, `cycles`, `stakeholder_groups`) are Tool A's own pre-existing public-survey surface, not anything Group 2 added — consistent with the rule's own wording ("the shared anon surface is entirely Tool A's"). |
+| 11 | A login with no `team_members` row sees only "No access yet" | **Pass at the data layer** (established part 21/23: an unrecognised `auth.uid()` gets `is_full_access()`/`is_signoff_only()` both false, zero rows everywhere). **Pass at the UI layer too, code-reviewed**: `App.jsx`'s gate (built part 24) renders `NoAccessScreen.jsx` for `me === null`, before any other screen mounts — not click-tested in a live browser (sandbox limitation, as with every UI screen this session), but the logic is a direct, simple property check with no path around it. |
+| 12 | `submissions` DELETE — draft + Closed/Completed only | **Pass, live.** A draft submission on a synthetic closed assessment (`end_date` forced into the past): delete succeeds, row gone. A submitted response on the same assessment: delete attempt affects 0 rows, row still present. |
+| 13 | `avatars` bucket — own avatar only for upload/delete, any avatar readable | **Policy definition confirmed, not live-tested.** All four storage policies (`avatars own insert/update/delete`, `avatars read any`) are scoped to `{authenticated}` only, with the path check `(storage.foldername(name))[1] = auth.uid()::text` matching `uploadAvatar`'s own `${authUserId}/avatar.${ext}` path exactly. A live cross-account delete test was attempted but Supabase's storage schema refuses **any** direct SQL `DELETE` on `storage.objects` regardless of caller ("Direct deletion from storage tables is not allowed. Use the Storage API instead.") — a tooling wall, not a policy finding; real verification of this one rule needs the actual Storage API (a live browser or an authenticated REST call), which this sandbox doesn't have. |
+
+**user-stories.md's 11-row refusal table — cross-checked against the
+above, nothing new to test beyond what's already covered:** rows 1-3
+map to rules already verified (submissions update/delete, calibrations
+lock); row 4 maps to rule 3's "no permission" case; row 5 maps to rule 7
+(data-layer pass, UI-layer flagged); row 6 maps to rule 8 (now live,
+not code-review-only); row 7 (Full access refused from Admin & Roles) —
+the component-level guard in `AdminRolesTab.jsx` (`if (!me.isOwner &&
+!me.isAdmin) return <refusal>`) is a direct property check, code-reviewed
+rather than click-tested; the underlying data policies were separately
+confirmed in part 24 (a plain Full-access caller's writes are blocked
+even though the read policy alone doesn't stop them, which is exactly
+why the component-level check matters); row 8 (self access_level change)
+— tested this part specifically: a temporary plain Full-access identity
+attempting to change their **own** `access_level` was blocked ("Only
+Tool Owner or Admin can change access level..." — the trigger's
+Owner/Admin gate has no "except your own row" carve-out for this
+column group, so self-narrowing is blocked the same way granting to
+someone else is); row 9 maps to rule 9; row 10 maps to rule 11; row 11
+(logged-out visitor sees only the login screen) is a plain, unconditional
+`if (!session) return <Login />` in `App.jsx`, ahead of every other check
+— confirmed by reading the code path, not something the access stage
+changed.
+
+**Net result: the access stage's own gate is fully proven at the
+database layer, for every rule, with no remaining "pending — no named
+holder" items** — every role that had no real person to test as now has
+a genuine (temporary, rolled-back) identity that was actually
+impersonated. The one remaining gap is UI presentation, not policy: rule
+7 / user-story 5 (Dashboard/Report's stated refusal for Sign-off only)
+and rule 13's live Storage-API test are both explicitly flagged above
+rather than silently marked done.
+
+**This closes the five-group access stage** (Group 1: schema delta,
+Group 2: RLS policies, Group 3: Admin & Roles, Group 4: Profile, Group
+5: the refusal test). Half B (a named Sign-off-only person's own screen
+test) remains explicitly deferred, as it has been throughout — no named
+holder exists yet.
+
 **Part 25 (2026-09-24) — Access stage, Group 4 of 5: Settings → Profile.**
 
 No schema or RLS change — this reuses Group 3's already-built,
@@ -1638,7 +1709,7 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, the `team_members` policies themselves — done and verified live, part 23. Sign-off only's table-level refusals on Dashboard/Report are a frontend routing concern (Group 3/4 territory — the tables those screens read, e.g. `assessment_progress`/`group_engagement`, aren't in Sign-off only's per-table grants, so the refusal is already mechanically true; the screen-level "refuse outright, not an empty screen" UX still needs building)
 - [x] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only) — done and verified live, part 24; the login gate and avatar-dropdown shell were pulled forward from Group 4 since Group 3's screen needs them to be reachable
 - [x] Group 4 — Settings → Profile (every role) — done, part 25; the avatar dropdown (part 24) is now feature-complete for both entries
-- [ ] Group 5 — the refusal test, Half A (every `no` cell attempted through the API as Anika's session and as an unrecognised identity, pasted into this file) — Half B (the named-person screen test) is explicitly deferred for Sign-off only, no holder named yet
+- [x] Group 5 — the refusal test, Half A: all 13 rules in Section 6 and all 11 rows of user-stories.md's refusal table run live and pass — done, part 26. Half B (the named-person screen test) stays explicitly deferred for Sign-off only, no holder named yet. **Access stage complete** — one open item flagged, not built: role-gated nav/read-only rendering for Sign-off only across Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate & Results/Report (see part 24/26) — needs a builder call on whether it's a new Group 6 or waits for a named holder
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
 superseded by the steps above now that the UI itself is being rebuilt from
@@ -1844,61 +1915,48 @@ Out of scope in CLAUDE.md: "In-app email invitations... Option A
 (Supabase-dashboard invite...) is what ships" — that line will need to
 change or gain an exception for this).
 
-**Access stage — Groups 2 and 3 done and pushed (parts 23-24).** Group 1
-(schema delta, part 21), Group 2 (RLS policies, part 23) and Group 3
-(Admin & Roles, part 24) are all complete and live-verified. The three
-access-matrix.md contradictions flagged in part 22 were resolved by
-direct builder decision (part 23). A real, unambiguous RLS gap
+**The five-group access stage is complete (parts 21-26).** Group 1
+(schema delta), Group 2 (RLS policies), Group 3 (Admin & Roles), Group 4
+(Profile) and Group 5 (the Half A refusal test — all 13 access-matrix.md
+Section 6 rules and all 11 user-stories.md refusal rows, run live) are
+all done, live-verified, and pushed. The three access-matrix.md
+contradictions flagged in part 22 were resolved by direct builder
+decision (part 23); a real, unambiguous RLS gap
 (`team_members.name`/`phone_number`/`avatar_url`/`email` writable beyond
-"own row only") was found and fixed while building Group 3 (part 24) —
-see docs/supabase-setup.md's Group 3 section for the exact fix and its
-live verification. The login gate ("No access yet"/deactivated screen)
-and the avatar-dropdown Settings menu both now exist — Group 3 pulled
-them forward from Group 4 since its own screen needed somewhere to be
-reached from.
+"own row only") was found and fixed while building Group 3 (part 24).
+The login gate and the avatar-dropdown Settings menu (Profile · Admin &
+Roles · Sign out) both exist and are feature-complete.
 
-**Group 4 (Settings → Profile) is also done and pushed (part 25)** —
-`ProfileTab.jsx` reuses Group 3's already-verified data.js functions, no
-new schema/RLS. The Settings avatar dropdown is now feature-complete.
+**Two things still genuinely open, both flagged rather than guessed at
+or silently built — see part 26 for the full detail:**
+1. **Role-gated nav/read-only rendering for Sign-off only**, across
+   Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate &
+   Results/Report. The database already refuses the data underneath
+   (proven live, part 26); only the UI's *presentation* of that refusal —
+   hiding nav items, a stated "locked" message instead of an empty or
+   broken screen — isn't built. Not one of the five groups as scoped,
+   would touch nearly every existing screen, and is blocked on a named
+   Sign-off-only holder for its own Half B screen test regardless. Needs
+   a builder call: a new Group 6, fold into a later pass, or wait for a
+   named holder.
+2. **`avatars` bucket's live cross-account delete test (Section 6 rule
+   13)** couldn't be completed from this sandbox — Supabase's storage
+   schema refuses any direct SQL `DELETE` on `storage.objects` regardless
+   of caller, so only the policy *definition* was confirmed (correctly
+   shaped). A real verification needs the actual Storage API — worth a
+   quick real-browser check once a second team member exists to test
+   with, not urgent.
 
-**Next and last: Group 5 — the refusal test, Half A.** Every `no` cell in
-access-matrix.md Section 6's 13 numbered rules, plus the 11-row "Stories
-that are refusals" table in docs/user-stories.md, attempted through the
-API as Anika's session and as an unrecognised identity, with results
-pasted into this file as a formal enumerated write-up. Parts 23-24
-already proved a meaningful subset live (frozen submissions, the
-calibration lock, the iros DELETE guard, an unrecognised identity's total
-refusal, team_members' own-row/email/is_admin/active protections, a
-plain Full-access caller blocked from Admin & Roles writes, a Sign-off-
-only caller's team_members read scoped to their own row) — Group 5 is
-about assembling the complete, explicitly-enumerated pass against every
-rule, not re-discovering what's already confirmed. Half B (the
-named-person screen test for Sign-off only) stays explicitly deferred —
-no named holder yet.
+**Half B (the named-person screen test for Sign-off only) stays
+explicitly deferred, as it has throughout** — no named holder exists yet.
+Once the builder names someone for `can_signoff_topics` and/or
+`can_signoff_results` in Admin & Roles, Half B can run for real, and item
+1 above stops being theoretical.
 
-**Flagged during Group 3, still open**: whether/when to build role-gated
-nav visibility and read-only rendering for Sign-off only across
-Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate &
-Results/Report — not one of the five groups as scoped, large if taken on,
-and blocked on a named holder for its own screen test regardless. See
-part 24 and docs/supabase-setup.md's Group 3 section. Needs a builder
-call: Group 5, a new Group 6, or wait.
-
-**Then Group 5 — the refusal test, Half A.** Every `no` cell in
-access-matrix.md Section 6's 13 rules, attempted through the API as
-Anika's session and as an unrecognised identity, pasted into this file —
-part 23's live verification already covers a meaningful subset (frozen
-submissions, the calibration lock, the iros DELETE guard, an unrecognised
-identity's total refusal) but the full enumerated pass against all 13
-rules, plus the `user-stories.md` "Stories that are refusals" table's 11
-numbered rows, hasn't been assembled as its own dedicated write-up yet.
-Half B (the named-person screen test for Sign-off only) stays explicitly
-deferred — no named holder yet.
-
-Checked per the v2.1 deferral instruction: none of Groups 3-5 depend on
-`Copy personal link`, `Mark as sent`, invitation statuses, the "not
-opened after 5 days" flag, or `invitations.link_code` — nothing new to
-list under "Deferred to v2.1."
+Checked per the v2.1 deferral instruction throughout Groups 3-5: none of
+them depend on `Copy personal link`, `Mark as sent`, invitation statuses,
+the "not opened after 5 days" flag, or `invitations.link_code` — nothing
+to list under "Deferred to v2.1."
 
 **PR #5 build status**, unaffected by the above — restore Steps 1–5 are
 all done and pushed (part 20 confirms), the PDF report was redesigned

@@ -498,7 +498,7 @@ their own policies exist for completeness/direct access rather than
 because the cascade needs them. Migration:
 `v2_delete_drafts_by_assessment_status`.
 
-## Access stage (2026-09-24, session 2 parts 21–23)
+## Access stage (2026-09-24, session 2 parts 21–26) — complete
 
 Per docs/access-matrix.md and docs/user-stories.md (authoritative for
 every role/table/policy — read those first, this is a schema log only).
@@ -506,8 +506,12 @@ Part 21 = Group 1 (schema delta, below). Part 23 = Group 2 (RLS policies,
 documented further down this section) — every table's `authenticated`
 policies were rewritten role-aware; no `anon` policy or grant was touched
 anywhere (Tool A's public survey depends on those, per CLAUDE.md's Hard
-Rules). Groups 3–5 (Admin & Roles / Profile screens, the refusal test)
-are not built yet.
+Rules). Part 24 = Group 3 (Admin & Roles, plus the login gate and avatar
+dropdown it needed). Part 25 = Group 4 (Profile). Part 26 = Group 5 (the
+Half A refusal test — all 13 Section 6 rules run live). All five groups
+are documented further down this section, in order. One UI-presentation
+gap and one sandbox-tooling limitation are flagged in Group 5's write-up
+— not silently marked done.
 
 ### team_members — New. Owned by Tool B. The people, and how a login finds its person.
 | Column | Type | Notes |
@@ -756,10 +760,9 @@ Migrations, in order: `v3_access_rls_clients_practice_stakeholders_topics`,
 `v3_access_rls_live_sessions`, `v3_access_rls_team_members`,
 `v3_access_fix_search_path`.
 
-**Not built yet**: Group 5 (the formal Half A refusal test written up as a
-full pasted transcript in PROGRESS.md — the spot-checks above and in
-Group 3 below cover several of Section 6's `no` cells already but aren't
-the complete enumerated list Group 5 calls for).
+Group 5 (the formal Half A refusal test) is documented further down —
+see "Group 5 — the refusal test, Half A" below. The access stage is
+complete as of part 26.
 
 ### Group 3 — Settings → Admin & Roles (2026-09-24, part 24)
 
@@ -886,7 +889,39 @@ feature-complete for both entries.
 Every role reaches Profile (no nav gating needed — it's already
 behind the avatar dropdown, not a left-rail item, and every role is
 allowed to edit their own name/phone/photo).
-- Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
+
+### Group 5 — the refusal test, Half A (2026-09-24, part 26)
+
+Ran every rule in Section 6 of docs/access-matrix.md (all 13) and every
+row of docs/user-stories.md's "Stories that are refusals" table (all 11)
+live against the real database, closing every remaining "pending — no
+named holder" item by building temporary but real Sign-off-only,
+plain Full-access and Admin identities (throwaway `auth.users` +
+`team_members` rows, inserted and impersonated inside the same
+rolled-back transaction — this project has no other real Auth identity).
+No schema, RLS or frontend change — verification only. The full
+rule-by-rule table and the exact test methodology are in PROGRESS.md's
+part 26 (Last session) — not duplicated here to avoid drift between two
+copies of the same table; this section is the pointer.
+
+**Two items explicitly not "pass, fully verified":**
+- Rule 7 (Dashboard/Report refused to Sign-off only) passes at the data
+  layer (confirmed zero rows from `topic_library`/`threshold_changes`/
+  `calibration_history`) but not yet at the UI layer — no nav hiding or
+  stated refusal message exists for this role across most screens. See
+  part 24's original flag.
+- Rule 13 (avatars bucket, live cross-account delete) — the policy
+  definition is confirmed correct, but a live delete test isn't possible
+  from this sandbox: Supabase's storage schema refuses **any** direct SQL
+  `DELETE` on `storage.objects`, regardless of caller ("Direct deletion
+  from storage tables is not allowed. Use the Storage API instead.") —
+  needs the real Storage API (browser or authenticated REST) to finish.
+
+**This closes the five-group access stage.** Half B (a named Sign-off-only
+person's own screen test) remains explicitly deferred — no named holder
+exists yet.
+
+## Notes
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel
   failed, response 403`; same restriction noted in earlier sessions for
   click-testing). RLS/grants were verified via Supabase MCP `execute_sql`
