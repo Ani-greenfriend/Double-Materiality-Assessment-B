@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 26 (access stage Group 5 — the Half A refusal test — run live against every rule in docs/access-matrix.md Section 6 and every row in docs/user-stories.md's refusal table; all 13 rules and all 11 stories pass. The five-group access stage is complete.)
+**Last updated:** 2026-09-24 — session 2, part 27 (Sign-off only's UI presentation built — nav hiding, locked screens for Dashboard/Stakeholders/Topics/Report, read-only rendering across Assessments/Responses/Calibrate & Results — closing the gap flagged in parts 24/26; also merged PR #5's follow-up work (Groups 2-5) into main via a new PR #6, reconciling main's own post-merge doc updates along the way)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,130 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 27 (2026-09-24) — PR #6 opened (Groups 2-5 to main), main's post-merge docs reconciled, and Sign-off only's UI presentation built.**
+
+**PR status.** Commits since PR #5 merged (Groups 2-5, `c647f8a`..`a2377f4`) were never on `main` — this branch kept going past the PR #5 merge without a follow-up PR. Checked, confirmed, and opened
+[PR #6](https://github.com/Ani-greenfriend/Double-Materiality-Assessment-B/pull/6)
+(`claude/restore-prototype-ui` → `main`). Before opening it, merged `main`
+into this branch first — `main` had gained its own commits right after the
+PR #5 merge (a regenerated CLAUDE.md/access-matrix.md/product-spec.md and a
+PROGRESS.md checklist addition, uploaded directly by the builder — the
+Project Governor's own access-stage checklist, matching almost verbatim
+what this branch had already been building against via the deleted
+`PROGRESS-access-stage-additions.md`). Git's own merge was clean (no
+textual conflicts), but two things needed a human read to catch, since
+they weren't textual conflicts:
+- CLAUDE.md's Tech Stack line still described the retired
+  `VITE_TOOL_A_URL` hardcoded-fallback pattern after merging, directly
+  contradicting the Environment Variables section two lines below
+  (`VITE_SURVEY_BASE_URL`, required, no fallback — this branch's own part
+  22 change). Fixed to match the actual code.
+- docs/supabase-setup.md's part-21 note flagging a live conflict between
+  the (then-current) access-matrix.md/CLAUDE.md wording ("repurpose" the
+  retired `cycles` columns) and what was actually built (new columns) was
+  now stale — main's upload had already corrected both docs to say "new
+  columns." Marked resolved.
+- PROGRESS.md's merge brought in the original, now fully-completed
+  access-stage checklist as a second, unchecked copy sitting inside an
+  unrelated section — condensed to a one-line pointer at the dedicated,
+  far more detailed access-stage checklist this file already maintains,
+  rather than leaving two checklists disagreeing about the same finished
+  work. Dropped two now-moot notes too (a stale-snapshot warning from
+  session start, a duplicate "no named Sign-off-only holder" note already
+  covered in detail elsewhere in this file).
+
+Build/lint clean after the merge and the reconciliation commit; pushed,
+then opened PR #6 and subscribed to its activity to watch for the deploy
+preview.
+
+**Sign-off only's UI presentation, the gap flagged in parts 24 and 26.**
+Per direct instruction: hide nav items this role can't use, show a clear
+locked message on Dashboard and Report (and, since neither has any table
+access for this role either, Stakeholders and Topics get the same
+treatment), and render read-only where the matrix says read-only.
+Nothing in the database changed — this is presentation only, on top of
+Group 2's already-verified RLS.
+
+- **`App.jsx`**: computes `isSignOffOnly` from `me.accessLevel`; the
+  sidebar nav (`visibleTabs`) drops Dashboard/Stakeholders/Topics/Report
+  for this role entirely — Assessments, Responses and Calibrate & Results
+  remain, plus the always-present avatar dropdown (Settings is unaffected,
+  every role reaches Profile). An effect bounces away from any of the
+  four locked tabs the moment `me` resolves to Sign-off only — covers
+  both the default landing tab (Dashboard) and any stale `tab` state
+  left over from a role change. Each of the four locked screens renders
+  a new `LockedScreen.jsx` instead of the real component if `tab`
+  somehow still points at one (a stray deep-link, browser back/forward,
+  etc.) — nav hiding alone isn't relied on, matching the "refused, not
+  just hidden" wording in access-matrix.md rule 7.
+- **`AssessmentOverview.jsx`/`AssessmentsTab.jsx`**: a `readOnly` prop
+  hides "+ New Assessment," and the per-row Recipients/Participants,
+  Edit and Delete actions — only Preview (View) and View results remain.
+  `handleEdit`/`handleDelete`/`openRecipientsDirect`/`enterLiveSession`
+  (Kick off) all bail out early when `readOnly`, not just the buttons
+  that trigger them, since a couple of these are also reachable via
+  Responses' deep-links.
+- **`AssessmentReviewHub.jsx`** (ported prototype component, changed
+  under the v2.1-access-stage sanctioned-exception clause, not a random
+  restyle): a `readOnly` prop hides every "Edit" toggle (Introduction,
+  Rating Criteria, per-topic name/description) and the stakeholder-chip
+  remove buttons; Exit always discards (never prompts to save, since
+  nothing can go dirty) and is relabelled "Close." This is the only
+  entry point left into the wizard-adjacent screens for Sign-off only
+  (via Preview), and it now can't write anything.
+- **`ResponsesTab.jsx`**: this screen was already read-plus-CSV-only
+  except for one write action — "Delete unfinished drafts," now hidden
+  (and its handler guarded) for Sign-off only. The "Invitations"/"Resume
+  session" links (which jump into the now-gated Assessments write flows)
+  are hidden too, rather than relying solely on the receiving end's
+  guard.
+- **`CalibrationTab.jsx`**: the entire per-IRO write surface — Adjust/Edit
+  calibration, Reset to calculated, Sign off this result, Revoke, and the
+  Owner/Moderator inputs — hidden for Sign-off only; Owner/Moderator
+  render as plain text instead. Calculated/calibrated values, notes and
+  change history stay visible (read).
+- **`ResultsScreen.jsx`**: reused the file's own existing "no cycle"
+  read-only threshold display (`!cycle ? <static text> : <editable
+  inputs>`) by widening its condition to `!cycle || readOnly` — the
+  Impact/Financial threshold Apply flow disappears entirely for Sign-off
+  only, showing the same plain "Impact threshold X · Financial threshold
+  Y" text every other reader sees when there's no cycle context.
+  `handleApplyThresholds` itself also bails early when `readOnly`.
+- **`CalibrateResultsTab.jsx`**: threads `readOnly` through to both
+  `ResultsScreen` and `CalibrationTab` — no changes of its own beyond
+  that (the shared filter bar and workspace header were already
+  read-only for everyone).
+
+**Deliberately not built, and why — a real gap surfaced while doing this,
+not silently worked around**: neither `assessments.iro_list_signed_off`
+nor `cycles.results_signed_off` has any UI anywhere in this codebase, for
+*any* role — grepped `src/` for both column names and their two
+`SECURITY DEFINER` functions (`sign_off_assessment_topics`,
+`sign_off_cycle_results`, both built and verified in Group 2/part 23) and
+found zero references. The existing "✓ Sign off this result" button in
+Calibrate & Results is a completely different mechanism
+(`calibrations.reviewed_with_owner`, per-IRO, Owner/Admin/Full only) that
+predates the access stage. Building the two new sign-off actions
+themselves — a way for a Sign-off-only holder to actually call
+`sign_off_assessment_topics`/`sign_off_cycle_results` — is new
+functionality, not "presentation," and wasn't asked for by this task; it's
+also the same unbuilt "Topics selection sign-off screen" gap already
+flagged in part 24 (since the assessment's own topic-selection view for
+Sign-off only doesn't exist as a screen at all yet — `TopicsTab.jsx` is
+the master `topic_library` admin list, which this role has no access to).
+Flagging this explicitly rather than inventing a button with nowhere real
+for it to live: **the two sign-off actions need their own build pass**,
+likely alongside whatever screen ends up showing "this round's topic
+selection" to a Sign-off-only Topics reviewer.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). No schema/RLS change — pure frontend, on top of Group 2's
+already-live database enforcement. Not click-tested in a live browser
+(sandbox limitation, as with every UI change this session) — logic was
+traced by hand for each of the three remaining roles' paths (Owner/Admin/
+Full unaffected, since `readOnly`/`isSignOffOnly` are only ever true for
+`accessLevel === 'signoff'`) rather than assumed.
+
 **Part 26 (2026-09-24) — Access stage, Group 5 of 5: the Half A refusal test. Access stage complete.**
 
 Ran every rule in docs/access-matrix.md Section 6 (all 13, numbered) and
@@ -1709,7 +1833,8 @@ left the actual spec-derived rules alone). `npm run build` and
 - [x] Group 2 — RLS policies: every rule in docs/access-matrix.md Section 6 (13 numbered), the `results_signed_off` lock on `calibrations`, the `team_members` policies themselves — done and verified live, part 23. Sign-off only's table-level refusals on Dashboard/Report are a frontend routing concern (Group 3/4 territory — the tables those screens read, e.g. `assessment_progress`/`group_engagement`, aren't in Sign-off only's per-table grants, so the refusal is already mechanically true; the screen-level "refuse outright, not an empty screen" UX still needs building)
 - [x] Group 3 — Settings → Admin & Roles (Tool Owner/Admin only) — done and verified live, part 24; the login gate and avatar-dropdown shell were pulled forward from Group 4 since Group 3's screen needs them to be reachable
 - [x] Group 4 — Settings → Profile (every role) — done, part 25; the avatar dropdown (part 24) is now feature-complete for both entries
-- [x] Group 5 — the refusal test, Half A: all 13 rules in Section 6 and all 11 rows of user-stories.md's refusal table run live and pass — done, part 26. Half B (the named-person screen test) stays explicitly deferred for Sign-off only, no holder named yet. **Access stage complete** — one open item flagged, not built: role-gated nav/read-only rendering for Sign-off only across Dashboard/Stakeholders/Topics/Assessments/Responses/Calibrate & Results/Report (see part 24/26) — needs a builder call on whether it's a new Group 6 or waits for a named holder
+- [x] Group 5 — the refusal test, Half A: all 13 rules in Section 6 and all 11 rows of user-stories.md's refusal table run live and pass — done, part 26. Half B (the named-person screen test) stays explicitly deferred for Sign-off only, no holder named yet.
+- [x] Sign-off only's UI presentation — nav hiding, locked screens for Dashboard/Stakeholders/Topics/Report, read-only rendering across Assessments/Responses/Calibrate & Results — done, part 27. **Access stage fully complete.** One new gap surfaced while building this, not yet built: neither `iro_list_signed_off` nor `results_signed_off` has any sign-off UI anywhere, for any role — the two `SECURITY DEFINER` functions from Group 2 have no caller. Needs its own build pass, likely alongside a real "this round's topic selection" screen for Sign-off only (see part 27, and part 24's flag about `topic_library` vs. the assessment's own `iros`).
 
 The checklist below is the pre-restore plan (sessions 1–2, PR #4) — mostly
 superseded by the steps above now that the UI itself is being rebuilt from

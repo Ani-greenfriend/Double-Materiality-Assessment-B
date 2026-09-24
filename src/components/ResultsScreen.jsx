@@ -111,7 +111,7 @@ async function exportChartsAsPng(charts) {
 // score — every topic shows in the primary bar chart, unrated ones
 // included, per the builder's direct request; an unrated bar renders at
 // 0 width with a "–" label instead of being hidden.
-export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, onChanged }) {
+export default function ResultsScreen({ iros, thresholds, activeCats, showMaterial, showNotMaterial, cycle, userId, onChanged, readOnly }) {
   const [impactTh, setImpactTh] = useState(thresholds?.impact ?? 3.0);
   const [financialTh, setFinancialTh] = useState(thresholds?.financial ?? 3.0);
   const [thresholdReason, setThresholdReason] = useState('');
@@ -128,6 +128,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
   const thresholdsDirty = impactTh !== (thresholds?.impact ?? 3.0) || financialTh !== (thresholds?.financial ?? 3.0);
 
   async function handleApplyThresholds() {
+    if (readOnly) return;
     setThresholdBusy(true);
     setThresholdError('');
     try {
@@ -321,7 +322,7 @@ export default function ResultsScreen({ iros, thresholds, activeCats, showMateri
         Each dot is one ESRS topic, colour-coded by pillar. <b className="text-text-primary">Hover or click a dot</b> to see exactly which IROs sit behind it, in the panel on the right.
         {unratedCount > 0 && <span> {unratedCount} topic{unratedCount === 1 ? '' : 's'} not shown yet — no ratings recorded {unratedCount === 1 ? 'for it' : 'for them'} yet.</span>}
       </p>
-      {!cycle ? (
+      {!cycle || readOnly ? (
         <p className="text-[12px] text-text-secondary mb-3">
           Impact threshold <b className="text-text-primary">{(thresholds?.impact ?? 3.0).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{(thresholds?.financial ?? 3.0).toFixed(1)}</b>
         </p>

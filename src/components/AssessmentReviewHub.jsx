@@ -14,15 +14,17 @@ const CRITERIA_LABELS = {
   opportunity: [{ key: 'magnitude', label: 'Magnitude' }, { key: 'financialLikelihood', label: 'Likelihood' }],
 };
 
-function EditableText({ value, onChange, minHeight = 90 }) {
+function EditableText({ value, onChange, minHeight = 90, readOnly }) {
   const [editing, setEditing] = useState(false);
   return (
     <div>
-      <div className="flex justify-end mb-2">
-        <button onClick={() => setEditing((e) => !e)} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>
-          {editing ? 'Done' : 'Edit'}
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end mb-2">
+          <button onClick={() => setEditing((e) => !e)} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>
+            {editing ? 'Done' : 'Edit'}
+          </button>
+        </div>
+      )}
       {editing ? (
         <textarea
           value={value} onChange={(e) => onChange(e.target.value)}
@@ -36,7 +38,7 @@ function EditableText({ value, onChange, minHeight = 90 }) {
   );
 }
 
-function TopicRow({ iro, override, onUpdate }) {
+function TopicRow({ iro, override, onUpdate, readOnly }) {
   const [editing, setEditing] = useState(false);
   const displayName = override?.name ?? iro.name;
   const displayDescription = override?.description ?? iro.description ?? '';
@@ -48,9 +50,11 @@ function TopicRow({ iro, override, onUpdate }) {
         <span className="text-[11px] font-semibold rounded-full px-2.5 py-1" style={{ background: 'rgba(76,111,255,0.14)', color: '#4C6FFF' }}>
           {TYPE_LABEL[iro.iroType]} · {iro.actual ? 'Actual' : 'Potential'}
         </span>
-        <button onClick={() => setEditing((e) => !e)} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>
-          {editing ? 'Done' : 'Edit'}
-        </button>
+        {!readOnly && (
+          <button onClick={() => setEditing((e) => !e)} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>
+            {editing ? 'Done' : 'Edit'}
+          </button>
+        )}
       </div>
 
       {editing ? (
@@ -93,7 +97,7 @@ function TopicRow({ iro, override, onUpdate }) {
 export default function AssessmentReviewHub({
   mode, perspectiveFilter, iros, logo, companyName,
   welcomeText, taskText, stakeholders, topicOverrides,
-  onSaveAndExit, onDiscardAndExit,
+  onSaveAndExit, onDiscardAndExit, readOnly,
 }) {
   const relevantIros = iros.filter((i) => {
     if (perspectiveFilter === 'impact') return hasImpactAxis(i.iroType);
@@ -129,7 +133,7 @@ export default function AssessmentReviewHub({
   }
 
   function handleExit() {
-    if (!dirty) { onDiscardAndExit(); return; }
+    if (readOnly || !dirty) { onDiscardAndExit(); return; }
     const wantsToSave = window.confirm('Save your changes before exiting?\n\nOK = save changes\nCancel = discard changes and keep it as it was');
     if (wantsToSave) {
       onSaveAndExit({ welcomeText: draftWelcome, taskText: draftTask, stakeholders: draftStakeholders, topicOverrides: draftOverrides });
@@ -143,10 +147,12 @@ export default function AssessmentReviewHub({
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-[15px] font-semibold">Review — {companyName || 'Untitled'}</p>
-          <p className="text-[11px] text-text-secondary">Click any screen to jump to it. No answers are required here — this is a preview, not a live session.</p>
+          <p className="text-[11px] text-text-secondary">
+            {readOnly ? 'Click any screen to jump to it — read-only.' : 'Click any screen to jump to it. No answers are required here — this is a preview, not a live session.'}
+          </p>
         </div>
         <button onClick={handleExit} className="text-[12.5px] font-semibold rounded-lg px-4 py-2" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
-          Exit
+          {readOnly ? 'Close' : 'Exit'}
         </button>
       </div>
 
@@ -172,14 +178,14 @@ export default function AssessmentReviewHub({
           <>
             <p className="text-[13px] font-semibold mb-3">Introduction</p>
             {logo && <img src={logo} alt="Logo" className="w-14 h-14 rounded-xl object-contain bg-surface-2 mb-3" />}
-            <EditableText value={draftWelcome} onChange={markDirty(setDraftWelcome)} />
+            <EditableText value={draftWelcome} onChange={markDirty(setDraftWelcome)} readOnly={readOnly} />
           </>
         )}
 
         {active.key === 'task' && (
           <>
             <p className="text-[13px] font-semibold mb-3">Rating Criteria</p>
-            <EditableText value={draftTask} onChange={markDirty(setDraftTask)} />
+            <EditableText value={draftTask} onChange={markDirty(setDraftTask)} readOnly={readOnly} />
           </>
         )}
 
@@ -193,10 +199,12 @@ export default function AssessmentReviewHub({
                   {draftStakeholders[group].map((s) => (
                     <span key={s} className="flex items-center gap-1.5 text-[11.5px] bg-surface-2 rounded-full pl-3 pr-2 py-1">
                       {s}
-                      <button
-                        onClick={() => { setDirty(true); setDraftStakeholders((prev) => ({ ...prev, [group]: prev[group].filter((x) => x !== s) })); }}
-                        className="text-text-secondary hover:text-text-primary"
-                      >×</button>
+                      {!readOnly && (
+                        <button
+                          onClick={() => { setDirty(true); setDraftStakeholders((prev) => ({ ...prev, [group]: prev[group].filter((x) => x !== s) })); }}
+                          className="text-text-secondary hover:text-text-primary"
+                        >×</button>
+                      )}
                     </span>
                   ))}
                 </div>
@@ -210,7 +218,7 @@ export default function AssessmentReviewHub({
             <p className="text-[13px] font-semibold mb-1">All topics in this assessment</p>
             <p className="text-[10.5px] text-text-secondary mb-4 italic">Shown for reference only — nothing here is recorded.</p>
             {relevantIros.map((iro) => (
-              <TopicRow key={iro.id} iro={iro} override={draftOverrides[iro.id]} onUpdate={updateTopic} />
+              <TopicRow key={iro.id} iro={iro} override={draftOverrides[iro.id]} onUpdate={updateTopic} readOnly={readOnly} />
             ))}
           </div>
         )}

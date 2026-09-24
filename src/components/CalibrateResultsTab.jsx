@@ -63,7 +63,7 @@ function FilterBar({ activeCats, setActiveCats, showMaterial, setShowMaterial, s
 // nav item count matches the spec's six process steps. Calibration and
 // threshold edits are always available (v2.0 amended 9) — there's no more
 // "locked" / stage-gated read-only state to thread through.
-export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, onChanged, initialSub = 'results' }) {
+export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, onChanged, initialSub = 'results', readOnly }) {
   const [sub, setSub] = useState(initialSub);
   const [activeCats, setActiveCats] = useState(['E', 'S', 'G']);
   const [showMaterial, setShowMaterial] = useState(true);
@@ -98,10 +98,10 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, o
       <FilterBar activeCats={activeCats} setActiveCats={setActiveCats} showMaterial={showMaterial} setShowMaterial={setShowMaterial} showNotMaterial={showNotMaterial} setShowNotMaterial={setShowNotMaterial} />
 
       {sub === 'results' && (
-        <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} cycle={cycle} userId={userId} onChanged={onChanged} />
+        <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} cycle={cycle} userId={userId} onChanged={onChanged} readOnly={readOnly} />
       )}
       {sub === 'calibrate' && (
-        <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} userId={userId} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} />
+        <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} userId={userId} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} readOnly={readOnly} />
       )}
     </div>
   );

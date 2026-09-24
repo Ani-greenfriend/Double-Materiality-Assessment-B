@@ -204,7 +204,7 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
 // breakdown (calc.js's aggregateIro: surveyAvg/sessionAvg/sourceBasis/
 // sourceGap already existed, built for Calibrate's detail panel — reused
 // here rather than duplicated).
-export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSession, onOpenCalibrate, onChanged }) {
+export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSession, onOpenCalibrate, onChanged, readOnly }) {
   const financialYears = [...new Set(cycles.map((c) => c.financialYear))].sort((a, b) => b - a);
   const [financialYear, setFinancialYear] = useState(financialYears[0] ?? null);
   const [data, setData] = useState({ assessments: [], progress: [], groupEngagement: [], iros: [] });
@@ -274,7 +274,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
   const openIro = data.iros.find((i) => i.id === openIroId) ?? null;
 
   async function handleDeleteDrafts() {
-    if (!surveyAssessment) return;
+    if (readOnly || !surveyAssessment) return;
     if (!window.confirm('Delete every unfinished draft for this survey? Submitted responses are never affected. This cannot be undone.')) return;
     try {
       await purgeUnfinishedDrafts(surveyAssessment.id);
@@ -350,9 +350,9 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
               rateValue={surveySubmitted + surveyDrafts}
               rateTotal={surveyInvited}
               stats={[['Invited', surveyInvited], ['Opened', surveyOpened], ['Saved draft', surveyDrafts], ['Submitted', surveySubmitted]]}
-              onLink={surveyAssessment ? () => onOpenInvitations(surveyAssessment) : null}
+              onLink={surveyAssessment && !readOnly ? () => onOpenInvitations(surveyAssessment) : null}
               linkLabel="Invitations"
-              showDeleteDrafts={!!surveyAssessment}
+              showDeleteDrafts={!!surveyAssessment && !readOnly}
               canDeleteDrafts={surveyCanDeleteDrafts}
               onDeleteDrafts={handleDeleteDrafts}
             />
@@ -372,7 +372,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
               extra={liveProgress && (
                 <p className="text-[10.5px] text-text-secondary mb-3">Session progress: {liveProgress.topics_rated_count} of {liveProgress.total_topics} topics rated</p>
               )}
-              onLink={liveAssessment ? () => onResumeSession(liveAssessment) : null}
+              onLink={liveAssessment && !readOnly ? () => onResumeSession(liveAssessment) : null}
               linkLabel="Resume session"
             />
           </div>

@@ -71,7 +71,7 @@ function fmtDate(s) {
   return new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete, onRecipients }) {
+export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete, onRecipients, readOnly }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
@@ -131,22 +131,28 @@ export default function AssessmentOverview({ assessments, onNew, onEdit, onPrevi
                         <button onClick={() => onPreview(a)} className="hover:text-text-primary" title="Preview how this looks for participants">
                           <EyeIcon />
                         </button>
-                        <button onClick={() => onRecipients(a)} className="hover:text-text-primary" title={a.type === 'Expert live session' ? 'Participants' : 'Recipients'}>
-                          <PeopleIcon />
-                        </button>
-                        <button onClick={() => onEdit(a)} className="hover:text-text-primary" title="Edit setup">
-                          <EditIcon />
-                        </button>
+                        {!readOnly && (
+                          <button onClick={() => onRecipients(a)} className="hover:text-text-primary" title={a.type === 'Expert live session' ? 'Participants' : 'Recipients'}>
+                            <PeopleIcon />
+                          </button>
+                        )}
+                        {!readOnly && (
+                          <button onClick={() => onEdit(a)} className="hover:text-text-primary" title="Edit setup">
+                            <EditIcon />
+                          </button>
+                        )}
                         <button onClick={() => onViewResults(a)} className="hover:text-text-primary" title="View results">
                           <ResultsIcon />
                         </button>
-                        <button
-                          onClick={() => { if (window.confirm(`Are you sure you want to delete "${a.name}"? This cannot be undone.`)) onDelete(a); }}
-                          className="hover:text-[#E0645A]"
-                          title="Delete assessment"
-                        >
-                          <TrashIcon />
-                        </button>
+                        {!readOnly && (
+                          <button
+                            onClick={() => { if (window.confirm(`Are you sure you want to delete "${a.name}"? This cannot be undone.`)) onDelete(a); }}
+                            className="hover:text-[#E0645A]"
+                            title="Delete assessment"
+                          >
+                            <TrashIcon />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -157,9 +163,11 @@ export default function AssessmentOverview({ assessments, onNew, onEdit, onPrevi
         )}
       </div>
 
-      <button onClick={onNew} className="text-[12.5px] font-semibold border border-border-apus rounded-lg px-4 py-2.5 mt-5">
-        + New Assessment
-      </button>
+      {!readOnly && (
+        <button onClick={onNew} className="text-[12.5px] font-semibold border border-border-apus rounded-lg px-4 py-2.5 mt-5">
+          + New Assessment
+        </button>
+      )}
     </div>
   );
 }

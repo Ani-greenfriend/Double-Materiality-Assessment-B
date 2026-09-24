@@ -37,7 +37,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal }) {
+export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal, readOnly }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -291,6 +291,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   // Jumps straight to Recipients (survey) or Participants (live session)
   // for an existing assessment, without going through the setup wizard.
   function openRecipientsDirect(assessment) {
+    if (readOnly) return;
     setError('');
     setAssessmentMode(assessment.type);
     setPerspectiveFilter(assessment.perspectiveFilter || 'full');
@@ -316,6 +317,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function enterLiveSession(assessment) {
+    if (readOnly) { setError('Sign-off only cannot run a live session.'); return; }
     setError('');
     try {
       const { liveSession: ls, participants } = await fetchLiveSessionWithParticipants(assessment.id);
@@ -415,6 +417,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   // ---- Overview actions ----
 
   async function handleEdit(a) {
+    if (readOnly) return;
     setError('');
     try {
       // Re-editing setup reads the assessment's own already-created iros
@@ -438,6 +441,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function handleDelete(a) {
+    if (readOnly) return;
     if (!window.confirm(`Delete "${a.name}"? This only succeeds if it has no responses at all.`)) return;
     try {
       await deleteAssessment(a.id);
@@ -477,6 +481,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           onViewResults={(a) => onViewResults?.(assessments.find((x) => x.id === a.id))}
           onDelete={(a) => handleDelete(a)}
           onRecipients={(a) => openRecipientsDirect(assessments.find((x) => x.id === a.id))}
+          readOnly={readOnly}
         />
       )}
 
@@ -560,6 +565,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           topicOverrides={{}}
           onSaveAndExit={handleReviewHubSaveAndExit}
           onDiscardAndExit={() => setFlowStep('overview')}
+          readOnly={readOnly}
         />
       )}
 

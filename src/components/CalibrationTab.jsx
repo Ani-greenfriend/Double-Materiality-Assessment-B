@@ -11,7 +11,7 @@ function fmt(v) {
 // v2.0 amended 9: no global stage banner, no cycle-level sign-off — sign-off
 // is per IRO, as in the prototype, and calibration is always available (no
 // more stage-gated read-only state).
-export default function CalibrationTab({ iros, thresholds, cycleId, userId, onChanged, activeCats, showMaterial, showNotMaterial }) {
+export default function CalibrationTab({ iros, thresholds, cycleId, userId, onChanged, activeCats, showMaterial, showNotMaterial, readOnly }) {
   const [openId, setOpenId] = useState(null);
 
   // The E/S/G and material/not-material filters are shared with Results
@@ -66,6 +66,7 @@ export default function CalibrationTab({ iros, thresholds, cycleId, userId, onCh
             isOpen={openId === iro.id}
             onToggle={() => setOpenId((id) => (id === iro.id ? null : iro.id))}
             onChanged={onChanged}
+            readOnly={readOnly}
           />
         ))}
       </div>
@@ -74,7 +75,7 @@ export default function CalibrationTab({ iros, thresholds, cycleId, userId, onCh
   );
 }
 
-function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, onChanged }) {
+function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, onChanged, readOnly }) {
   const agg = aggregateIro(iro, thresholds);
   const calculated = hasImpactAxis(iro.iroType) ? agg.impactScore : agg.financialScore;
   const cal = iro.calibration;
@@ -173,7 +174,9 @@ function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, on
           {isReviewedWithOwner && (
             <div className="rounded-lg px-3 py-2.5 mb-3.5 flex items-center justify-between" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
               <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Signed off at {fmt(currentValue)} · {cal.reviewed_with_owner_at ? new Date(cal.reviewed_with_owner_at).toLocaleDateString() : ''}</p>
-              <button onClick={toggleReviewedWithOwner} disabled={busy} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0 disabled:opacity-40">Revoke</button>
+              {!readOnly && (
+                <button onClick={toggleReviewedWithOwner} disabled={busy} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0 disabled:opacity-40">Revoke</button>
+              )}
             </div>
           )}
 
@@ -181,11 +184,19 @@ function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, on
             <div className="grid grid-cols-2 gap-3 mb-3.5">
               <div>
                 <p className="text-[10.5px] text-text-secondary mb-1">OWNER</p>
-                <input defaultValue={cal?.owner ?? ''} onBlur={(e) => setField('owner', e.target.value)} className="w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+                {readOnly ? (
+                  <p className="text-[12.5px]">{cal?.owner || '—'}</p>
+                ) : (
+                  <input defaultValue={cal?.owner ?? ''} onBlur={(e) => setField('owner', e.target.value)} className="w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+                )}
               </div>
               <div>
                 <p className="text-[10.5px] text-text-secondary mb-1">MODERATOR (should differ from owner)</p>
-                <input defaultValue={cal?.moderator ?? ''} onBlur={(e) => setField('moderator', e.target.value)} className={`w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none border ${moderatorBlocked ? 'border-badge-amber' : 'border-transparent'}`} />
+                {readOnly ? (
+                  <p className="text-[12.5px]">{cal?.moderator || '—'}</p>
+                ) : (
+                  <input defaultValue={cal?.moderator ?? ''} onBlur={(e) => setField('moderator', e.target.value)} className={`w-full bg-app-black rounded-lg px-3 py-2 text-[12.5px] outline-none border ${moderatorBlocked ? 'border-badge-amber' : 'border-transparent'}`} />
+                )}
                 {moderatorBlocked && <p className="text-[10.5px] text-badge-amber mt-1">Moderator matches the IRO owner — a warning, not a block; consider a different reviewer.</p>}
               </div>
             </div>
@@ -227,7 +238,7 @@ function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, on
 
           {error && <p className="text-[11.5px] text-badge-amber mb-2">{error}</p>}
 
-          {!adjusting ? (
+          {readOnly ? null : !adjusting ? (
             <div className="flex gap-2 flex-wrap">
               <button onClick={openAdjust} disabled={busy} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40">
                 {isCalibrated ? 'Edit calibration' : 'Adjust this topic'}
