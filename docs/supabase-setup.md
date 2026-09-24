@@ -582,6 +582,17 @@ match means no access — the app is responsible for checking for a linked
 row and showing "No access yet — ask your Admin" (Group 3+ work; not yet
 built as of this schema pass). Migration: `v3_access_auth_link_trigger`.
 
+**Caught before it became a lockout**: Anika's `auth.users` row already
+existed (created 2026-09-18, well before this migration) — the trigger
+only fires on `INSERT`, so it would never fire for her; a returning
+magic-link sign-in reuses the existing row, it doesn't insert a new one.
+Backfilled her `team_members.auth_user_id` manually once, matching the
+trigger's own logic (`where email = ... and auth_user_id is null`).
+Confirmed linked. Migration: `v3_access_backfill_anika_link`. Anyone
+whose `auth.users` row predates this migration needs the same one-time
+backfill — not a concern going forward, since every *new* login from here
+on is a genuine `INSERT` the trigger catches.
+
 **Security check run after this migration** (same discipline as the
 Responses-views finding in part 17): the Supabase advisor flagged
 `link_team_member_on_auth_signup()` as callable directly via

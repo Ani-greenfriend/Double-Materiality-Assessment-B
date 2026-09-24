@@ -108,6 +108,13 @@ chat, confirming both point at the same real state.
    auth.users`, `SECURITY DEFINER` — matches a new login's email to a
    still-unlinked `team_members` row. No match means no access; the "No
    access yet" screen itself is Group 3+ work, not built this pass.
+   **Caught before it caused a real lockout**: the trigger only fires on
+   `INSERT`, but Anika's `auth.users` row already existed from 2026-09-18
+   testing, well before this migration — a returning magic-link sign-in
+   reuses that row, it never re-inserts, so the trigger would never have
+   linked her. Backfilled her `auth_user_id` manually once (confirmed
+   linked); every login from here on is a genuine new `INSERT` the
+   trigger catches on its own.
 
 **Security check run immediately after** (same discipline as the
 Responses-views finding in part 17): Supabase's advisor flagged the new
@@ -129,7 +136,8 @@ stage.
 touched, schema-only. Migrations: `v3_access_team_members`,
 `v3_access_audit_columns`, `v3_access_iro_list_signoff`,
 `v3_access_results_signoff`, `v3_access_avatars_bucket`,
-`v3_access_auth_link_trigger`, `v3_access_revoke_stray_grant`. Everything
+`v3_access_auth_link_trigger`, `v3_access_revoke_stray_grant`,
+`v3_access_backfill_anika_link`. Everything
 verified live via Supabase MCP (`information_schema`, `pg_policies`,
 `pg_trigger`, `storage.buckets`, `get_advisors`) — not just read from the
 migration SQL after the fact.
