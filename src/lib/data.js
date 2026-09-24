@@ -466,13 +466,13 @@ export async function snapshotTopicsIntoIros(assessmentId, topics) {
 
 // ---- Invitations (expert survey) ----
 
-// Tool A's site address — not a secret (it's a public URL), so it's a
-// hardcoded default here rather than a required env var like the Supabase
-// ones; VITE_TOOL_A_URL can override it if Tool A's domain ever changes.
-const TOOL_A_URL = import.meta.env.VITE_TOOL_A_URL || 'https://questionnaire-dma.netlify.app';
+// Tool A's site address — required env var, never hardcoded (resolves
+// product-spec.md Section 15's open question on how this tool knows it).
+const SURVEY_BASE_URL = import.meta.env.VITE_SURVEY_BASE_URL;
 
 export function buildPersonalLink(slug, linkCode) {
-  return `${TOOL_A_URL.replace(/\/$/, '')}/survey/${slug}/${linkCode}`;
+  if (!SURVEY_BASE_URL) throw new Error('VITE_SURVEY_BASE_URL is not set — cannot build a personal link.');
+  return `${SURVEY_BASE_URL.replace(/\/$/, '')}/survey/${slug}/${linkCode}`;
 }
 
 export async function fetchInvitations(assessmentId) {

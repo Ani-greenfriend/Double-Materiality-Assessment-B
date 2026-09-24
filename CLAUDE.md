@@ -42,7 +42,8 @@ Export — browser only, no server function — the PDF DMA report (report build
 ## Environment Variables
 VITE_SUPABASE_URL — Supabase: Project Settings → API → Project URL — Netlify env var
 VITE_SUPABASE_ANON_KEY — the publishable key, not the legacy anon JWT — Netlify env var
-No server functions in this tool; both are browser-exposed. Confirm both exist at session start. No value ever appears in code or a committed file.
+VITE_SURVEY_BASE_URL — Tool A's site address for building personal links (e.g. `https://questionnaire-dma.netlify.app`) — resolves product-spec.md Section 15's open question; required, never hardcoded — Netlify env var
+No server functions in this tool; all three are browser-exposed (none is a secret — they're public URLs/keys). Confirm all three exist at session start. No value ever appears in code or a committed file.
 
 ## Supabase
 Project: "greenfriend Double Materiality Assessment" — already exists. Project URL: https://evwmxduudcujtibirmga.supabase.co

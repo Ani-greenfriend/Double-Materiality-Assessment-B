@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 21 (Access stage, Group 1 of 5: team_members + role schema delta, audit columns, iro_list_signed_off, cycles.results_signed_off, avatars bucket, auth-link trigger — RLS itself is Group 2, not yet built)
+**Last updated:** 2026-09-24 — session 2, part 22 (builder scope-narrowing note: link-code generator confirmed secure, shared survey-link field removed, personal-link base URL moved to a required env var; access stage Group 2 paused mid-build per instruction)
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,68 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 22 (2026-09-24) — Builder scope-narrowing note: link codes, no shared survey link, required env var; access stage Group 2 paused.**
+
+Builder interrupted mid-Group-2 with an explicit "do not widen this
+session's scope" and four narrow items, addressed in order:
+
+**1. Link-code generation, checked, no fix needed.** `generateLinkCode()`
+(`src/lib/data.js`) is `crypto.randomUUID().replace(/-/g, '')` — 32 hex
+characters, drawn from the Web Crypto API's CSPRNG (the same underlying
+entropy source `crypto.getRandomValues` uses; `randomUUID()` is a
+higher-level wrapper over it, not a separate weaker generator). Already
+exceeds the 24-character minimum and is nowhere near `Math.random()` —
+confirmed via a repo-wide grep that no other generator or `Math.random`
+call exists anywhere near `link_code`. Both `createInvitation` and the
+bulk `createInvitationsFromRecipients` path route through this one
+function. Nothing changed here.
+
+**2. Shared survey link without a personal code — found one, removed
+it.** `SurveySetupStep.jsx`'s General info step (inherited verbatim from
+reference-prototype/, predating the personal-link invitation model) had a
+"SURVEY LINK" card: an editable `apus.app/survey/<slug>` field with a
+Copy button — exactly the code-less shared link product-spec.md Section 8
+says must not appear ("so the prototype's survey-link field in General
+info is not used"). Removed the whole card and its `copyLink`/`copied`
+state. The `slug` itself is still real, needed data (personal links are
+built as `.../survey/<slug>/<link_code>`) — kept as a silently
+auto-derived value (`slugify(meta.name)`), never shown or user-editable.
+Confirmed via a repo-wide grep for `/survey/` that this was the only
+place any bare, code-less link was ever constructed or displayed —
+Recipients only ever shows **Copy personal link** per invitation, as
+before.
+
+**3. Personal-link base address moved to a required env var.** Was
+`VITE_TOOL_A_URL` with a hardcoded fallback
+(`https://questionnaire-dma.netlify.app`) — built in an earlier part of
+this session as an improvement over a fully hardcoded address, but the
+builder's direct instruction this round is stricter: take it from an env
+var, full stop, no fallback. Renamed to `VITE_SURVEY_BASE_URL`;
+`buildPersonalLink()` now throws a clear error if it's unset rather than
+silently defaulting. Resolves product-spec.md Section 15's open question
+("How does this tool know Tool A's site address...") outright rather than
+leaving it open. CLAUDE.md's Environment Variables section updated to
+list all three required vars. **Action needed from the builder, not just
+Claude Code**: this Netlify env var must be set (or the old
+`VITE_TOOL_A_URL` renamed) before the next deploy, or Recipients/Created
+will throw when building a personal link — flagged in Known issues, not
+just buried here.
+
+**4. v2.1 (shared link + email) noted, not built.** Added to Notes for
+next session verbatim per instruction — waiting for the regenerated
+CLAUDE.md before any of it is built.
+
+**Access stage Group 2 paused here, not abandoned** — see Notes for next
+session for exactly what's done (the RLS helper functions, applied and
+inert) versus not (every actual policy rewrite), and the three
+access-matrix.md internal contradictions found while re-reading it for
+Group 2, flagged rather than guessed at.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). No schema/RLS change this part — items 1/2/3 are frontend-only
+(bar the already-applied, still-inert Group 2 helper functions from
+before the interrupt).
+
 **Part 21 (2026-09-24) — Access stage, Group 1 of 5: schema delta.**
 
 Builder instructed the access stage to start, per docs/access-matrix.md
@@ -1397,6 +1459,13 @@ schema — every new field the flow needed already existed).
   those pieces are unbuilt, not redesigned.
 
 ## Known issues
+- **`VITE_SURVEY_BASE_URL` must be set in Netlify before the next deploy
+  or personal-link building breaks.** Part 22 renamed this from
+  `VITE_TOOL_A_URL` and removed its hardcoded fallback (per direct
+  instruction — it must come from an env var, not a default). If Netlify
+  only has the old variable name set, `buildPersonalLink()` now throws
+  instead of silently falling back. See Notes for next session for the
+  full detail.
 - **The app itself does not yet know about `team_members`.** Nothing in
   `src/` reads or writes it — the whole app still runs on the pre-access-stage
   model (any authenticated user has full access, per the existing blanket
@@ -1463,48 +1532,87 @@ schema — every new field the flow needed already existed).
 - **New 2026-09-21 (part 12):** `calibrations.band_value` (docs/product-spec.md's "Calibrated score and EBITDA band (1–5) for financial IROs") is no longer written from anywhere in the UI — the consultant-facing selector was replaced with explanation-only text per direct builder instruction, since it duplicated the magnitude already captured by the rating itself. The column stays in the schema (no migration this round); worth a decision on whether to drop it from docs/product-spec.md's field table too, or keep it for a future per-IRO override.
 
 ## Notes for next session
-**Current plan (prototype-UI restore, PR #5, branch `claude/restore-prototype-ui`):**
-Spec v2.0 amended 9 is fully merged and built against (parts 16-18: Groups
-A and B of the builder's preview-review fixes, then Step 5). Calibrate &
-Results is stage-free (per-IRO sign-off, thresholds editable any time);
-the Responses screen exists; the PDF report builder (`ReportTab.jsx` +
-`reportPdf.js`) is built — 4-step wizard, all 6 sections, print-themed
-charts. **Not yet human-verified**: no browser in this sandbox to click
-through the wizard or open a generated PDF — build/lint pass, the
-third-party API usage was checked with Node smoke tests, and the module
-was manually reviewed line-by-line, but the actual rendered PDF (layout,
-chart legibility) needs a real look on the deploy preview. That's the one
-open item from the original step plan — everything else in the restore's
-step list is now checked off.
+**v2.1 — coming next, not yet built (builder instruction, 2026-09-24):**
+One shared survey link per Expert survey. A participant enters their email
+on it and receives their personal link by email. Personal links,
+invitations and their statuses stay exactly as they are — this only adds
+a second way to reach a personal link, it doesn't replace anything.
+**Wait for the regenerated CLAUDE.md before building any of it** — not
+scoped yet (needs an email-sending mechanism decided, which is currently
+Out of scope in CLAUDE.md: "In-app email invitations... Option A
+(Supabase-dashboard invite...) is what ships" — that line will need to
+change or gain an exception for this).
 
-Known simplifications worth revisiting if there's time: E1–G1 expertise
-for participants added via Recipients (currently empty, editable after),
-Review Hub's stakeholder-chip-removal persistence, Responses' IRO detail
-panel doesn't show a submission's overall comment (only per-criterion/
-per-topic justifications), the IRO ratings table has CSV but no PNG
-export, "Open in Calibrate" switches tabs but doesn't scroll to the
-specific IRO row, and the pre-existing `combined_ratings` view carries a
-stray (harmless, since `security_invoker=true` already blocks it via RLS)
-anon SELECT grant that could be revoked for cleanliness.
+**Access stage — paused mid-Group-2, builder said not to widen scope
+further this round (2026-09-24):** Group 1 (schema delta) is done and
+pushed — see part 21. Group 2 (RLS policies) has only its helper
+functions applied so far (`tm_active_row()` + the `is_full_access()` /
+`is_signoff_only()` / `can_signoff_topics()` / `can_signoff_results()` /
+`is_owner_user()` / `is_admin_user()` / `current_team_member_id()`
+wrappers, all `SECURITY DEFINER`-backed to avoid RLS self-recursion on
+`team_members`) — inert until a policy actually references them, so
+nothing changed for any current user. **Not yet applied**: any of the
+actual table policy rewrites, the `sign_off_cycle_results`/
+`sign_off_assessment_topics` functions, the `results_signed_off` lock on
+`calibrations`, or `team_members`'s own policies (still zero — the table
+stays fully closed to everyone until this resumes). Resume by rebuilding
+each table's policies against docs/access-matrix.md Section 6 and its
+per-table sections in Section 1.2 — **both were re-read in full for this
+pass and genuinely disagree with each other in three places**, not yet
+resolved with the builder:
+- Section 6 rule 2's blanket "Sign-off only can read topic_library" vs.
+  topic_library's own per-table section, which says Sign-off only read =
+  **no**. The per-table section and user-stories.md's actual story text
+  ("read this round's topic selection" — the assessment's own snapshot,
+  not the master admin list) both point the same way; planned to follow
+  that and treat rule 2's inclusion of `topic_library` as the imprecise
+  one, but this wasn't built yet, so it's still an open call, not a
+  guess already acted on.
+- Same pattern for `invitations`: rule 2's blanket list includes it,
+  but its own per-table section is unambiguous and gives a real reason —
+  "sign-off-only sees responses (submissions/ratings), never the
+  invitee's name/email." Planned resolution: no Sign-off-only read on
+  `invitations` at all, following the per-table section.
+- `cycles` read for Sign-off only isn't in rule 2's list at all, but its
+  own per-table section gates it specifically on `can_signoff_results`
+  (not general `signoff` access) — narrower than every other table
+  Sign-off only can see. Planned to implement it that narrow.
 
-Hard Rule to hold the line on throughout every remaining step: copy each
-prototype component verbatim (check with `diff` against
-reference-prototype/, as every step so far has); change only (a) data
-wiring — done in the shell/App.jsx or small adapter functions in data.js,
-never inside the copied component; (b) Expert survey/Expert live session
-wording (and, as of step 3, no "cycle" wording anywhere in the interface —
-check with a repo-wide grep, not just the screens just touched); (c)
-explicit v2.0 spec changes. If a prototype behaviour and the v2.0 spec
-conflict, or it's unclear which bucket a needed change falls into, ask the
-builder — don't guess. After finishing a step, re-diff every touched
-screen against reference-prototype/ one more time before reporting done —
-step 3 caught two real gaps (a missing justification-mode picker, an
-unpassed `mandatory`/`justificationMode` value) exactly this way.
+Two more things noticed while reading for Group 2, not yet acted on:
+`iros` DELETE currently has **no** "only if the assessment has no
+responses" guard at all (unconditionally open to any authenticated user)
+even though access-matrix.md specifies that condition — real gap, but
+adding it risks breaking the already-tested Review & Customise
+topic-removal flow if a topic can legitimately be deleted after some
+responses exist elsewhere in the same assessment; needs the builder's
+call, not a guess. `submissions` UPDATE currently has **no** "frozen once
+submitted" guard either (`qual: true`) — this one directly contradicts a
+CLAUDE.md Hard Rule with no ambiguity, and is the one item in this list
+safe to just fix outright when Group 2 resumes, not a question.
 
-Two things flagged in earlier sessions are genuinely resolved and need no
-further action: "Delete unfinished drafts" has RLS support (built in the
-pre-restore work); Tool A's site address is hardcoded with an env var
-override; the `entered_by`/"Enter expert responses" question is moot
-(dropped in step 3). The Netlify MCP gap is now moot — the builder
-pushes/tests via their own Netlify dashboard against PR #5's deploy
-preview.
+**PR #5 build status**, unaffected by the above — restore Steps 1–5 are
+all done and pushed (part 20 confirms), the PDF report was redesigned
+(part 19) and three post-restore testing bugs fixed (part 20). Not yet
+human-verified in a real browser: this sandbox still has no browser, so
+build/lint plus targeted Node smoke tests are the only verification for
+anything UI-shaped — the builder's own click-through on the deploy
+preview remains the real confirmation for all of it.
+
+**Needs the builder's action before the next deploy, not just Claude
+Code's**: `VITE_SURVEY_BASE_URL` must be set in Netlify (this session
+renamed it from `VITE_TOOL_A_URL` and removed its hardcoded fallback
+default, per direct instruction that it "must" come from an env var —
+`buildPersonalLink()` now throws if it's unset, where it previously
+silently fell back to `https://questionnaire-dma.netlify.app`). If the
+old `VITE_TOOL_A_URL` variable is currently set on Netlify, it's now
+unused and can be removed once the new one is confirmed working.
+
+Hard Rule to hold the line on: copy each prototype component verbatim,
+changing only data wiring, Expert survey/Expert live session wording, and
+explicit v2.0/v2.1 spec changes. If a prototype behaviour and the spec
+conflict, or a spec document conflicts with the real, current schema —
+ask or flag, don't guess. This round's four items (part 22) are a
+worked example of that: link-code generation and the survey-address env
+var were verified/fixed outright since the answer was unambiguous; the
+Group 2 items above were flagged instead, because more than one
+reasonable reading exists.

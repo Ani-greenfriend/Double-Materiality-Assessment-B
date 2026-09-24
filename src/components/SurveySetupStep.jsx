@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import LogoUpload from './LogoUpload';
 import DatePicker from './DatePicker';
 
@@ -72,24 +71,20 @@ function FinancialYearCard({ meta, set, cycleForYear, onFinancialYearChange }) {
 export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, value, onChange, onProceed, onBack, cycleForYear, onFinancialYearChange }) {
   const isQual = mode === 'expert_live_session';
   const meta = value;
-  const [slugTouched, setSlugTouched] = useState(Boolean(meta.slug));
-  const [copied, setCopied] = useState(false);
 
   function set(field, v) {
     onChange({ ...meta, [field]: v });
   }
 
   const start = meta.startDate || todayStr();
-  const effectiveSlug = slugTouched ? (meta.slug ?? '') : slugify(meta.name || 'survey');
-  const slugValid = isQual || (/^[a-z0-9-]+$/.test(effectiveSlug) && effectiveSlug.length > 0);
+  // The URL slug is stored (personal links are built from it) but never
+  // shown or made editable here — no shared, code-less survey link is ever
+  // surfaced in the console; only per-invitation personal links (Recipients,
+  // Copy personal link), per spec v2.0 Section 8.
+  const effectiveSlug = slugify(meta.name || 'survey');
+  const slugValid = isQual || effectiveSlug.length > 0;
   const dateValid = isQual || !meta.endDate || meta.endDate >= start;
   const canProceed = (meta.name || '').trim().length > 0 && slugValid && dateValid && !!meta.financialYear;
-
-  function copyLink() {
-    navigator.clipboard?.writeText(`apus.app/survey/${effectiveSlug}`).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
 
   return (
     <div className="max-w-2xl">
@@ -136,23 +131,6 @@ export default function SurveySetupStep({ mode, modeLabel, defaultNameHint, valu
               </div>
             </div>
             {!dateValid && <p className="text-[11px] mt-2" style={{ color: '#D79A4C' }}>End date can't be before the start date.</p>}
-          </div>
-
-          <div className="bg-surface rounded-2xl p-5 mb-6">
-            <p className="text-[11px] text-text-secondary mb-1.5">SURVEY LINK</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex items-center bg-surface-2 rounded-lg overflow-hidden">
-                <span className="text-[12px] text-text-secondary pl-3 whitespace-nowrap">apus.app/survey/</span>
-                <input
-                  value={effectiveSlug}
-                  onChange={(e) => { set('slug', e.target.value); setSlugTouched(true); }}
-                  className="flex-1 bg-transparent py-2.5 pr-3 text-[12px] outline-none"
-                />
-              </div>
-              <button onClick={copyLink} className="text-[11.5px] border border-border-apus rounded-lg px-3 py-2.5 shrink-0">{copied ? 'Copied ✓' : 'Copy'}</button>
-            </div>
-            {!slugValid && <p className="text-[11px] mt-2" style={{ color: '#D79A4C' }}>Only lowercase letters, numbers, and hyphens.</p>}
-            {slugValid && <p className="text-[10.5px] text-text-secondary mt-2">✓ This link will be active only between the selected dates.</p>}
           </div>
         </>
       )}
