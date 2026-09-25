@@ -984,6 +984,83 @@ docs/access-matrix.md's `assessments` delete row corrected with a dated
 warnings). `get_advisors` (security) re-run clean — no new findings from
 the policy change.
 
+### Part 30 (2026-09-25) — Full data reset + fresh dummy demo data, by explicit builder request.
+
+Builder asked to "set the tool on 0" and seed dummy stakeholders, IROs and
+three assessments (a Financial live session, an Impact live session, and
+a Full expert survey) so Responses/Calibration/Results could all be
+demoed with real, populated data — explicitly including wiping
+`acme-2026`, which an earlier part of this same session had protected
+("don't delete acme-2026"). Confirmed scope first via two direct
+questions (full wipe including Acme Corp vs. leaving it; all three
+assessments fully submitted vs. a mix of in-progress states) before
+touching anything, given the conflict with that earlier instruction.
+
+**Wipe**: `delete from clients; delete from stakeholder_groups; delete
+from topic_library;` — confirmed via `pg_constraint.confdeltype` first
+that `cycles_client_id_fkey`, `assessments_cycle_id_fkey`,
+`stakeholder_members_group_id_fkey`, `calibrations_iro_id_fkey` and
+`calibration_history_calibration_id_fkey` are all `CASCADE`, so deleting
+`clients` alone cascades through cycles → assessments → iros →
+submissions/ratings/live_sessions/live_session_participants/
+attendance_edit_log/invitations → calibrations → calibration_history.
+`stakeholder_groups`/`topic_library` aren't reachable from `clients`
+(no cascading FK), hence the two extra explicit deletes.
+`team_members`/`practice_settings` were never touched — confirmed by
+count before and after (2 rows, unchanged).
+
+**Seed** (one client, one cycle, three assessments, all literal-UUID
+inserts for traceability — ids `00000000-0000-4000-8000-0000000NNNNN`):
+- Client **Greenfield Manufacturing**, cycle **FY2026** (esrs_2023_amended,
+  3.0/3.0 thresholds).
+- `topic_library`: 9 entries — 5 impact-type (3×neg_impact, 2×pos_impact,
+  covering E1/S1/E2) and 4 financial-type (2×risk, 2×opportunity, covering
+  E1/E5/G1).
+- `stakeholder_groups`/`stakeholder_members`: 6 groups (Employees,
+  Suppliers, Investors/Shareholders, Executive Management, Local
+  Communities, and a silent "Nature and ecosystems" group), 8 members.
+- **Impact Live Session** (`expert_live_session`, perspective `impact`):
+  5 IROs, one finished `live_sessions` row, 3 participants, 1 submission,
+  18 ratings. Deliberately includes a severity-override case (Scope 1
+  Process Emissions: `irreversibility=5` → forces severity to 5 →
+  Material) and a boundary case (Employee Upskilling Program landing
+  exactly at the 3.0 threshold).
+- **Financial Live Session** (`expert_live_session`, perspective
+  `financial`): 4 IROs, its own finished `live_sessions` row, 3
+  participants, 1 submission, 8 ratings.
+- **Full Expert Survey** (`expert_survey`, perspective `full`): a fresh
+  snapshot of all 9 topics (separate `iros` rows from the two live
+  sessions — this schema never shares IRO rows across assessments, even
+  within the same cycle), 3 invitations + 3 submitted submissions (2
+  impact-perspective, 1 financial-perspective), 44 ratings. The two
+  impact respondents were deliberately given very different ratings on
+  the same IRO (Scope 1 Process Emissions: scale 4 vs. 1) to produce a
+  real assessor-spread discrepancy (≥1.5) for the Calibration screen to
+  flag.
+- 2 `calibrations` rows: one flagged with an owner/moderator assigned but
+  not yet calibrated (demoing that state), one fully calibrated with a
+  `calibrated_value`, `reviewed_with_owner=true` and a `calibration_history`
+  row (demoing the signed-off state).
+
+**Dropped mid-build**: a planned synthetic extra `expert_live_session`
+submission directly on one of the Full Survey's own IROs — meant to also
+demonstrate the survey-vs-session (`sourceGap`) comparison — hit
+`submissions_source_reference`, a check constraint that requires a
+`live_session_id` whenever `source = 'expert_live_session'`. Confirmed
+this matches how the app itself always behaves (an `expert_survey`-type
+assessment never receives a live-session-sourced submission in the real
+flow), so this was correctly rejected, not a bug — dropped rather than
+worked around with a throwaway `live_sessions` row, since the resulting
+data isn't something the app would ever really produce. The assessor-spread
+discrepancy above still gives Calibration a real "needs attention" case
+to show.
+
+Verified final counts directly before handing back: 1 client, 1 cycle, 9
+topic_library, 6 stakeholder_groups, 8 stakeholder_members, 3 assessments,
+18 iros, 2 live_sessions, 6 live_session_participants, 3 invitations, 5
+submissions, 70 ratings, 2 calibrations, 1 calibration_history row — all
+match the seed plan exactly.
+
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel

@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 42 (Recipients screen: added a one-click bin icon on each Included row that excludes them directly, alongside the existing drag-to-Excluded — same underlying state change, just without needing to drag).
+**Last updated:** 2026-09-25 — session 2, part 43 (full data reset + fresh dummy demo data, by explicit builder request: wiped every client/cycle/assessment/stakeholder/topic — including acme-2026, previously protected — and seeded one new client "Greenfield Manufacturing" with a real Impact Live Session, Financial Live Session and Full Expert Survey, all fully submitted, so Responses/Calibration/Results can be demoed with real data. team_members untouched throughout).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,64 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 43 (2026-09-25) — Full data reset + fresh dummy demo data (builder request).**
+
+Builder: "could you set the tool on 0 and put in dummy data stakeholders,
+iros and 3 different assessments financial live session, impact live
+session and full expert survey, so i can see responses and calibration
+and result section?" This meant wiping `acme-2026`, which an earlier part
+of this same session had explicitly protected ("Don't delete acme-2026")
+— confirmed scope directly with the builder before touching anything
+(full wipe including Acme Corp vs. leaving it; all three assessments
+fully submitted vs. a mix of in-progress states). Both confirmed: wipe
+everything, all three fully submitted.
+
+**Wipe**: `delete from clients` cascades through cycles → assessments →
+iros → submissions/ratings/live_sessions/invitations → calibrations
+(confirmed every relevant FK is `ON DELETE CASCADE` via `pg_constraint`
+first, not assumed); `stakeholder_groups` and `topic_library` needed
+their own explicit deletes (no cascading path from `clients`).
+`team_members`/`practice_settings` were never touched — verified by count
+before and after.
+
+**Seeded**: one client ("Greenfield Manufacturing"), one FY2026 cycle, a
+9-topic master library (5 impact-type, 4 financial-type), 6 stakeholder
+groups (8 members, including a silent "Nature and ecosystems" group), and
+three fully-submitted assessments — **Impact Live Session** (5 IROs, a
+finished live session, 3 participants, 18 ratings — with a deliberate
+severity-override case and a boundary-exactly-at-threshold case),
+**Financial Live Session** (4 IROs, its own live session, 3 participants,
+8 ratings), and **Full Expert Survey** (a fresh 9-IRO snapshot — this
+schema never shares IRO rows across assessments even within one cycle —
+3 invitations/submissions, 44 ratings, with two respondents deliberately
+rating the same topic very differently to produce a real assessor-spread
+discrepancy for Calibration to flag). Two `calibrations` rows demo both
+states: flagged-but-not-yet-calibrated, and fully calibrated/signed off
+with a `calibration_history` entry.
+
+**One planned piece dropped**: a synthetic extra live-session submission
+directly on a Full Survey IRO (to also demo the survey-vs-session
+comparison) hit a real check constraint —
+`submissions_source_reference` requires `live_session_id` whenever
+`source = 'expert_live_session'`. Confirmed this correctly matches how
+the app itself behaves (an `expert_survey` assessment never receives a
+live-session-sourced submission through the real flow) — dropped rather
+than worked around with a throwaway row that the app would never itself
+produce.
+
+Verified final counts directly before handing back — 1 client, 1 cycle, 9
+topic_library, 6 groups, 8 members, 3 assessments, 18 iros, 2 live
+sessions, 6 participants, 3 invitations, 5 submissions, 70 ratings, 2
+calibrations, 1 calibration_history row — all match the seed plan. Full
+detail (every ID, every rating value, exact rationale per topic) logged
+in `docs/supabase-setup.md` Part 30, per the save-point protocol (database
+touched → that file updates in the same save point).
+
+No code change this part — pure data, via direct SQL through the
+Supabase MCP tools (not through the app's own UI, which has no bulk-seed
+path). `npm run build`/`npx oxlint src` not re-run since nothing in
+`src/` changed.
+
 **Part 42 (2026-09-25) — Recipients: a one-click bin to exclude, next to drag.**
 
 Builder, with a screenshot of the Included list: "please add a bin next to
