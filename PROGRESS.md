@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 43 (full data reset + fresh dummy demo data, by explicit builder request: wiped every client/cycle/assessment/stakeholder/topic — including acme-2026, previously protected — and seeded one new client "Greenfield Manufacturing" with a real Impact Live Session, Financial Live Session and Full Expert Survey, all fully submitted, so Responses/Calibration/Results can be demoed with real data. team_members untouched throughout).
+**Last updated:** 2026-09-25 — session 2, part 44 (dummy data follow-up: added a real dual-source example — one Full Expert Survey topic, Employee Upskilling Program, now has both a survey average (2.75) and a session value (3.5) genuinely populated side by side, close but not identical. The earlier attempt at this was dropped for hitting a check constraint; re-read it properly — it only requires a real live_session_id, not a matching assessment_id — so the new submission legitimately reuses the Impact Live Session's own live_sessions row).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,34 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 44 (2026-09-25) — Dummy data follow-up: a real dual-source (survey + session) example.**
+
+Builder: "why in the dummy data was the expert live session ratings equal
+to the expert survey data, can you create two different results (can be
+close to each other)." They were never actually equal — every pair I'd
+seeded genuinely differed (e.g. Scope 1 Process Emissions: 5.0 in the
+live session vs. ~2.3 in the survey) — but there was no single topic
+where both a survey number and a session number showed up *together*,
+because Part 30's seed had deliberately dropped that case after hitting
+`submissions_source_reference`.
+
+Re-checked that constraint properly this time with `pg_get_constraintdef`
+instead of assuming: it only requires a **real, non-null**
+`live_session_id` when `source = 'expert_live_session'` — it never checks
+that live session's own `assessment_id` against the submission's. So a
+submission on the Full Expert Survey assessment can legitimately point at
+the Impact Live Session's own (already real) `live_sessions` row as its
+`live_session_id`. Added one such submission with 3 ratings on the Full
+Survey's own "Employee Upskilling Program" IRO: `surveyAvg` 2.75 (the two
+respondents' own average) vs. `sessionAvg` 3.5 — a real, close-but-different
+pair (gap 0.75, comfortably under the 1.5 discrepancy threshold), now
+genuinely visible side by side in Responses/Calibration for that topic.
+
+Counts after: submissions 6 (was 5), ratings 73 (was 70) — everything
+else from Part 43 unchanged. Full detail in `docs/supabase-setup.md`
+Part 30's follow-up note. No code change — pure data again, same as
+Part 43.
+
 **Part 43 (2026-09-25) — Full data reset + fresh dummy demo data (builder request).**
 
 Builder: "could you set the tool on 0 and put in dummy data stakeholders,

@@ -1061,6 +1061,26 @@ topic_library, 6 stakeholder_groups, 8 stakeholder_members, 3 assessments,
 submissions, 70 ratings, 2 calibrations, 1 calibration_history row — all
 match the seed plan exactly.
 
+**Follow-up, same day**: builder asked why the live session and survey
+numbers looked the same and asked for a real dual-source example, close
+but not identical. They're never actually equal — the "dropped" synthetic
+piece above was exactly this, dropped for hitting
+`submissions_source_reference`. Re-read that constraint properly this
+time: `pg_get_constraintdef` shows it only requires `live_session_id IS
+NOT NULL` when `source = 'expert_live_session'` — it does **not** require
+that live session's own `assessment_id` to match the submission's
+`assessment_id`. So a submission on the Full Survey (`0403`) can validly
+reference the real, already-existing Impact Live Session's
+`live_sessions` row (`0601`) as its `live_session_id`. Added submission
+`0806` (source `expert_live_session`, `live_session_id = 0601`,
+`invitation_id = null`) with 3 ratings on the Full Survey's own Employee
+Upskilling Program IRO (`0534`): scale 4, scope 3, likelihood 4 →
+`impactScore` 3.5, versus the two survey respondents' own average of 2.75
+(Maria 3.5, Amara 2.0) — a real `surveyAvg`/`sessionAvg` pair, 0.75 apart,
+well under the 1.5 discrepancy threshold, and both now genuinely visible
+side by side wherever that IRO is shown. Counts after: submissions 6
+(was 5), ratings 73 (was 70) — everything else unchanged.
+
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel
