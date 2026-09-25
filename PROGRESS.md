@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 35 (GlobalHeader: added a Settings gear icon (owner/admin only, opens Admin & Roles) next to the notification bell, and hover tooltips on all three top-right controls — "Settings", "Notifications", "Edit profile" — per the builder's direct request).
+**Last updated:** 2026-09-25 — session 2, part 36 (Admin & Roles: a Sign-off only row could still have its Admin checkbox ticked — a contradictory combination, since Admin's definition is full data access plus team management, which Sign-off only's restricted read-only access rules out. Hid the checkbox for signoff rows and auto-clears a stale is_admin when a current Admin is switched to Sign-off only. Confirmed no existing row in the live DB had this combination).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,45 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 36 (2026-09-25) — Admin & Roles: Sign-off only can no longer also be Admin.**
+
+Builder, from a screenshot of Admin & Roles' team table: "am i wrong or is
+it weird that somebody with sign off only rights can still have an admin
+function, when it's sign off only please remove option for admin." Not
+wrong — this was a real gap. The four roles (CLAUDE.md, access-matrix.md
+§8) are Tool Owner / Admin / Full access — "identical data access, differ
+only in team-management rights" — and Sign-off only — "read-only
+everywhere it can see at all." There's no fifth "Sign-off only, but also
+Admin" role: Admin's whole definition presumes full data access, which
+directly contradicts Sign-off only's restricted, read-only access. Nothing
+in the schema enforced this — `is_admin` only gates the Admin & Roles
+screen itself (`canManageTeam = me.isOwner || me.isAdmin`) and is
+independent of `access_level` at the RLS layer (data-access grants check
+`access_level = 'full'` or `is_owner`, never `is_admin`), so a row could
+sit with `access_level = 'signoff'` and `is_admin = true` at the same
+time: restricted to read-only + two sign-off actions everywhere else in
+the app, yet still able to open Admin & Roles and change anyone's access
+level, sign-off permissions, or role title.
+
+`AdminRolesTab.jsx`: the Admin column now shows a plain "—" for any row
+with `accessLevel === 'signoff'` instead of a live checkbox (matching how
+the Sign off column already shows "—" for full-access rows) — Admin is
+simply not offered there. Also, switching a current Admin's Access Level
+to Sign-off only now clears `is_admin` in the same action
+(`handleFieldChange` calls `updateTeamMemberAdmin(id, false)` when
+`patch.accessLevel === 'signoff' && member.isAdmin`), so a stale
+contradictory flag can't survive underneath the now-hidden checkbox.
+
+Checked the live DB directly (`select … from team_members where
+access_level = 'signoff' and is_admin = true`) before writing anything —
+zero rows, so there was nothing to clean up; this closes the gap going
+forward rather than fixing bad data.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — this was a frontend gap, not a database one; the
+DB already correctly ignores `is_admin` for data-access decisions, it just
+let the UI offer a role combination that shouldn't exist.
+
 **Part 35 (2026-09-25) — GlobalHeader: Settings gear + hover tooltips.**
 
 Builder, with a screenshot of the sidebar's `SettingsMenu` avatar chip:

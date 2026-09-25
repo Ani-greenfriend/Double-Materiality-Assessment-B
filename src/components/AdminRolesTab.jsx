@@ -60,6 +60,14 @@ export default function AdminRolesTab({ me, onChanged }) {
         canSignoffTopics: patch.canSignoffTopics ?? member.canSignoffTopics,
         canSignoffResults: patch.canSignoffResults ?? member.canSignoffResults,
       });
+      // Sign-off only is a restricted-data-access role — it has no defined
+      // "and also Admin" variant (Admin's whole definition is full data
+      // access plus team management). Switching a current Admin to
+      // Sign-off only clears the now-contradictory flag rather than
+      // leaving it stale and invisible once the checkbox below disappears.
+      if (patch.accessLevel === 'signoff' && member.isAdmin) {
+        await updateTeamMemberAdmin(member.id, false);
+      }
       reload();
       onChanged?.();
     } catch (err) {
@@ -284,6 +292,11 @@ export default function AdminRolesTab({ me, onChanged }) {
                     <td className="px-4 py-3">
                       {m.isOwner ? (
                         <span className="text-[10.5px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(155,127,224,0.15)', color: '#9B7FE0' }}>Owner</span>
+                      ) : m.accessLevel === 'signoff' ? (
+                        // Sign-off only has no "and also Admin" variant — Admin means
+                        // full data access plus team management, which contradicts
+                        // this role's restricted, read-only data access. Not offered.
+                        <span className="text-text-secondary" title="Sign-off only cannot also be Admin.">—</span>
                       ) : (
                         <label className={`flex items-center gap-1.5 text-[11.5px] ${adminLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`} title={adminLocked ? (isSelf ? "You cannot change your own Admin status." : "Only the Tool Owner can grant or revoke Admin.") : ''}>
                           <input type="checkbox" checked={m.isAdmin} disabled={adminLocked} onChange={(e) => handleAdminToggle(m, e.target.checked)} />
