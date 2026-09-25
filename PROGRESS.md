@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 36 (Admin & Roles: a Sign-off only row could still have its Admin checkbox ticked — a contradictory combination, since Admin's definition is full data access plus team management, which Sign-off only's restricted read-only access rules out. Hid the checkbox for signoff rows and auto-clears a stale is_admin when a current Admin is switched to Sign-off only. Confirmed no existing row in the live DB had this combination).
+**Last updated:** 2026-09-25 — session 2, part 37 (Admin & Roles legend: dropped "Tool Owner" — not a role this screen assigns (exactly one, set only from the Supabase dashboard) — and replaced it with a note pointing to the real Tool Owner's name/email, pulled live from the team list, for access questions the other three roles don't cover).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,31 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 37 (2026-09-25) — Admin & Roles legend: dropped "Tool Owner", added a contact note instead.**
+
+Builder, from a screenshot of the same Legend card: "remove tool owner as
+this is the owner of the entire tool and is not selected by the tool.
+just mentioned to reach out for any support with the accesses." The
+legend's own Tool Owner text already said "set only from the Supabase
+dashboard" — it was never actually assignable through this screen, so
+listing it alongside three roles someone *does* pick from the table
+misrepresented it as a fourth option.
+
+Removed the `Tool Owner` entry from `ROLE_LEGEND` (now three: Admin, Full
+access, Sign-off only) and reworded Admin's own description, which used
+to define itself relative to Tool Owner ("everything Tool Owner can do
+except…") — now stands alone ("can change access levels and sign-off
+permissions, but not another member's Admin status"). In its place, a
+note under the legend grid: "Need something none of these cover... Reach
+out to the Tool Owner, {name} ({email})" — pulled live from `members`
+(`members.find(m => m.isOwner)`), not hardcoded, so it stays correct if
+ownership ever changes. The table's own "Owner" badge on Anika's row is
+untouched — that's a factual status display, not a selectable option, so
+it wasn't part of what the builder flagged.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend copy/layout.
+
 **Part 36 (2026-09-25) — Admin & Roles: Sign-off only can no longer also be Admin.**
 
 Builder, from a screenshot of Admin & Roles' team table: "am i wrong or is

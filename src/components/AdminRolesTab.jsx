@@ -3,9 +3,11 @@ import {
   listTeamMembers, createTeamMember, updateTeamMemberAccess, updateTeamMemberAdmin, updateTeamMemberActive,
 } from '../lib/data';
 
+// Tool Owner isn't listed here — it's not a role this screen assigns (set
+// only from the Supabase dashboard, and exactly one person holds it), so it
+// doesn't belong next to roles someone actually picks from this table.
 const ROLE_LEGEND = [
-  { label: 'Tool Owner', color: '#9B7FE0', text: 'Full data access, plus every team-management right, including granting/revoking Admin. Exactly one — set only from the Supabase dashboard.' },
-  { label: 'Admin', color: '#4C6FFF', text: 'Full data access, plus team management — everything Tool Owner can do except toggle another member’s Admin flag.' },
+  { label: 'Admin', color: '#4C6FFF', text: 'Full data access, plus team management — can change access levels and sign-off permissions, but not another member’s Admin status.' },
   { label: 'Full access', color: '#5ED996', text: 'Full data access, no team-management rights — cannot open this screen.' },
   { label: 'Sign-off only', color: '#D79A4C', text: 'Read-only everywhere it can see at all, with exactly the sign-off actions its two permissions grant. Dashboard and Report are refused outright.' },
 ];
@@ -44,6 +46,8 @@ export default function AdminRolesTab({ me, onChanged }) {
       </div>
     );
   }
+
+  const owner = members.find((m) => m.isOwner);
 
   const filtered = members.filter((m) => {
     const q = search.trim().toLowerCase();
@@ -143,6 +147,11 @@ export default function AdminRolesTab({ me, onChanged }) {
             </div>
           ))}
         </div>
+        {owner && (
+          <p className="text-[11.5px] text-text-secondary border-t border-border-apus pt-3 mt-3">
+            Need something none of these cover — a role change beyond what's here, or an access question? Reach out to the Tool Owner, {owner.name || owner.email} ({owner.email}).
+          </p>
+        )}
       </div>
 
       {showNewForm && (
