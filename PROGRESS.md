@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 41 (revised part 39's fix per direct builder instruction: "Go to live session" on an already-finished session no longer redirects away — it opens the Questionnaire itself in a new read-only review mode, landing on the results summary, with full topic-by-topic back-navigation and every input inert; a note points to Calibration for actual adjustments, since a submitted response stays frozen per CLAUDE.md).
+**Last updated:** 2026-09-25 — session 2, part 42 (Recipients screen: added a one-click bin icon on each Included row that excludes them directly, alongside the existing drag-to-Excluded — same underlying state change, just without needing to drag).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,21 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 42 (2026-09-25) — Recipients: a one-click bin to exclude, next to drag.**
+
+Builder, with a screenshot of the Included list: "please add a bin next to
+each stakeholder so it will automatically pushed to excluded." Added a
+`TrashIcon` button to `PersonRow` (only wired on Included rows — Excluded
+rows keep drag-back-up as their own reverse path, no new affordance
+needed there) that calls the same `setExcluded((prev) => new
+Set(prev).add(p.key))` the drag-drop zone already used — same state
+change, just a click instead of a drag.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend, one shared component
+(`RecipientsScreen.jsx` serves both Expert survey and Expert live
+session, per the existing pattern already established this session).
+
 **Part 41 (2026-09-25) — "Go to live session" on a finished session now opens a real read-only review, not a redirect.**
 
 Builder, refining part 39's fix: "if the live session is completed you can

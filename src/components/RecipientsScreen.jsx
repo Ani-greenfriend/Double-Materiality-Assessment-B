@@ -21,7 +21,19 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-function PersonRow({ p, onDragStart }) {
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" />
+    </svg>
+  );
+}
+
+// onExclude, when given, adds a one-click bin next to the drag handle — the
+// same result as dragging the row down to Excluded, for anyone who'd rather
+// click than drag. Only wired on Included rows; Excluded rows already have
+// drag-back-up as their way to reverse it.
+function PersonRow({ p, onDragStart, onExclude }) {
   return (
     <div
       draggable
@@ -42,6 +54,16 @@ function PersonRow({ p, onDragStart }) {
           {PILLAR_LABEL[pillar]}
         </span>
       ))}
+      {onExclude && (
+        <button
+          type="button"
+          onClick={onExclude}
+          title="Exclude"
+          className="shrink-0 text-text-secondary hover:text-[#E0645A]"
+        >
+          <TrashIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -252,7 +274,9 @@ export default function RecipientsScreen({ mode, perspectiveFilter, stakeholderM
                     {group.type === 'silent' && <span className="text-[9px] font-semibold rounded-full px-1.5 py-0.5 normal-case" style={{ background: 'rgba(94,217,150,0.14)', color: '#5ED996' }}>Silent stakeholder</span>}
                   </p>
                   <div className="flex flex-col gap-1.5">
-                    {people.map((p) => <PersonRow key={p.key} p={p} />)}
+                    {people.map((p) => (
+                      <PersonRow key={p.key} p={p} onExclude={() => setExcluded((prev) => new Set(prev).add(p.key))} />
+                    ))}
                   </div>
                 </div>
               ))
