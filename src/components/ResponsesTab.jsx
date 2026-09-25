@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { aggregateIro, hasImpactAxis } from '../lib/calc';
+import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR, MATERIAL_BADGE, pillarFor } from '../lib/topics';
 import { ResponsesIcon } from './icons';
 import DmaMascot from './DmaMascot';
@@ -189,7 +189,22 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
         <p className="text-[11px] text-text-secondary">No comments or justifications yet.</p>
       ) : (
         <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
-          {filtered.map((c, i) => (
+          {filtered.map((c, i) => {
+            // The rating this justification came from — matched via
+            // invitation_id (survey) or live_session_id (session), the only
+            // fields iro_comments and iro.assessments share — so Severity/
+            // Likelihood (or Magnitude/Likelihood) shown here are the exact
+            // values behind THIS comment, not a topic-wide average.
+            const matched = iro.assessments.find((a) =>
+              (c.invitation_id && a.invitationId === c.invitation_id) ||
+              (c.live_session_id && a.liveSessionId === c.live_session_id)
+            );
+            const ratingDetail = matched
+              ? hasImpactAxis(iro.iroType)
+                ? `Severity ${assessmentSeverity(iro, matched)?.toFixed(1) ?? '–'}${iro.actual || iro.potentialHumanRightsImpact ? '' : ` · Likelihood ${matched.likelihood ?? '–'}`}`
+                : `Magnitude ${matched.magnitude ?? '–'} · Likelihood ${matched.likelihood ?? '–'}`
+              : null;
+            return (
             <div key={i} className="bg-surface-2 rounded-lg px-3 py-2.5">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-[9.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: c.source === 'expert_survey' ? 'rgba(94,217,150,0.14)' : 'rgba(76,111,255,0.14)', color: c.source === 'expert_survey' ? '#5ED996' : '#4C6FFF' }}>{TYPE_LABEL[c.source] ?? c.source}</span>
@@ -197,6 +212,7 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
                 {c.criterion_key && <span className="text-[10.5px] text-text-secondary">· {c.criterion_key} = {c.value}</span>}
                 <span className="text-[9.5px] text-text-secondary ml-auto">{c.commented_at ? new Date(c.commented_at).toLocaleDateString() : ''}</span>
               </div>
+              {ratingDetail && <p className="text-[10px] font-semibold mb-1" style={{ color: '#8B8B98' }}>{ratingDetail}</p>}
               <p className="text-[11.5px] text-text-secondary mb-1">{c.comment}</p>
               {c.invitation_id && (
                 revealed[c.invitation_id] ? (
@@ -206,7 +222,8 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
                 )
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

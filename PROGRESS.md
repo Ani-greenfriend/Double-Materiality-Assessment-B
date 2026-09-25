@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 49 (Responses screen's COMBINED figure can legitimately be a calibrated override that matches neither SURVEY nor SESSION — added a "Cal" indicator to the list, detail panel and CSV export so that reads as intentional, not a calculation bug).
+**Last updated:** 2026-09-25 — session 2, part 50 (Responses detail panel's comment cards show the exact Severity/Likelihood or Magnitude/Likelihood behind each justification now, matched to its own rating via invitation_id/live_session_id — not just the single criterion it's attached to).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,43 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 50 (2026-09-25) — Responses detail panel's comment cards now show the exact Severity/Likelihood (or Magnitude/Likelihood) behind that specific justification, not just the one criterion it's attached to.**
+
+Builder, from a screenshot of the same detail panel Part 49 touched: "in
+the drop down could you add severity and likelihood/ magnitude & likelihood
+from the rating" — each comment card showed one raw criterion (e.g.
+"irreversibility = 5") but not the derived Severity/Magnitude or the
+Likelihood used alongside it, so reading the actual score behind a
+justification meant cross-referencing Calibrate manually.
+
+`iro_comments` (the view behind these cards) carries `invitation_id`/
+`live_session_id` but not a `submission_id`, and `iro.assessments` (already
+loaded, what `aggregateIro` consumes) had `submissionId` but not those two
+— no shared key to match a comment back to its exact rating. Added
+`invitationId`/`liveSessionId` to the assessment-row shape `fetchDashboard`
+builds (data.js) — both were already selected from `combined_ratings`, just
+never copied onto the row — no new query. `ResponsesTab.jsx`'s comment
+cards now look up the matching `iro.assessments` entry via
+`invitation_id`/`live_session_id` and show Severity (via calc.js's own
+`assessmentSeverity`, so the precautionary override is reflected — e.g.
+"Severity 5.0", not the raw irreversibility=5 alone) + Likelihood for
+impact-type IROs, or Magnitude + Likelihood for financial-type; Likelihood
+is correctly omitted for actual/potential-human-rights-impact IROs, which
+don't use it in their score. A live session is one submission per
+CLAUDE.md's "counts as one assessor," so every comment on it matches
+exactly; a multi-respondent survey matches each comment to its own
+respondent's submission via its own `invitation_id`, not an average.
+
+Verified against live data: id `...511` (Scope 1 Process Emissions, Impact
+Live Session) is `actual = true`, irreversibility rated 5 by the session →
+`assessmentSeverity` correctly returns 5 (the precautionary override, not
+a plain average) with Likelihood omitted — matches the screen's own
+SESSION score of 5.0 exactly (severity alone, unscaled, per
+`assessmentImpactScore`).
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS change — the new
+fields come from columns `combined_ratings` already exposes.
+
 **Part 49 (2026-09-25) — Responses screen's COMBINED column can legitimately differ from both SURVEY and SESSION (a calibrated override), with nothing on screen saying so — added a "Cal" indicator wherever it can happen.**
 
 Builder, from a screenshot of Responses: "this is not accurate: SCOPe1 2.3

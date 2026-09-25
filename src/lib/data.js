@@ -682,6 +682,12 @@ export async function fetchDashboard(assessmentId) {
         source: r.source,
         stakeholderGroup: r.stakeholder_group,
         iroId: r.iro_id,
+        // Carried through so the Responses screen's comment cards can match
+        // a justification (iro_comments.invitation_id/live_session_id) back
+        // to the exact rating it came from, to show Severity/Magnitude and
+        // Likelihood alongside it — not just the one criterion it justifies.
+        invitationId: r.invitation_id,
+        liveSessionId: r.live_session_id,
       });
     }
     assessmentRows.get(key)[r.criterion_key] = r.value;
