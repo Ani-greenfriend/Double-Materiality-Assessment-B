@@ -34,7 +34,7 @@ npm run build
 ```
 
 ## Tech Stack
-React · Vite · Tailwind CSS · Netlify · Supabase. Deployment: GitHub → Netlify, auto-deploys from main. **No Netlify MCP connector is available to Claude Code in this environment** (confirmed by direct check, contradicting an earlier assumption) — the builder connects and deploys manually via the Netlify dashboard (New site → Import from GitHub; build `npm run build`, publish `dist`, already set in netlify.toml). Tool A's site address is hardcoded as the default in `buildPersonalLink()` (src/lib/data.js), overridable via `VITE_TOOL_A_URL`.
+React · Vite · Tailwind CSS · Netlify · Supabase. Deployment: GitHub → Netlify, auto-deploys from main. **No Netlify MCP connector is available to Claude Code in this environment** (confirmed by direct check, contradicting an earlier assumption) — the builder connects and deploys manually via the Netlify dashboard (New site → Import from GitHub; build `npm run build`, publish `dist`, already set in netlify.toml). Tool A's site address is taken from `VITE_SURVEY_BASE_URL` (see Environment Variables) — no hardcoded fallback; `buildPersonalLink()` throws if it's unset.
 
 ## Arms
 Export — browser only, no server function — the PDF DMA report (report builder): six sections, two presets, logo slots, personal data off by default, graphs as images on white, tables for topics and stakeholders, a footer on every page with cycle, ESRS version, date, page number and Provisional/Final. Results and Matrix keep PNG (chart image) and CSV (chart data) downloads alongside it.
@@ -42,7 +42,8 @@ Export — browser only, no server function — the PDF DMA report (report build
 ## Environment Variables
 VITE_SUPABASE_URL — Supabase: Project Settings → API → Project URL — Netlify env var
 VITE_SUPABASE_ANON_KEY — the publishable key, not the legacy anon JWT — Netlify env var
-No server functions in this tool; both are browser-exposed. Confirm both exist at session start. No value ever appears in code or a committed file.
+VITE_SURVEY_BASE_URL — Tool A's site address for building personal links (e.g. `https://questionnaire-dma.netlify.app`) — resolves product-spec.md Section 15's open question; required, never hardcoded — Netlify env var
+No server functions in this tool; all three are browser-exposed (none is a secret — they're public URLs/keys). Confirm all three exist at session start. No value ever appears in code or a committed file.
 
 ## Supabase
 Project: "greenfriend Double Materiality Assessment" — already exists. Project URL: https://evwmxduudcujtibirmga.supabase.co

@@ -23,13 +23,13 @@ function CriterionInfo({ description }) {
   );
 }
 
-function CriterionSlider({ label, description, labels, value, onChange, color }) {
+function CriterionSlider({ label, description, labels, value, onChange, color, disabled }) {
   const [hovering, setHovering] = useState(false);
   const nearest = Math.round(value);
   const thumbPercent = Math.min(96, Math.max(4, (value / 5) * 100));
 
   return (
-    <div className="mb-6">
+    <div className="mb-6" style={disabled ? { opacity: 0.65 } : undefined}>
       <p className="text-[10.5px] mb-1" style={{ color: '#8B8B98' }}>How would you rate:</p>
       <div className="flex items-center mb-1.5">
         <p className="text-[13.5px] font-semibold">{label}</p>
@@ -38,7 +38,7 @@ function CriterionSlider({ label, description, labels, value, onChange, color })
       </div>
 
       <div className="relative pt-6">
-        {hovering && (
+        {hovering && !disabled && (
           <div
             className="absolute top-0 -translate-x-1/2 bg-surface-2 border border-border-apus rounded-lg px-2.5 py-1 text-[10.5px] whitespace-nowrap z-10 shadow-lg"
             style={{ left: `${thumbPercent}%` }}
@@ -49,6 +49,7 @@ function CriterionSlider({ label, description, labels, value, onChange, color })
         <input
           type="range" min="0" max="5" step="0.1"
           value={value}
+          disabled={disabled}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           onMouseEnter={() => setHovering(true)}
           onMouseLeave={() => setHovering(false)}
@@ -93,24 +94,36 @@ const CRITERIA_FOR = {
   ],
 };
 
+// Only the keys this IRO's own type actually rates — never the full set.
+// `likelihood` and `financialLikelihood` both write to the same DB column
+// (ratings.criterion_key has no separate financialLikelihood value), so an
+// IRO carrying both in its local rating state produces two rows targeting
+// the same (submission_id, iro_id, criterion_key) conflict key in one
+// upsert batch, which Postgres refuses outright ("ON CONFLICT DO UPDATE
+// command cannot affect row a second time") — every criterion here must
+// stay scoped to what CRITERIA_FOR[iro.iroType] actually lists.
 function initialValuesFor(iro) {
   const defaults = { scale: 2.5, scope: 2.5, irreversibility: 2.5, likelihood: 2.5, magnitude: 2.5, financialLikelihood: 2.5 };
+  const keys = CRITERIA_FOR[iro.iroType].map((c) => c.key);
   const live = iro.assessments.filter((a) => a.assessor === 'Live session');
-  if (!live.length) return defaults;
   const avg = (key) => {
+    if (!live.length) return defaults[key];
     const vals = live.map((a) => a[key]).filter((v) => v !== null && v !== undefined);
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : defaults[key];
   };
-  return {
-    scale: avg('scale'), scope: avg('scope'), irreversibility: avg('irreversibility'),
-    likelihood: avg('likelihood'), magnitude: avg('magnitude'), financialLikelihood: avg('financialLikelihood'),
-  };
+  return Object.fromEntries(keys.map((key) => [key, avg(key)]));
 }
 
 export default function Questionnaire({
   perspectiveFilter, iros, onFinish, topicOverrides = {}, mandatory = false,
   initialRatings = {}, initialIndex = 0, onProgress, onExit,
   justificationMode = 'per_criterion', initialJustifications = {}, participants = [],
+  // Reviewing an already-finished session (CLAUDE.md: a submitted response
+  // is frozen for every role) — browse-only, lands on the results summary
+  // first. Rating/justification/notes inputs are inert and onProgress is
+  // never called, so this can never attempt the write that RLS refuses.
+  // Real adjustments after submission go through Calibration, not here.
+  readOnly = false, startFinished = false,
 }) {
   const relevantIros = iros.filter((i) => {
     if (perspectiveFilter === 'impact') return hasImpactAxis(i.iroType);
@@ -128,7 +141,14 @@ export default function Questionnaire({
   const [ratings, setRatings] = useState(initialRatings);
   const [sessionNotes, setSessionNotes] = useState({});
   const [touched, setTouched] = useState(() => new Set(initialRatings[relevantIros[startIndex]?.id] ? Object.keys(initialRatings[relevantIros[startIndex].id]) : []));
-  const [finished, setFinished] = useState(false);
+  const [finished, setFinished] = useState(startFinished);
+  // Guards "To Results" against a double click — without it, a second click
+  // before the first request lands fires onFinish twice; the first submits
+  // the session (submission becomes 'submitted'), and the second's ratings
+  // upsert then hits the RLS wall that freezes a submitted response (by
+  // design, per CLAUDE.md), surfacing as an "upsert failed: row-level
+  // security policy" error on top of this already-shown summary screen.
+  const [finishing, setFinishing] = useState(false);
   // Section 8, Live session: "a justification per criterion or per topic
   // according to the assessment's justification mode (required once a
   // value is entered)" — per_criterion: { [iroId]: { [criterionKey]: text } };
@@ -138,6 +158,7 @@ export default function Questionnaire({
   // Must run before any early return below — a hook can never be skipped
   // conditionally, or React throws "Rendered fewer hooks than expected".
   useEffect(() => {
+    if (readOnly) return; // never autosave over a frozen, submitted session
     onProgress?.(ratings, index, justifications);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ratings, index, justifications]);
@@ -170,9 +191,11 @@ export default function Questionnaire({
       <div className="max-w-xl mx-auto text-center">
         <div className="bg-surface rounded-2xl p-8">
           <p className="text-[28px] mb-2">🎉</p>
-          <p className="font-semibold text-[16px] mb-1">All {relevantIros.length} topics rated — thank you for your participation</p>
+          <p className="font-semibold text-[16px] mb-1">{readOnly ? `${relevantIros.length} topics rated — this session's results` : `All ${relevantIros.length} topics rated — thank you for your participation`}</p>
           <p className="text-[12.5px] text-text-secondary mb-6">
-            Here's how the group's ratings came out, highest to lowest. Next, review this with leadership or subject-matter experts and calibrate anything that needs a closer look.
+            {readOnly
+              ? 'This session already finished and its ratings are locked. Browse any topic below, or use Calibration to adjust a value if the group needs to revisit it.'
+              : "Here's how the group's ratings came out, highest to lowest. Next, review this with leadership or subject-matter experts and calibrate anything that needs a closer look."}
           </p>
 
           <div className="bg-surface-2 rounded-xl p-4 mb-6 text-left max-h-72 overflow-y-auto">
@@ -187,13 +210,38 @@ export default function Questionnaire({
             ))}
           </div>
 
-          <button
-            onClick={() => onFinish(ratings, relevantIros, sessionNotes, justifications)}
-            className="text-[13px] font-semibold rounded-xl px-6 py-3"
-            style={{ background: '#4C6FFF', color: '#F5F6FA' }}
-          >
-            To Results →
-          </button>
+          {readOnly ? (
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => { loadTopic(relevantIros.length - 1); setFinished(false); }}
+                className="text-[12.5px] font-semibold rounded-xl px-5 py-3 border border-border-apus"
+              >
+                ← Review topics
+              </button>
+              {onExit && (
+                <button onClick={onExit} className="text-[13px] font-semibold rounded-xl px-6 py-3" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
+                  Close
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={async () => {
+                if (finishing) return;
+                setFinishing(true);
+                try {
+                  await onFinish(ratings, relevantIros, sessionNotes, justifications);
+                } finally {
+                  setFinishing(false);
+                }
+              }}
+              disabled={finishing}
+              className="text-[13px] font-semibold rounded-xl px-6 py-3 disabled:opacity-50"
+              style={{ background: '#4C6FFF', color: '#F5F6FA' }}
+            >
+              {finishing ? 'Submitting…' : 'To Results →'}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -262,17 +310,28 @@ export default function Questionnaire({
   return (
     <div className="max-w-xl mx-auto">
       <div className="rounded-2xl p-5 mb-6" style={{ background: 'linear-gradient(135deg, rgba(76,111,255,0.12), rgba(76,111,255,0.06))' }}>
-        <p className="font-semibold text-[14px] mb-1.5">👋 A few quick questions per topic</p>
-        <p className="text-[12px] text-text-secondary leading-relaxed">
-          {perspectiveFilter === 'impact'
-            ? 'For each topic, rate the scale, scope, and — for negative impacts — irremediability of the effect on people and the environment, plus how likely it is to occur.'
-            : perspectiveFilter === 'financial'
-            ? 'For each topic, rate the magnitude of the financial effect and how likely it is to occur — please weigh both near-term and longer-term time horizons.'
-            : 'For each topic, rate the criteria that apply to its type — impact topics use Scale/Scope/Irremediability/Likelihood, financial topics use Magnitude/Likelihood.'}
-        </p>
-        <p className="text-[11px] text-text-secondary mt-2 italic">
-          For likelihood: a score of 4–5 means the event is likely to occur soon or has already occurred. A score of 1–3 means a potential future occurrence.
-        </p>
+        {readOnly ? (
+          <>
+            <p className="font-semibold text-[14px] mb-1.5">🔒 Reviewing a finished session</p>
+            <p className="text-[12px] text-text-secondary leading-relaxed">
+              This session's ratings are submitted and locked — browse them topic by topic below. To change a value, use Calibration instead of rating here again.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold text-[14px] mb-1.5">👋 A few quick questions per topic</p>
+            <p className="text-[12px] text-text-secondary leading-relaxed">
+              {perspectiveFilter === 'impact'
+                ? 'For each topic, rate the scale, scope, and — for negative impacts — irremediability of the effect on people and the environment, plus how likely it is to occur.'
+                : perspectiveFilter === 'financial'
+                ? 'For each topic, rate the magnitude of the financial effect and how likely it is to occur — please weigh both near-term and longer-term time horizons.'
+                : 'For each topic, rate the criteria that apply to its type — impact topics use Scale/Scope/Irremediability/Likelihood, financial topics use Magnitude/Likelihood.'}
+            </p>
+            <p className="text-[11px] text-text-secondary mt-2 italic">
+              For likelihood: a score of 4–5 means the event is likely to occur soon or has already occurred. A score of 1–3 means a potential future occurrence.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="h-1.5 bg-surface-2 rounded-full mb-2 overflow-hidden">
@@ -282,7 +341,9 @@ export default function Questionnaire({
         <p className="text-[11px] text-text-secondary">Topic {index + 1} of {relevantIros.length}</p>
         <div className="flex items-center gap-3">
           {index > 0 && <button onClick={prev} className="text-[11px] text-text-secondary">← Previous topic</button>}
-          {onExit && <button onClick={exitSession} className="text-[11px] text-text-secondary">Save and pause session</button>}
+          {readOnly
+            ? (onExit && <button onClick={onExit} className="text-[11px] text-text-secondary">Close</button>)
+            : (onExit && <button onClick={exitSession} className="text-[11px] text-text-secondary">Save and pause session</button>)}
         </div>
       </div>
       {participants.length > 0 && (
@@ -313,15 +374,17 @@ export default function Questionnaire({
 
         {criteria.map((c) => (
           <div key={c.key}>
-            <CriterionSlider label={c.label} description={c.description} labels={c.labels} value={values[c.key]} onChange={(v) => setVal(c.key, v)} color={color} />
+            <CriterionSlider label={c.label} description={c.description} labels={c.labels} value={values[c.key]} onChange={(v) => setVal(c.key, v)} color={color} disabled={readOnly} />
             {justificationMode === 'per_criterion' && touched.has(c.key) && (
               <div className="mb-6 -mt-4">
                 <p className="text-[10.5px] mb-1.5" style={{ color: '#8B8B98' }}>JUSTIFICATION FOR {c.label.toUpperCase()}</p>
                 <textarea
                   value={justifications[iro.id]?.[c.key] ?? ''}
                   onChange={(e) => setCriterionJustification(c.key, e.target.value)}
+                  readOnly={readOnly}
                   placeholder="Why this rating?"
                   className="w-full bg-surface-2 rounded-xl px-3.5 py-3 text-[12.5px] outline-none min-h-[60px]"
+                  style={readOnly ? { opacity: 0.75 } : undefined}
                 />
               </div>
             )}
@@ -334,8 +397,10 @@ export default function Questionnaire({
             <textarea
               value={topicJustification}
               onChange={(e) => setTopicJustification(e.target.value)}
+              readOnly={readOnly}
               placeholder="Why these ratings?"
               className="w-full bg-surface-2 rounded-xl px-3.5 py-3 text-[12.5px] outline-none min-h-[60px]"
+              style={readOnly ? { opacity: 0.75 } : undefined}
             />
           </div>
         )}
@@ -345,15 +410,17 @@ export default function Questionnaire({
           <textarea
             value={sessionNotes[iro.id] ?? ''}
             onChange={(e) => setSessionNotes((prev) => ({ ...prev, [iro.id]: e.target.value }))}
+            readOnly={readOnly}
+            style={readOnly ? { opacity: 0.75 } : undefined}
             placeholder="Capture anything the group discussed — context, disagreements, follow-ups…"
             className="w-full bg-surface-2 rounded-xl px-3.5 py-3 text-[12.5px] outline-none min-h-[70px]"
           />
         </div>
 
-        {nextBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please rate every criterion above before continuing.</p>}
-        {!nextBlocked && justificationBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please add a justification for every rating above before continuing.</p>}
-        <button onClick={next} disabled={nextBlocked || justificationBlocked} className="w-full text-[13.5px] font-semibold rounded-2xl py-3.5 mt-2 disabled:opacity-40 transition-transform hover:scale-[1.01]" style={{ background: '#4C6FFF', color: '#F5F6FA', boxShadow: '0 8px 24px -6px rgba(76,111,255,0.5)' }}>
-          {index + 1 < relevantIros.length ? 'Next topic →' : 'Finish session ✓'}
+        {!readOnly && nextBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please rate every criterion above before continuing.</p>}
+        {!readOnly && !nextBlocked && justificationBlocked && <p className="text-[11px] mb-2" style={{ color: '#D79A4C' }}>Please add a justification for every rating above before continuing.</p>}
+        <button onClick={next} disabled={!readOnly && (nextBlocked || justificationBlocked)} className="w-full text-[13.5px] font-semibold rounded-2xl py-3.5 mt-2 disabled:opacity-40 transition-transform hover:scale-[1.01]" style={{ background: '#4C6FFF', color: '#F5F6FA', boxShadow: '0 8px 24px -6px rgba(76,111,255,0.5)' }}>
+          {index + 1 < relevantIros.length ? 'Next topic →' : (readOnly ? 'See results →' : 'Finish session ✓')}
         </button>
       </div>
     </div>

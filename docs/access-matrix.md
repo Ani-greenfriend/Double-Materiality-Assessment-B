@@ -101,11 +101,24 @@ Revoking is logged (who, when) exactly like every other calibration action.
 | read | yes | yes | no |
 | update | yes; editing the topic selection auto-clears `iro_list_signed_off` if set | no | no |
 | change state → `iro_list_signed_off` | yes | **yes — the one write this permission grants** | no |
-| delete | only if the assessment has no responses | no | no |
+| delete | only if the assessment has no **submitted** responses | no | no |
 
 `iro_list_signed_off` is **advisory only** — it does not block starting or continuing an
 assessment, per the earlier confirmed decision. This is a deliberate exception to the
 frozen-row default in Section 7 rule 3.
+
+**Delete rule, resolved by builder 2026-09-24.** This row originally read "only if the
+assessment has no responses" (any status), which silently refused deleting an assessment
+with nothing but abandoned drafts — a real bug, not a deliberate protection: two test
+assessments got stuck exactly this way on the deploy preview. Builder decision: the gate
+is **submitted** responses only. A draft response blocks nothing — deleting the assessment
+cascades to delete it, its `ratings`/`topic_justifications`, and any paused live-session
+data (`live_sessions`, `live_session_participants`, `attendance_edit_log`) along with it,
+via the existing `ON DELETE CASCADE` foreign keys (no separate cleanup path needed). A
+submitted response still refuses the delete outright, to keep the audit trail — the RLS
+policy (`v3_fix_assessment_delete_only_blocks_on_submitted`) and the app both say so
+plainly rather than failing silently: "This assessment has submitted responses and can't
+be deleted, to keep the audit trail."
 
 ### topic_library
 
@@ -305,7 +318,7 @@ Seed: Anika Lerch's `team_members` row as above. No other named people exist yet
 | # | Table | Action | Role | Rule in words | Mechanism | Screen test |
 |---|---|---|---|---|---|---|
 | 1 | every workflow table | read/write | Owner/Admin/Full | all rows, no scoping beyond `active team_members` | policy, checking `team_members.active` and `access_level = 'full'` (or `is_owner`) via `auth_user_id` | Anika reads and edits everything |
-| 2 | topic_library, assessments, invitations, submissions, ratings, live_sessions, calibrations | read | Sign-off only | all rows, read-only | policy (SELECT), checking `access_level = 'signoff'` | pending — no named holder; test as soon as one exists |
+| 2 | assessments, iros, submissions, ratings, topic_justifications, live_sessions, live_session_participants, attendance_edit_log, calibrations | read | Sign-off only | all rows, read-only | policy (SELECT), checking `access_level = 'signoff'` | pending — no named holder; test as soon as one exists |
 | 3 | assessments | update → `iro_list_signed_off` | Sign-off only | only when `can_signoff_topics = true` on the caller's row | function | pending — as above |
 | 4 | cycles | update → `results_signed_off` | Sign-off only | only when `can_signoff_results = true` on the caller's row | function | pending — as above |
 | 5 | calibrations | update (`calibrated_value`, `band_value`) | Owner/Admin/Full | refused while the cycle's `results_signed_off = true` | policy (UPDATE) with a join to `cycles.results_signed_off`, or a trigger | Anika adjusts a value pre-signoff (works), attempts the same post-signoff (refused), revokes, attempts again (works) |
@@ -317,6 +330,24 @@ Seed: Anika Lerch's `team_members` row as above. No other named people exist yet
 | 11 | login with no team_members row | read anything | the identity | refused — "No access yet" screen | trigger sets `auth_user_id` only when a row matches; the app checks for a row and refuses otherwise | test with a Supabase Auth identity that has no team_members row |
 | 12 | submissions | delete | Owner/Admin/Full | refused unless `status = 'draft'` and the assessment is Closed or Completed | policy (DELETE) | Anika deletes an old draft on a closed assessment (works); attempts the same on a submitted response (refused) |
 | 13 | avatars bucket | upload/read/delete | any team_member | own avatar only for upload/delete; any avatar readable (for the header) | bucket policy | Anika uploads her own photo; a second account cannot delete it |
+
+**Rule 2, resolved by builder 2026-09-24.** This row originally also listed
+`topic_library` and `invitations` in Sign-off only's blanket read grant,
+contradicting both tables' own per-table sections in Section 1.2 (which say
+`no`, the latter with an explicit reason: "sign-off-only sees responses
+[submissions/ratings], never the invitee's name/email"). Builder decision:
+the per-table sections and user-stories.md win — **Sign-off only has no
+access to `topic_library` or `invitations`**, full stop. The row above is
+corrected accordingly (also adding `iros`, `topic_justifications`,
+`live_session_participants` and `attendance_edit_log`, which the per-table
+sections grant but this row had omitted; `calibration_history` stays
+excluded, per its own section — append-only, Owner/Admin/Full read only).
+`cycles` was never in this row and stays governed solely by its own
+narrower condition (rule 4 and its per-table section): Sign-off only reads
+`cycles` **only** with `can_signoff_results` — holding `can_signoff_topics`
+alone grants no `cycles` access. If a Topics sign-off screen ever needs a
+cycle-level field (e.g. the financial year or ESRS version for display),
+that's a gap to report, not a reason to widen this grant.
 
 **The gate.** The refusal test has two halves, recorded in PROGRESS.md before this stage
 deploys. **Half A (Claude Code):** every `no` cell and one `own`/scoped boundary attempted

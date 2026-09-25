@@ -21,7 +21,19 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-function PersonRow({ p, onDragStart }) {
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" />
+    </svg>
+  );
+}
+
+// onExclude, when given, adds a one-click bin next to the drag handle — the
+// same result as dragging the row down to Excluded, for anyone who'd rather
+// click than drag. Only wired on Included rows; Excluded rows already have
+// drag-back-up as their way to reverse it.
+function PersonRow({ p, onDragStart, onExclude }) {
   return (
     <div
       draggable
@@ -42,6 +54,16 @@ function PersonRow({ p, onDragStart }) {
           {PILLAR_LABEL[pillar]}
         </span>
       ))}
+      {onExclude && (
+        <button
+          type="button"
+          onClick={onExclude}
+          title="Exclude"
+          className="shrink-0 text-text-secondary hover:text-[#E0645A]"
+        >
+          <TrashIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -252,7 +274,9 @@ export default function RecipientsScreen({ mode, perspectiveFilter, stakeholderM
                     {group.type === 'silent' && <span className="text-[9px] font-semibold rounded-full px-1.5 py-0.5 normal-case" style={{ background: 'rgba(94,217,150,0.14)', color: '#5ED996' }}>Silent stakeholder</span>}
                   </p>
                   <div className="flex flex-col gap-1.5">
-                    {people.map((p) => <PersonRow key={p.key} p={p} />)}
+                    {people.map((p) => (
+                      <PersonRow key={p.key} p={p} onExclude={() => setExcluded((prev) => new Set(prev).add(p.key))} />
+                    ))}
                   </div>
                 </div>
               ))
@@ -280,14 +304,17 @@ export default function RecipientsScreen({ mode, perspectiveFilter, stakeholderM
 
       <button
         onClick={() => onContinue(included)}
-        disabled={included.length === 0}
-        className="text-[13px] font-semibold rounded-xl px-6 py-3 disabled:opacity-40"
+        className="text-[13px] font-semibold rounded-xl px-6 py-3"
         style={{ background: '#4C6FFF', color: '#F5F6FA' }}
       >
         Continue →
       </button>
       {included.length === 0 && visibleGroups.length > 0 && (
-        <p className="text-[11.5px] mt-2" style={{ color: '#D79A4C' }}>Add or include at least one person above to continue.</p>
+        <p className="text-[11.5px] mt-2 text-text-secondary">
+          {mode === 'expert_live_session'
+            ? 'Nobody is included — you can still continue; Kick off stays blocked until someone is added.'
+            : 'Nobody is included — you can still continue; add recipients here or from Recipients later.'}
+        </p>
       )}
     </div>
   );

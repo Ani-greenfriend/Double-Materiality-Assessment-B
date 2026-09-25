@@ -354,10 +354,20 @@ export async function deleteCycle(cycleId) {
 
 // RLS-gated: only succeeds when the assessment has no submissions at all
 // (see docs/supabase-setup.md — "authenticated delete assessments without responses").
+// Refused (RLS) once the assessment has any submitted response — draft
+// submissions, their ratings/justifications, and any live-session data are
+// deleted along with it via ON DELETE CASCADE, no separate cleanup needed
+// here. A refusal returns 0 rows, not an error (RLS-filtered deletes never
+// throw), so this checks the returned row itself rather than trusting a
+// missing `error` to mean success — a silent no-op here would be exactly
+// the "fails silently" bug this replaces.
 export async function deleteAssessment(assessmentId) {
   assertConfigured();
-  const { error } = await supabase.from('assessments').delete().eq('id', assessmentId);
+  const { data, error } = await supabase.from('assessments').delete().eq('id', assessmentId).select('id');
   if (error) throw new Error(`assessments delete failed: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error("This assessment has submitted responses and can't be deleted, to keep the audit trail.");
+  }
 }
 
 // Deletes every DRAFT submission across a cycle's assessments (ratings and
@@ -466,13 +476,13 @@ export async function snapshotTopicsIntoIros(assessmentId, topics) {
 
 // ---- Invitations (expert survey) ----
 
-// Tool A's site address — not a secret (it's a public URL), so it's a
-// hardcoded default here rather than a required env var like the Supabase
-// ones; VITE_TOOL_A_URL can override it if Tool A's domain ever changes.
-const TOOL_A_URL = import.meta.env.VITE_TOOL_A_URL || 'https://questionnaire-dma.netlify.app';
+// Tool A's site address — required env var, never hardcoded (resolves
+// product-spec.md Section 15's open question on how this tool knows it).
+const SURVEY_BASE_URL = import.meta.env.VITE_SURVEY_BASE_URL;
 
 export function buildPersonalLink(slug, linkCode) {
-  return `${TOOL_A_URL.replace(/\/$/, '')}/survey/${slug}/${linkCode}`;
+  if (!SURVEY_BASE_URL) throw new Error('VITE_SURVEY_BASE_URL is not set — cannot build a personal link.');
+  return `${SURVEY_BASE_URL.replace(/\/$/, '')}/survey/${slug}/${linkCode}`;
 }
 
 export async function fetchInvitations(assessmentId) {
@@ -618,9 +628,17 @@ export async function removeParticipant({ liveSessionId, participantId, reason, 
 export async function fetchDashboard(assessmentId) {
   assertConfigured();
 
+  // topic_library ( esrs_subtopic ) is an embedded read through the existing
+  // nullable topic_library_id FK, not a schema change — iros itself has no
+  // subtopic column of its own (subtopic_raw was retired, see
+  // supabase-setup.md), but every IRO snapshotted from the topic library
+  // (snapshotTopicsIntoIros) already carries the FK, so the real ESRS/custom
+  // subtopic text is one join away for anything created the normal way. An
+  // IRO with no topic_library_id (none currently, but the FK is nullable)
+  // just comes back with subtopic: null and falls back to its ESRS topic.
   const { data: iroRows, error: iroError } = await supabase
     .from('iros')
-    .select('id, esrs_topic_id, name, description, iro_type, actual, time_horizon, potential_human_rights_impact, session_notes, order')
+    .select('id, esrs_topic_id, name, description, iro_type, actual, time_horizon, potential_human_rights_impact, session_notes, order, topic_library_id, topic_library:topic_library_id ( esrs_subtopic )')
     .eq('assessment_id', assessmentId)
     .order('order', { ascending: true });
   if (iroError) throw new Error(`iros query failed: ${iroError.message}`);
@@ -664,6 +682,12 @@ export async function fetchDashboard(assessmentId) {
         source: r.source,
         stakeholderGroup: r.stakeholder_group,
         iroId: r.iro_id,
+        // Carried through so the Responses screen's comment cards can match
+        // a justification (iro_comments.invitation_id/live_session_id) back
+        // to the exact rating it came from, to show Severity/Magnitude and
+        // Likelihood alongside it — not just the one criterion it justifies.
+        invitationId: r.invitation_id,
+        liveSessionId: r.live_session_id,
       });
     }
     assessmentRows.get(key)[r.criterion_key] = r.value;
@@ -676,6 +700,7 @@ export async function fetchDashboard(assessmentId) {
     return {
       id: r.id,
       topic: r.esrs_topic_id,
+      subtopic: r.topic_library?.esrs_subtopic || null,
       name: r.name,
       description: r.description,
       iroType: r.iro_type,
@@ -1283,13 +1308,22 @@ function componentKeyToDbKey(k) {
 }
 
 function ratingRowsFromComponentState({ submissionId, assessmentId, ratings, justifications, justificationMode }) {
-  const rows = [];
+  // `likelihood` and `financialLikelihood` both write to the same DB column
+  // (ratings.criterion_key has no separate financialLikelihood value) — if
+  // an IRO's local rating state ever carries both (Questionnaire.jsx is
+  // supposed to prevent this at the source, but a stale in-memory session
+  // from before that fix, or any other future source, could still produce
+  // it), two rows would target the same (submission_id, iro_id,
+  // criterion_key) conflict key in one upsert batch, which Postgres refuses
+  // outright. Deduping here, keyed by the actual DB column, is a second,
+  // independent guard — the last value for a given db key wins.
+  const byKey = new Map();
   for (const [iroId, r] of Object.entries(ratings || {})) {
     for (const componentKey of CRITERION_KEYS) {
       if (!(componentKey in r)) continue;
       const raw = r[componentKey];
       const justification = justificationMode === 'per_criterion' ? (justifications?.[iroId]?.[componentKey] || null) : null;
-      rows.push({
+      byKey.set(`${iroId}:${componentKeyToDbKey(componentKey)}`, {
         submission_id: submissionId,
         assessment_id: assessmentId,
         iro_id: iroId,
@@ -1299,7 +1333,7 @@ function ratingRowsFromComponentState({ submissionId, assessmentId, ratings, jus
       });
     }
   }
-  return rows;
+  return [...byKey.values()];
 }
 
 function topicJustificationRowsFromComponentState({ submissionId, ratings, justifications, justificationMode }) {
@@ -1524,4 +1558,138 @@ export async function fetchAssessmentsForOverview() {
       status: a.type === 'expert_live_session' && liveSession?.status === 'finished' ? 'Completed' : undefined,
     };
   });
+}
+
+// ---- team_members — access stage Groups 3/4 (Settings → Admin & Roles,
+// Settings → Profile). `avatars` is a private bucket (unlike the public-read
+// `logos` bucket) — `avatar_url` stores the storage PATH, not a public URL;
+// every read resolves it to a fresh signed URL, since a private bucket's
+// objects have no stable public address. ----
+
+const AVATAR_SIGNED_URL_SECONDS = 60 * 60 * 24 * 7; // 7 days — long enough for a session, short enough to self-heal if ever revoked
+
+function mapTeamMember(row, avatarUrl) {
+  return {
+    id: row.id,
+    authUserId: row.auth_user_id,
+    email: row.email,
+    name: row.name,
+    phoneNumber: row.phone_number,
+    avatarPath: row.avatar_url,
+    avatarUrl: avatarUrl ?? null,
+    roleTitle: row.role_title,
+    accessLevel: row.access_level,
+    isAdmin: row.is_admin,
+    isOwner: row.is_owner,
+    canSignoffTopics: row.can_signoff_topics,
+    canSignoffResults: row.can_signoff_results,
+    active: row.active,
+    createdAt: row.created_at,
+  };
+}
+
+async function resolveAvatarUrls(paths) {
+  const distinct = [...new Set(paths.filter(Boolean))];
+  if (distinct.length === 0) return {};
+  const { data, error } = await supabase.storage.from('avatars').createSignedUrls(distinct, AVATAR_SIGNED_URL_SECONDS);
+  if (error) throw new Error(`avatar signed URL batch failed: ${error.message}`);
+  const map = {};
+  data.forEach((entry, i) => { if (!entry.error) map[distinct[i]] = entry.signedUrl; });
+  return map;
+}
+
+// The caller's own team_members row — the login gate (App.jsx checks for
+// null = "No access yet", `active: false` = deactivated) and Profile both
+// read through this. Returns null if no row matches this auth identity yet.
+export async function fetchOwnTeamMember(authUserId) {
+  assertConfigured();
+  const { data, error } = await supabase.from('team_members').select('*').eq('auth_user_id', authUserId).maybeSingle();
+  if (error) throw new Error(`team_members query failed: ${error.message}`);
+  if (!data) return null;
+  const urls = await resolveAvatarUrls([data.avatar_url]);
+  return mapTeamMember(data, urls[data.avatar_url]);
+}
+
+// Every team_members row — Settings → Admin & Roles (Tool Owner/Admin only;
+// RLS also allows any full-access read, but the screen itself is nav-gated
+// to Owner/Admin per access-matrix.md's people table).
+export async function listTeamMembers() {
+  assertConfigured();
+  const { data, error } = await supabase.from('team_members').select('*').order('created_at', { ascending: true });
+  if (error) throw new Error(`team_members query failed: ${error.message}`);
+  const urls = await resolveAvatarUrls(data.map((r) => r.avatar_url));
+  return data.map((row) => mapTeamMember(row, urls[row.avatar_url]));
+}
+
+// Own-row only, per access-matrix.md's team_members section (name,
+// phone_number, avatar_url — enforced again server-side by
+// enforce_team_members_protections()).
+export async function updateOwnProfile(id, { name, phoneNumber }) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ name, phone_number: phoneNumber }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+export async function uploadAvatar(authUserId, teamMemberId, file) {
+  assertConfigured();
+  const ext = file.name.split('.').pop();
+  const path = `${authUserId}/avatar.${ext}`;
+  const { error: upError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+  if (upError) throw new Error(`avatar upload failed: ${upError.message}`);
+  const { error: updError } = await supabase.from('team_members').update({ avatar_url: path }).eq('id', teamMemberId);
+  if (updError) throw new Error(`team_members update failed: ${updError.message}`);
+  const urls = await resolveAvatarUrls([path]);
+  return urls[path];
+}
+
+// "+ New team member" (Admin & Roles) — the email must already have a
+// Supabase Auth identity (invited via the dashboard, per CLAUDE.md's Option
+// A); the auth-link trigger fills in auth_user_id the first time that
+// person logs in. Owner/Admin only — matches the INSERT policy.
+export async function createTeamMember({ email, name, roleTitle, accessLevel, canSignoffTopics, canSignoffResults }) {
+  assertConfigured();
+  const { data, error } = await supabase
+    .from('team_members')
+    .insert({
+      email,
+      name,
+      role_title: roleTitle || null,
+      access_level: accessLevel,
+      can_signoff_topics: accessLevel === 'signoff' ? !!canSignoffTopics : false,
+      can_signoff_results: accessLevel === 'signoff' ? !!canSignoffResults : false,
+    })
+    .select('*')
+    .single();
+  if (error) throw new Error(`team_members insert failed: ${error.message}`);
+  return mapTeamMember(data, null);
+}
+
+// Access level, sign-off permissions, role title — any row, Owner/Admin only
+// (enforced again by the trigger).
+export async function updateTeamMemberAccess(id, { roleTitle, accessLevel, canSignoffTopics, canSignoffResults }) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('team_members')
+    .update({
+      role_title: roleTitle || null,
+      access_level: accessLevel,
+      can_signoff_topics: accessLevel === 'signoff' ? !!canSignoffTopics : false,
+      can_signoff_results: accessLevel === 'signoff' ? !!canSignoffResults : false,
+    })
+    .eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+// is_admin — Tool Owner only, never on one's own row (both enforced by the trigger).
+export async function updateTeamMemberAdmin(id, isAdmin) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ is_admin: isAdmin }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
+}
+
+// active — Owner/Admin, never on one's own row (both enforced by the trigger). Deactivate, never delete.
+export async function updateTeamMemberActive(id, active) {
+  assertConfigured();
+  const { error } = await supabase.from('team_members').update({ active }).eq('id', id);
+  if (error) throw new Error(`team_members update failed: ${error.message}`);
 }

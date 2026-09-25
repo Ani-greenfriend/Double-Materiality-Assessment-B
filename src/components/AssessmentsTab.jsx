@@ -37,7 +37,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal }) {
+export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal, readOnly }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +70,9 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   const [activeIros, setActiveIros] = useState([]);
   const [liveSession, setLiveSession] = useState(null);
   const [sessionProgress, setSessionProgress] = useState(null);
+  // Set fresh on every enterLiveSession call, never stale between sessions —
+  // true only when that session was already finished (submitted, frozen).
+  const [liveSessionReadOnly, setLiveSessionReadOnly] = useState(false);
   const [activeParticipantCount, setActiveParticipantCount] = useState(0);
 
   const reloadAssessments = useCallback(() => {
@@ -291,6 +294,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   // Jumps straight to Recipients (survey) or Participants (live session)
   // for an existing assessment, without going through the setup wizard.
   function openRecipientsDirect(assessment) {
+    if (readOnly) return;
     setError('');
     setAssessmentMode(assessment.type);
     setPerspectiveFilter(assessment.perspectiveFilter || 'full');
@@ -316,6 +320,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function enterLiveSession(assessment) {
+    if (readOnly) { setError('Sign-off only cannot run a live session.'); return; }
     setError('');
     try {
       const { liveSession: ls, participants } = await fetchLiveSessionWithParticipants(assessment.id);
@@ -325,16 +330,61 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         setError('Add who participates first — this session has no participants yet.');
         return;
       }
+      const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
+      // A submitted response is frozen for every role (CLAUDE.md Business
+      // Rules) — the RLS policy already refuses any further write to it.
+      // Rather than refusing to open it at all, open the Questionnaire in
+      // its read-only review mode, landing on the results summary: browse
+      // any topic, but nothing here can attempt the write RLS would refuse.
+      const alreadySubmitted = progress.status === 'submitted';
+      setLiveSessionReadOnly(alreadySubmitted);
       const { iros } = await fetchDashboard(assessment.id);
       setActiveIros(iros);
       setActiveAssessment(assessment);
       setLiveSession({ ...ls, participants: active });
-      const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
       setSessionProgress(progress);
-      setFlowStep(progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
+      setFlowStep(alreadySubmitted || progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  // "Go to the external expert survey" — Tool A has no generic, non-personal
+  // entry point (every link is one invitee's own), so this opens the first
+  // invitation's real personal link in a new tab, exactly what "Copy
+  // personal link" on Recipients would give you, just one click instead of
+  // two. Same no-invitations fallback shape as enterLiveSession's own
+  // no-participants guard, for the same reason: nowhere to go yet.
+  async function openExternalSurvey(assessment) {
+    if (readOnly) { setError('Sign-off only cannot open the survey.'); return; }
+    setError('');
+    // Open the tab synchronously, in the same tick as the click, and
+    // navigate it once the link is known — a window.open() called after an
+    // await (fetchInvitations below) loses the click's "user activation" in
+    // most browsers and gets silently eaten by the popup blocker, which is
+    // exactly why this looked like nothing happened at all. Can't pass
+    // noopener/noreferrer here since navigating the tab afterward needs a
+    // live reference to it; Tool A is our own trusted site, so that's fine.
+    const tab = window.open('', '_blank');
+    try {
+      const invitations = await fetchInvitations(assessment.id);
+      if (!invitations.length) {
+        tab?.close();
+        openRecipientsDirect(assessment);
+        setError('Add recipients first — no invitations exist yet to open the survey with.');
+        return;
+      }
+      if (tab) tab.location.href = buildPersonalLink(assessment.slug, invitations[0].linkCode);
+      else setError('Your browser blocked the new tab — allow pop-ups for this site, or use Recipients to copy the link instead.');
+    } catch (err) {
+      tab?.close();
+      setError(err.message);
+    }
+  }
+
+  function goDirect(assessment) {
+    if (assessment.type === 'expert_live_session') enterLiveSession(assessment);
+    else openExternalSurvey(assessment);
   }
 
   // The Responses screen's "Invitations"/"Resume session" links jump here
@@ -395,6 +445,10 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function handleQuestionnaireFinish(ratings, relevantIros, sessionNotes, justifications) {
+    // Belt-and-braces alongside Questionnaire.jsx's own button guard — a
+    // second concurrent call here would re-submit an already-submitted
+    // response and hit the RLS policy that freezes it.
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
@@ -415,6 +469,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   // ---- Overview actions ----
 
   async function handleEdit(a) {
+    if (readOnly) return;
     setError('');
     try {
       // Re-editing setup reads the assessment's own already-created iros
@@ -438,7 +493,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function handleDelete(a) {
-    if (!window.confirm(`Delete "${a.name}"? This only succeeds if it has no responses at all.`)) return;
+    if (readOnly) return;
+    if (!window.confirm(`Delete "${a.name}"? Any draft responses, their ratings and justifications, and any paused live-session data go with it. This is refused if the assessment has any submitted response, to keep the audit trail.`)) return;
     try {
       await deleteAssessment(a.id);
       reloadAssessments();
@@ -477,6 +533,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           onViewResults={(a) => onViewResults?.(assessments.find((x) => x.id === a.id))}
           onDelete={(a) => handleDelete(a)}
           onRecipients={(a) => openRecipientsDirect(assessments.find((x) => x.id === a.id))}
+          onGoDirect={(a) => goDirect(assessments.find((x) => x.id === a.id))}
+          readOnly={readOnly}
         />
       )}
 
@@ -560,6 +618,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           topicOverrides={{}}
           onSaveAndExit={handleReviewHubSaveAndExit}
           onDiscardAndExit={() => setFlowStep('overview')}
+          onGoDirect={() => goDirect(activeAssessment)}
+          readOnly={readOnly}
         />
       )}
 
@@ -587,6 +647,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           justificationMode={activeAssessment.justificationMode || justificationMode}
           initialJustifications={sessionProgress.justifications}
           participants={(liveSession?.participants || []).map((p) => ({ name: p.name }))}
+          readOnly={liveSessionReadOnly}
+          startFinished={liveSessionReadOnly}
         />
       )}
 

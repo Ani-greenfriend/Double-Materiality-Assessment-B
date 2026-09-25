@@ -1,18 +1,24 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabaseConfigError } from './lib/supabaseClient';
 import {
-  getSession, onAuthStateChange, signOut, fetchAssessments, fetchDashboard, fetchStakeholderMaster,
-  fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot, fetchClients,
+  getSession, onAuthStateChange, fetchAssessments, fetchDashboard, fetchStakeholderMaster,
+  fetchCycles, fetchCycleIros, fetchTopicLibraryForSnapshot, fetchClients, fetchOwnTeamMember,
 } from './lib/data';
 import Login from './components/Login';
+import NoAccessScreen from './components/NoAccessScreen';
 import ApusLogo from './components/ApusLogo';
 import Dashboard from './components/Dashboard';
+import GlobalHeader from './components/GlobalHeader';
 import StakeholdersTab from './components/StakeholdersTab';
 import TopicsTab from './components/TopicsTab';
 import AssessmentsTab from './components/AssessmentsTab';
 import ResponsesTab from './components/ResponsesTab';
 import CalibrateResultsTab from './components/CalibrateResultsTab';
 import ReportTab from './components/ReportTab';
+import AdminRolesTab from './components/AdminRolesTab';
+import ProfileTab from './components/ProfileTab';
+import SettingsMenu from './components/SettingsMenu';
+import LockedScreen from './components/LockedScreen';
 import { DashboardIcon, StakeholderIcon, TopicsIcon, AssessmentIcon, ResponsesIcon, CalibrationIcon, ReportIcon, CollapseIcon } from './components/icons';
 
 // Nav item set and order per product-spec.md Section 8 "App shell and
@@ -31,8 +37,19 @@ const TABS = [
   { key: 'report', label: 'Report', Icon: ReportIcon },
 ];
 
+// access-matrix.md's people table: Sign-off only's screens are exactly
+// Assessments, Responses, Calibrate & Results (all read-only, per Group 2's
+// grant) — Dashboard, Stakeholders, Topics and Report have no table access
+// for this role at all and are refused outright, not just hidden.
+const SIGNOFF_ONLY_LOCKED_TABS = new Set(['dashboard', 'stakeholders', 'topics', 'report']);
+
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+  // Access stage (docs/access-matrix.md): the caller's own team_members row —
+  // undefined = loading, null = no matching row ("No access yet"). Fetched
+  // once session resolves; this is the app's default-deny gate, built
+  // explicitly rather than relied on RLS alone (CLAUDE.md Hard Rule).
+  const [me, setMe] = useState(undefined);
   const [assessments, setAssessments] = useState([]);
   const [assessmentId, setAssessmentId] = useState(null);
   const [iros, setIros] = useState([]);
@@ -104,13 +121,29 @@ export default function App() {
     fetchStakeholderMaster().then(setStakeholderMaster).catch((err) => setLoadError(err.message));
   }, []);
 
-  useEffect(() => {
+  const reloadMe = useCallback(() => {
     if (!session) return;
+    fetchOwnTeamMember(session.user.id).then(setMe).catch((err) => { setMe(null); setLoadError(err.message); });
+  }, [session]);
+
+  useEffect(() => {
+    reloadMe();
+  }, [reloadMe]);
+
+  useEffect(() => {
+    if (!session || !me || !me.active) return;
     reloadAssessments();
     reloadCycles();
     reloadStakeholderMaster();
     fetchClients().then(setClients).catch((err) => setLoadError(err.message));
-  }, [session, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
+  }, [session, me, reloadAssessments, reloadCycles, reloadStakeholderMaster]);
+
+  // Sign-off only never lands on a locked screen, including the default
+  // Dashboard tab on first load — bounce to Assessments, the first screen
+  // this role actually has.
+  useEffect(() => {
+    if (me?.accessLevel === 'signoff' && SIGNOFF_ONLY_LOCKED_TABS.has(tab)) setTab('assessments');
+  }, [me, tab]);
 
   // Financial years that actually have assessments, newest first — the pool
   // the selector (and its default) draws from.
@@ -163,6 +196,15 @@ export default function App() {
   }
   if (!session) return <Login />;
 
+  if (me === undefined) {
+    return <div className="min-h-screen flex items-center justify-center text-[13px] text-text-secondary">Loading…</div>;
+  }
+  if (me === null) return <NoAccessScreen email={session.user.email} />;
+  if (!me.active) return <NoAccessScreen email={session.user.email} deactivated />;
+
+  const isSignOffOnly = me.accessLevel === 'signoff';
+  const visibleTabs = isSignOffOnly ? TABS.filter((t) => !SIGNOFF_ONLY_LOCKED_TABS.has(t.key)) : TABS;
+
   const currentAssessment = assessments.find((a) => a.id === assessmentId) ?? null;
   // Dashboard.jsx (ported verbatim) expects two things the DB doesn't give
   // as-is: (1) `!a.status` meaning "still running" — v2.0's status is always
@@ -179,6 +221,11 @@ export default function App() {
     impact: currentAssessment?.cycle?.impactThreshold ?? 3.0,
     financial: currentAssessment?.cycle?.financialThreshold ?? 3.0,
   };
+
+  // Every assessment across every financial year, not just the one
+  // Dashboard is scoped to — GlobalHeader's "closing soon" notification
+  // needs the whole picture, not one cycle's slice of it.
+  const allAssessmentsForHeader = cycles.flatMap((c) => c.assessments.map((a) => ({ id: a.id, name: a.name, endDate: a.endDate })));
 
   // Section 8, App shell: the two assessment cards open Assessments filtered
   // by perspective; Calibration opens Calibrate & Results on the Calibrate
@@ -230,15 +277,16 @@ export default function App() {
           )}
         </button>
 
-        {!collapsed && (
-          <div className="px-4 pb-4 mb-2 border-b border-border-apus">
-            <p className="text-[10.5px] text-text-secondary truncate mb-1.5">{session.user.email}</p>
-            <button onClick={signOut} className="text-[11.5px] text-text-secondary hover:text-text-primary">Sign out</button>
-          </div>
-        )}
+        <SettingsMenu
+          me={me}
+          collapsed={collapsed}
+          tab={tab}
+          onOpenProfile={() => setTab('profile')}
+          onOpenAdminRoles={() => setTab('admin-roles')}
+        />
 
         <nav className="flex flex-col gap-1 px-2 flex-1">
-          {TABS.map(({ key, label, Icon }) => (
+          {visibleTabs.map(({ key, label, Icon }) => (
             <button
               key={key}
               onClick={() => { setTab(key); if (key === 'stakeholders') setOpenGroupId(null); if (key === 'assessments') setAssessmentsResetSignal((n) => n + 1); }}
@@ -259,9 +307,13 @@ export default function App() {
 
       <main className="flex-1 px-10 py-8 overflow-x-auto">
         <div className="max-w-6xl mx-auto">
+          {tab !== 'assessments' && (
+            <GlobalHeader me={me} assessments={allAssessmentsForHeader} onOpenProfile={() => setTab('profile')} onOpenAdminRoles={() => setTab('admin-roles')} />
+          )}
           {loadError && <p className="text-[12px] text-badge-amber mb-4">{loadError}</p>}
 
-          {tab === 'dashboard' && (
+          {tab === 'dashboard' && isSignOffOnly && <LockedScreen title="Dashboard" />}
+          {tab === 'dashboard' && !isSignOffOnly && (
             <div>
               {financialYearsWithAssessments.length > 1 && (
                 <div className="flex justify-end mb-3">
@@ -285,16 +337,16 @@ export default function App() {
               />
             </div>
           )}
-          {tab === 'stakeholders' && (
+          {tab === 'stakeholders' && (isSignOffOnly ? <LockedScreen title="Stakeholders" /> : (
             <StakeholdersTab
               openGroupId={openGroupId} setOpenGroupId={setOpenGroupId}
               onGoNext={() => setTab('topics')}
               onChanged={reloadStakeholderMaster}
             />
-          )}
-          {tab === 'topics' && (
+          ))}
+          {tab === 'topics' && (isSignOffOnly ? <LockedScreen title="Topics" /> : (
             <TopicsTab clients={clients} currentUserEmail={session.user.email} onGoNext={() => setTab('assessments')} />
-          )}
+          ))}
           {tab === 'assessments' && (
             <AssessmentsTab
               perspective={assessmentsPerspective}
@@ -305,6 +357,7 @@ export default function App() {
               deepLink={assessmentsDeepLink}
               onDeepLinkHandled={() => setAssessmentsDeepLink(null)}
               resetSignal={assessmentsResetSignal}
+              readOnly={isSignOffOnly}
             />
           )}
           {tab === 'responses' && (
@@ -314,9 +367,12 @@ export default function App() {
               onResumeSession={(a) => { setAssessmentsDeepLink({ assessmentId: a.id, action: 'kickoff' }); setTab('assessments'); }}
               onOpenCalibrate={() => { setCrInitialSub('calibrate'); setTab('calibrate-results'); }}
               onChanged={reloadCyclesAndAssessments}
+              readOnly={isSignOffOnly}
             />
           )}
-          {tab === 'report' && <ReportTab cycles={cycles} />}
+          {tab === 'report' && (isSignOffOnly ? <LockedScreen title="Report" /> : <ReportTab cycles={cycles} />)}
+          {tab === 'admin-roles' && <AdminRolesTab me={me} onChanged={reloadMe} />}
+          {tab === 'profile' && <ProfileTab me={me} onChanged={reloadMe} />}
           {tab === 'calibrate-results' && (
             <div>
               {assessments.length > 0 && (
@@ -344,6 +400,7 @@ export default function App() {
                   userId={session.user.id}
                   onChanged={() => { reload(); reloadCyclesAndAssessments(); }}
                   initialSub={crInitialSub}
+                  readOnly={isSignOffOnly}
                 />
               )}
             </div>

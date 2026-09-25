@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { aggregateIro, hasImpactAxis } from '../lib/calc';
+import { aggregateIro, hasImpactAxis, assessmentSeverity, assessmentImpactScore, assessmentFinancialScore } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR, MATERIAL_BADGE, pillarFor } from '../lib/topics';
 import { ResponsesIcon } from './icons';
 import DmaMascot from './DmaMascot';
@@ -27,7 +27,13 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function Bar({ value, threshold, color }) {
+// `calibrated` only ever applies to the COMBINED column — SURVEY/SESSION
+// are always the raw per-source average, never overridden. Without this,
+// COMBINED can show a number that matches neither SURVEY nor SESSION (a
+// moderator's calibrated_value overrides the computed score entirely — see
+// calc.js effectiveValue()) with nothing on screen explaining why, which
+// reads as a calculation bug rather than the deliberate override it is.
+function Bar({ value, threshold, color, calibrated }) {
   if (value === null) return <p className="text-[11px] text-text-secondary">–</p>;
   return (
     <div className="flex items-center gap-1.5">
@@ -36,6 +42,13 @@ function Bar({ value, threshold, color }) {
         <div className="h-full rounded" style={{ width: `${(value / 5) * 100}%`, background: color }} />
       </div>
       <span className="text-[11px] font-semibold w-8 text-right">{value.toFixed(1)}</span>
+      {calibrated && (
+        <span
+          className="text-[8px] font-bold uppercase tracking-wide rounded px-1 py-0.5 shrink-0"
+          style={{ background: '#2A2830', color: '#8B8B98' }}
+          title="Calibrated value — a moderator set this manually in Calibrate & Results, overriding the score the raw ratings alone would compute."
+        >Cal</span>
+      )}
     </div>
   );
 }
@@ -100,13 +113,16 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
 
   const agg = aggregateIro(iro, thresholds);
   const score = agg.effectiveValue;
+  const calibrated = iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined;
   const flagLabel = agg.isMaterial ? 'Material' : agg.discrepancy ? `Sources differ` : score === null ? 'Needs survey input' : 'Below threshold';
   const flagExplain = agg.sourceGap
     ? `The survey and live session averages differ by ${Math.abs((agg.surveyAvg ?? 0) - (agg.sessionAvg ?? 0)).toFixed(1)} — worth a closer look before relying on the combined score.`
     : agg.discrepancy
     ? 'Individual assessors diverged by 1.5 or more on an axis.'
+    : calibrated
+    ? `Combined is a calibrated value (${score.toFixed(1)}) — a moderator set it manually in Calibrate & Results, overriding what Survey/Session alone would compute.`
     : agg.isMaterial
-    ? 'This IRO clears its threshold using the calibrated value where one exists, otherwise the calculated one.'
+    ? 'This IRO clears its threshold using the calculated score.'
     : score === null
     ? 'No expert survey responses have come in yet for this topic.'
     : 'Below the materiality threshold on its axis.';
@@ -144,7 +160,7 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
         </div>
         <div className="bg-surface-2 rounded-lg p-2 text-center">
           <p className="text-[13px] font-bold" style={{ color: '#4C6FFF' }}>{score !== null ? score.toFixed(1) : '–'}</p>
-          <p className="text-[9px] text-text-secondary">COMBINED</p>
+          <p className="text-[9px] text-text-secondary">COMBINED{calibrated ? ' (CAL)' : ''}</p>
         </div>
       </div>
 
@@ -154,6 +170,78 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
       </div>
 
       <button onClick={() => onOpenCalibrate(iro)} className="text-[11.5px] font-semibold text-badge-blue mb-3">Open in Calibrate →</button>
+
+      {/* RATINGS BREAKDOWN — every assessor's own rating, side by side. The
+          comment cards below are optional per-criterion justifications (see
+          justification_mode) and don't cover every rated criterion, let
+          alone every assessor — this is the full underlying data instead,
+          one row per submission, straight from iro.assessments (the same
+          shape aggregateIro reduces down to a single Severity/Score). */}
+      {iro.assessments.length > 0 && (
+        <div className="mb-4">
+          <p className="text-[11px] font-semibold text-text-secondary mb-2">RATINGS BREAKDOWN</p>
+          <div className="overflow-x-auto rounded-lg border border-border-apus">
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="text-[9.5px] uppercase tracking-wide text-text-secondary text-left bg-surface-2">
+                  <th className="py-1.5 pl-2 pr-2 font-semibold">Source</th>
+                  <th className="py-1.5 pr-2 font-semibold">Group</th>
+                  {hasImpactAxis(iro.iroType) ? (
+                    <>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Scale</th>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Scope</th>
+                      {iro.iroType === 'neg_impact' && <th className="py-1.5 pr-2 font-semibold text-right">Irrev.</th>}
+                      {!(iro.actual || iro.potentialHumanRightsImpact) && <th className="py-1.5 pr-2 font-semibold text-right">Likelihood</th>}
+                      <th className="py-1.5 pr-2 font-semibold text-right">Severity</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Magnitude</th>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Likelihood</th>
+                    </>
+                  )}
+                  <th className="py-1.5 pr-2 font-semibold text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {iro.assessments.map((a, idx) => {
+                  const severity = hasImpactAxis(iro.iroType) ? assessmentSeverity(iro, a) : null;
+                  const rowScore = hasImpactAxis(iro.iroType) ? assessmentImpactScore(iro, a) : assessmentFinancialScore(a);
+                  const overridden = iro.iroType === 'neg_impact' && severity === 5 && [a.scale, a.scope, a.irreversibility].includes(5);
+                  return (
+                    <tr key={idx} className="border-t border-border-apus">
+                      <td className="py-1.5 pl-2 pr-2">
+                        <span className="text-[9.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: a.source === 'expert_survey' ? 'rgba(94,217,150,0.14)' : 'rgba(76,111,255,0.14)', color: a.source === 'expert_survey' ? '#5ED996' : '#4C6FFF' }}>
+                          {a.source === 'expert_survey' ? 'Survey' : 'Session'}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-2 text-text-secondary">{a.stakeholderGroup ?? '–'}</td>
+                      {hasImpactAxis(iro.iroType) ? (
+                        <>
+                          <td className="py-1.5 pr-2 text-right">{a.scale ?? '–'}</td>
+                          <td className="py-1.5 pr-2 text-right">{a.scope ?? '–'}</td>
+                          {iro.iroType === 'neg_impact' && <td className="py-1.5 pr-2 text-right">{a.irreversibility ?? '–'}</td>}
+                          {!(iro.actual || iro.potentialHumanRightsImpact) && <td className="py-1.5 pr-2 text-right">{a.likelihood ?? '–'}</td>}
+                          <td className="py-1.5 pr-2 text-right font-semibold">
+                            {severity !== null ? severity.toFixed(1) : '–'}
+                            {overridden && <span title="Precautionary override — a criterion was rated 5" style={{ color: '#D79A4C' }}> !</span>}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-1.5 pr-2 text-right">{a.magnitude ?? '–'}</td>
+                          <td className="py-1.5 pr-2 text-right">{a.likelihood ?? '–'}</td>
+                        </>
+                      )}
+                      <td className="py-1.5 pr-2 text-right font-bold">{rowScore !== null ? rowScore.toFixed(1) : '–'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-2">
         <p className="text-[11px] font-semibold text-text-secondary">COMMENTS AND JUSTIFICATIONS</p>
@@ -173,7 +261,22 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
         <p className="text-[11px] text-text-secondary">No comments or justifications yet.</p>
       ) : (
         <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
-          {filtered.map((c, i) => (
+          {filtered.map((c, i) => {
+            // The rating this justification came from — matched via
+            // invitation_id (survey) or live_session_id (session), the only
+            // fields iro_comments and iro.assessments share — so Severity/
+            // Likelihood (or Magnitude/Likelihood) shown here are the exact
+            // values behind THIS comment, not a topic-wide average.
+            const matched = iro.assessments.find((a) =>
+              (c.invitation_id && a.invitationId === c.invitation_id) ||
+              (c.live_session_id && a.liveSessionId === c.live_session_id)
+            );
+            const ratingDetail = matched
+              ? hasImpactAxis(iro.iroType)
+                ? `Severity ${assessmentSeverity(iro, matched)?.toFixed(1) ?? '–'}${iro.actual || iro.potentialHumanRightsImpact ? '' : ` · Likelihood ${matched.likelihood ?? '–'}`}`
+                : `Magnitude ${matched.magnitude ?? '–'} · Likelihood ${matched.likelihood ?? '–'}`
+              : null;
+            return (
             <div key={i} className="bg-surface-2 rounded-lg px-3 py-2.5">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-[9.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: c.source === 'expert_survey' ? 'rgba(94,217,150,0.14)' : 'rgba(76,111,255,0.14)', color: c.source === 'expert_survey' ? '#5ED996' : '#4C6FFF' }}>{TYPE_LABEL[c.source] ?? c.source}</span>
@@ -181,6 +284,7 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
                 {c.criterion_key && <span className="text-[10.5px] text-text-secondary">· {c.criterion_key} = {c.value}</span>}
                 <span className="text-[9.5px] text-text-secondary ml-auto">{c.commented_at ? new Date(c.commented_at).toLocaleDateString() : ''}</span>
               </div>
+              {ratingDetail && <p className="text-[10px] font-semibold mb-1" style={{ color: '#8B8B98' }}>{ratingDetail}</p>}
               <p className="text-[11.5px] text-text-secondary mb-1">{c.comment}</p>
               {c.invitation_id && (
                 revealed[c.invitation_id] ? (
@@ -190,7 +294,8 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
                 )
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -204,8 +309,15 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
 // breakdown (calc.js's aggregateIro: surveyAvg/sessionAvg/sourceBasis/
 // sourceGap already existed, built for Calibrate's detail panel — reused
 // here rather than duplicated).
-export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSession, onOpenCalibrate, onChanged }) {
-  const financialYears = [...new Set(cycles.map((c) => c.financialYear))].sort((a, b) => b - a);
+export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSession, onOpenCalibrate, onChanged, readOnly }) {
+  // Years with at least one assessment only — same convention as Dashboard's
+  // own financial-year selector (App.jsx's financialYearsWithAssessments).
+  // Without this filter, an empty cycle-year (e.g. a stray financial year
+  // that was picked once in the wizard but never used) could sort ahead of
+  // every real one and become the default — the screen would then open on
+  // a genuinely empty year and look broken, even with real, filled-in
+  // responses sitting under a different year.
+  const financialYears = [...new Set(cycles.filter((c) => c.assessments.length > 0).map((c) => c.financialYear))].sort((a, b) => b - a);
   const [financialYear, setFinancialYear] = useState(financialYears[0] ?? null);
   const [data, setData] = useState({ assessments: [], progress: [], groupEngagement: [], iros: [] });
   const [loading, setLoading] = useState(true);
@@ -274,7 +386,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
   const openIro = data.iros.find((i) => i.id === openIroId) ?? null;
 
   async function handleDeleteDrafts() {
-    if (!surveyAssessment) return;
+    if (readOnly || !surveyAssessment) return;
     if (!window.confirm('Delete every unfinished draft for this survey? Submitted responses are never affected. This cannot be undone.')) return;
     try {
       await purgeUnfinishedDrafts(surveyAssessment.id);
@@ -287,11 +399,12 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
 
   function downloadIroTable() {
     downloadCsv('responses-iro-table.csv', [
-      ['ESRS Topic', 'IRO', 'Type', 'Survey score', 'Session score', 'Combined score', 'Basis', 'Ratings', 'Flag'],
+      ['ESRS Topic', 'IRO', 'Type', 'Survey score', 'Session score', 'Combined score', 'Calibrated', 'Basis', 'Ratings', 'Flag'],
       ...filteredIros.map((iro) => {
         const agg = aggregateIro(iro, thresholds);
         const flag = agg.isMaterial ? 'Material' : agg.sourceGap ? `Sources differ by ${Math.abs((agg.surveyAvg ?? 0) - (agg.sessionAvg ?? 0)).toFixed(1)}` : agg.effectiveValue === null ? 'Needs survey input' : 'Below threshold';
-        return [iro.topic, iro.name, TYPE_LABEL[iro.iroType], agg.surveyAvg?.toFixed(1) ?? '', agg.sessionAvg?.toFixed(1) ?? '', agg.effectiveValue?.toFixed(1) ?? '', agg.sourceBasis, agg.n, flag];
+        const calibrated = iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined;
+        return [iro.topic, iro.name, TYPE_LABEL[iro.iroType], agg.surveyAvg?.toFixed(1) ?? '', agg.sessionAvg?.toFixed(1) ?? '', agg.effectiveValue?.toFixed(1) ?? '', calibrated ? 'Yes' : 'No', agg.sourceBasis, agg.n, flag];
       }),
     ]);
   }
@@ -350,9 +463,9 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
               rateValue={surveySubmitted + surveyDrafts}
               rateTotal={surveyInvited}
               stats={[['Invited', surveyInvited], ['Opened', surveyOpened], ['Saved draft', surveyDrafts], ['Submitted', surveySubmitted]]}
-              onLink={surveyAssessment ? () => onOpenInvitations(surveyAssessment) : null}
+              onLink={surveyAssessment && !readOnly ? () => onOpenInvitations(surveyAssessment) : null}
               linkLabel="Invitations"
-              showDeleteDrafts={!!surveyAssessment}
+              showDeleteDrafts={!!surveyAssessment && !readOnly}
               canDeleteDrafts={surveyCanDeleteDrafts}
               onDeleteDrafts={handleDeleteDrafts}
             />
@@ -372,7 +485,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
               extra={liveProgress && (
                 <p className="text-[10.5px] text-text-secondary mb-3">Session progress: {liveProgress.topics_rated_count} of {liveProgress.total_topics} topics rated</p>
               )}
-              onLink={liveAssessment ? () => onResumeSession(liveAssessment) : null}
+              onLink={liveAssessment && !readOnly ? () => onResumeSession(liveAssessment) : null}
               linkLabel="Resume session"
             />
           </div>
@@ -434,7 +547,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
                               <td className="px-4 py-2.5 text-[12px] font-medium">{iro.name}<br /><span className="text-[10px] text-text-secondary">{TYPE_LABEL[iro.iroType]}</span></td>
                               <td className="py-2.5 pr-2"><Bar value={agg.surveyAvg} threshold={threshold} color={color} /></td>
                               <td className="py-2.5 pr-2"><Bar value={agg.sessionAvg} threshold={threshold} color={color} /></td>
-                              <td className="py-2.5 pr-2"><Bar value={agg.effectiveValue} threshold={threshold} color={color} /></td>
+                              <td className="py-2.5 pr-2"><Bar value={agg.effectiveValue} threshold={threshold} color={color} calibrated={iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined} /></td>
                               <td className="py-2.5 pr-4">
                                 <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ color: agg.isMaterial ? MATERIAL_BADGE.text : '#8B8B98', background: agg.isMaterial ? MATERIAL_BADGE.bg : 'rgba(139,139,152,0.1)' }}>{flag}</span>
                               </td>
