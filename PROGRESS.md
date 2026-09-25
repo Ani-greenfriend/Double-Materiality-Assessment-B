@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 52 ("Copy personal link" was silently failing — a swallowed clipboard-write error with zero feedback either way; fixed with real success/fallback UI, plus a new invitations CSV export for mail merge, gated to roles that can read invitations).
+**Last updated:** 2026-09-25 — session 2, part 53 (Profile screen: removed Phone number, added a top ROLE/EMAIL/ADMIN summary block per direct instruction).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,28 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 53 (2026-09-25) — Profile screen: dropped Phone number, added a top ROLE/EMAIL/ADMIN summary block.**
+
+Builder, direct instruction: "remove phone number section but add role on
+the top (the one that was given), email address that is provided and if
+he/she is an admin or not."
+
+`ProfileTab.jsx`: removed the `phone`/`PHONE NUMBER` field from both the
+editing form and the read view, and the `phone` state entirely — `Save`
+now calls `updateOwnProfile(me.id, { name })` (no `phoneNumber` key sent
+at all, not even `undefined` — `data.js`'s `updateOwnProfile` is untouched
+and still generically accepts one if ever needed elsewhere). Added a new
+summary card at the very top of the page, above the avatar/name card: a
+3-column ROLE / EMAIL / ADMIN row — `me.roleTitle` ("the one that was
+given," set by an Admin in Admin & Roles, unchanged data source), `me.email`,
+and `me.isAdmin ? 'Yes' : 'No'`. Removed the old EMAIL and ROLE fields from
+the lower card (now redundant with the new top block) — MEMBER SINCE and
+the ACCESS LEVEL description stay there, unchanged.
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS change — `phone_number`
+stays a real column (not dropped), just no longer editable from this
+screen; `roleTitle`/`isAdmin` were already returned by `fetchOwnTeamMember`.
+
 **Part 52 (2026-09-25) — "Copy personal link" was silently failing (a swallowed `.catch`, zero feedback either way); fixed it with real success/fallback UI, and added a per-assessment invitations CSV export for mail merge.**
 
 Builder, two direct instructions:
