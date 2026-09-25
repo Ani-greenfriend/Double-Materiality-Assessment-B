@@ -27,7 +27,13 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function Bar({ value, threshold, color }) {
+// `calibrated` only ever applies to the COMBINED column — SURVEY/SESSION
+// are always the raw per-source average, never overridden. Without this,
+// COMBINED can show a number that matches neither SURVEY nor SESSION (a
+// moderator's calibrated_value overrides the computed score entirely — see
+// calc.js effectiveValue()) with nothing on screen explaining why, which
+// reads as a calculation bug rather than the deliberate override it is.
+function Bar({ value, threshold, color, calibrated }) {
   if (value === null) return <p className="text-[11px] text-text-secondary">–</p>;
   return (
     <div className="flex items-center gap-1.5">
@@ -36,6 +42,13 @@ function Bar({ value, threshold, color }) {
         <div className="h-full rounded" style={{ width: `${(value / 5) * 100}%`, background: color }} />
       </div>
       <span className="text-[11px] font-semibold w-8 text-right">{value.toFixed(1)}</span>
+      {calibrated && (
+        <span
+          className="text-[8px] font-bold uppercase tracking-wide rounded px-1 py-0.5 shrink-0"
+          style={{ background: '#2A2830', color: '#8B8B98' }}
+          title="Calibrated value — a moderator set this manually in Calibrate & Results, overriding the score the raw ratings alone would compute."
+        >Cal</span>
+      )}
     </div>
   );
 }
@@ -100,13 +113,16 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
 
   const agg = aggregateIro(iro, thresholds);
   const score = agg.effectiveValue;
+  const calibrated = iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined;
   const flagLabel = agg.isMaterial ? 'Material' : agg.discrepancy ? `Sources differ` : score === null ? 'Needs survey input' : 'Below threshold';
   const flagExplain = agg.sourceGap
     ? `The survey and live session averages differ by ${Math.abs((agg.surveyAvg ?? 0) - (agg.sessionAvg ?? 0)).toFixed(1)} — worth a closer look before relying on the combined score.`
     : agg.discrepancy
     ? 'Individual assessors diverged by 1.5 or more on an axis.'
+    : calibrated
+    ? `Combined is a calibrated value (${score.toFixed(1)}) — a moderator set it manually in Calibrate & Results, overriding what Survey/Session alone would compute.`
     : agg.isMaterial
-    ? 'This IRO clears its threshold using the calibrated value where one exists, otherwise the calculated one.'
+    ? 'This IRO clears its threshold using the calculated score.'
     : score === null
     ? 'No expert survey responses have come in yet for this topic.'
     : 'Below the materiality threshold on its axis.';
@@ -144,7 +160,7 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
         </div>
         <div className="bg-surface-2 rounded-lg p-2 text-center">
           <p className="text-[13px] font-bold" style={{ color: '#4C6FFF' }}>{score !== null ? score.toFixed(1) : '–'}</p>
-          <p className="text-[9px] text-text-secondary">COMBINED</p>
+          <p className="text-[9px] text-text-secondary">COMBINED{calibrated ? ' (CAL)' : ''}</p>
         </div>
       </div>
 
@@ -294,11 +310,12 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
 
   function downloadIroTable() {
     downloadCsv('responses-iro-table.csv', [
-      ['ESRS Topic', 'IRO', 'Type', 'Survey score', 'Session score', 'Combined score', 'Basis', 'Ratings', 'Flag'],
+      ['ESRS Topic', 'IRO', 'Type', 'Survey score', 'Session score', 'Combined score', 'Calibrated', 'Basis', 'Ratings', 'Flag'],
       ...filteredIros.map((iro) => {
         const agg = aggregateIro(iro, thresholds);
         const flag = agg.isMaterial ? 'Material' : agg.sourceGap ? `Sources differ by ${Math.abs((agg.surveyAvg ?? 0) - (agg.sessionAvg ?? 0)).toFixed(1)}` : agg.effectiveValue === null ? 'Needs survey input' : 'Below threshold';
-        return [iro.topic, iro.name, TYPE_LABEL[iro.iroType], agg.surveyAvg?.toFixed(1) ?? '', agg.sessionAvg?.toFixed(1) ?? '', agg.effectiveValue?.toFixed(1) ?? '', agg.sourceBasis, agg.n, flag];
+        const calibrated = iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined;
+        return [iro.topic, iro.name, TYPE_LABEL[iro.iroType], agg.surveyAvg?.toFixed(1) ?? '', agg.sessionAvg?.toFixed(1) ?? '', agg.effectiveValue?.toFixed(1) ?? '', calibrated ? 'Yes' : 'No', agg.sourceBasis, agg.n, flag];
       }),
     ]);
   }
@@ -441,7 +458,7 @@ export default function ResponsesTab({ cycles, onOpenInvitations, onResumeSessio
                               <td className="px-4 py-2.5 text-[12px] font-medium">{iro.name}<br /><span className="text-[10px] text-text-secondary">{TYPE_LABEL[iro.iroType]}</span></td>
                               <td className="py-2.5 pr-2"><Bar value={agg.surveyAvg} threshold={threshold} color={color} /></td>
                               <td className="py-2.5 pr-2"><Bar value={agg.sessionAvg} threshold={threshold} color={color} /></td>
-                              <td className="py-2.5 pr-2"><Bar value={agg.effectiveValue} threshold={threshold} color={color} /></td>
+                              <td className="py-2.5 pr-2"><Bar value={agg.effectiveValue} threshold={threshold} color={color} calibrated={iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined} /></td>
                               <td className="py-2.5 pr-4">
                                 <span className="text-[9.5px] font-semibold rounded-full px-2 py-0.5" style={{ color: agg.isMaterial ? MATERIAL_BADGE.text : '#8B8B98', background: agg.isMaterial ? MATERIAL_BADGE.bg : 'rgba(139,139,152,0.1)' }}>{flag}</span>
                               </td>

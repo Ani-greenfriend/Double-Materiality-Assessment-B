@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 48 (Heatmap dot position rebuilt from a precise 6-point builder spec: position now derives from the exact same effective score as the bar chart, so a dot's on/off-curve status can no longer disagree with the bar chart's Material label; also fixed a real grid/tick misalignment, an inverted heat gradient, and a colour collision between the Social pillar and the "Material" ring — both were literally #D79A4C).
+**Last updated:** 2026-09-25 — session 2, part 49 (Responses screen's COMBINED figure can legitimately be a calibrated override that matches neither SURVEY nor SESSION — added a "Cal" indicator to the list, detail panel and CSV export so that reads as intentional, not a calculation bug).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,38 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 49 (2026-09-25) — Responses screen's COMBINED column can legitimately differ from both SURVEY and SESSION (a calibrated override), with nothing on screen saying so — added a "Cal" indicator wherever it can happen.**
+
+Builder, from a screenshot of Responses: "this is not accurate: SCOPe1 2.3
+and not expert survey and combined is 3.5?!" — a Full Expert Survey IRO
+showing SURVEY 2.3, SESSION –, but COMBINED 3.5. Checked the live row
+directly (`iros.id` `...531`, "Scope 1 Process Emissions," Full Expert
+Survey assessment): it has a `calibrations` row with `calibrated_value =
+3.5` and a note ("split the difference between the survey outlier and the
+wider assessor spread..."), seeded back in Part 30 as a deliberate
+calibration example. Not a bug — `calc.js`'s `effectiveValue()` already
+does exactly what it's supposed to: "the calibrated value where one
+exists, otherwise the calculated one" (a moderator's manual override
+always wins over survey/session, by design). But the screen gave no visual
+hint that COMBINED had stopped being a plain combination of SURVEY/SESSION
+for this row, so it read exactly like a calculation error.
+
+**Fix**, `ResponsesTab.jsx`: `Bar` (the IRO-list SURVEY/SESSION/COMBINED
+cells) takes a new `calibrated` prop, passed only on the COMBINED cell —
+renders a small "Cal" tag next to the number with a title tooltip
+explaining it's a manual override. `DetailPanel` (the click-through
+right-side panel) labels the COMBINED tile "COMBINED (CAL)" when
+calibrated, and its flag-explanation text now says so explicitly instead
+of folding it into the generic Material-threshold copy. CSV export
+(`responses-iro-table.csv`) gained a `Calibrated` column. Same
+`iro.calibration?.calibrated_value != null` check used for the Results
+heatmap's hollow-dot rendering in Part 48 — one existing signal, now
+surfaced everywhere it can cause this exact confusion, not a new concept.
+
+`npm run build`/`npx oxlint src` clean, no new warnings. No schema/RLS
+change — pure frontend, reads a field (`iro.calibration.calibrated_value`)
+`fetchDashboard` already returns.
+
 **Part 48 (2026-09-25) — Heatmap dot position was independently averaged from the bar chart's score, so they could genuinely disagree; rebuilt the heatmap's point math, curve, colours, and per-dot signals from a precise 6-point builder spec.**
 
 Builder gave an exact spec rather than a screenshot this time, after
