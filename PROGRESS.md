@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 46 (Heatmap threshold zone was a square, not the real curved material boundary — fixed on both the live Results screen and the PDF report; added a topic-level summary table above the per-IRO bar chart, builder-confirmed as additive not a replacement; reported a Netlify deploy-preview failure on PR #6 that's still unresolved).
+**Last updated:** 2026-09-25 — session 2, part 47 (Topic summary table regrouped from ESRS topic to subtopic per the builder's follow-up — reads topic_library.esrs_subtopic through the existing topic_library_id FK, no schema change).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,43 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 47 (2026-09-25) — Topic summary table regrouped from ESRS topic to subtopic, reading `topic_library.esrs_subtopic` through the existing `topic_library_id` FK — no schema change.**
+
+Builder, replying directly to a screenshot of Part 46's new topic-level
+table (5 rows — E1, E2, E5, S1, G1): "please on subtopic level." `iros`
+itself has no subtopic column (`subtopic_raw` was explicitly retired —
+see supabase-setup.md's iros section — and never repurposed), so a
+schema change looked likely at first. Checked the live data before
+assuming one was needed: `snapshotTopicsIntoIros` (data.js) already sets
+`topic_library_id` on every IRO created the normal way, and every
+`topic_library` row already carries a real `esrs_subtopic` (confirmed via
+direct query — e.g. "E1-6 Gross Scopes 1, 2, 3 and Total GHG emissions",
+plus some custom non-ESRS-numbered ones like "Supplier engagement" —
+`topic_library` allows free text there). So the subtopic text was already
+one join away through an existing, already-populated nullable FK — no
+migration needed.
+
+**Fix**: `fetchDashboard` (data.js) now selects `topic_library_id` and an
+embedded `topic_library ( esrs_subtopic )`, and maps it onto each IRO as
+`subtopic` (null if the FK is unset — none currently, but it's nullable by
+design). ResultsScreen.jsx's topic-summary table now groups by
+`iro.subtopic || iro.name` (name as a per-IRO fallback for the
+theoretical no-subtopic case) instead of `iro.topic` (the ESRS category),
+sorted by ESRS topic order then subtopic name, with the parent ESRS topic
+id shown as a small tag next to each subtopic label for context. Same
+OR-rule/max-score logic as before (a subtopic can still hold both an
+impact-type and a financial-type IRO — confirmed live, e.g. "E1-9
+Anticipated financial effects..." holds both a `risk` and an
+`opportunity` IRO on the Financial Live Session assessment — that's
+still the only way a row carries both scores), just computed inline in
+ResultsScreen.jsx against the already-built `aggByIroId` map instead of
+calling calc.js's `aggregateTopic()` (kept untouched — still used as-is,
+at its original ESRS-topic grain, by the PDF report's own Topic Matrix).
+`aggregateTopic` import removed from ResultsScreen.jsx as now-unused.
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS change — read-only
+join through an FK that was already there and already populated.
+
 **Part 46 (2026-09-25) — Heatmap threshold zone was a square, not the real (curved) material boundary; added a topic-level summary table; PDF report's own charts brought in line; Netlify deploy failure reported on PR #6.**
 
 Builder, from a screenshot of the bar chart + both heatmaps (Part 45's fix

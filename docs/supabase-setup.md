@@ -178,6 +178,14 @@ via `cycle_id` → `cycles.client_id` → `clients.logo_url`), `respondents_done
 **Retired columns:** `subtopic_raw`, `impact_threshold`, `financial_threshold`
 (unused — never read by the ported UI, not in the v2.0 field list).
 
+**Part 47 (2026-09-25):** the Results screen's topic-summary table needed
+subtopic text per IRO, and it isn't a column here (see retired
+`subtopic_raw` above) — read instead via an embedded select through
+`topic_library_id` (`topic_library ( esrs_subtopic )`, in `fetchDashboard`,
+src/lib/data.js), which every IRO created through `snapshotTopicsIntoIros`
+already populates. No new column, no migration — null for any IRO whose
+`topic_library_id` is unset (none currently).
+
 ### stakeholder_groups — Changed. Owned by Tool B, the master stakeholder map. This tool reads it (anon, all rows — needed to render the "About you" group picker).
 | Column | Type | Notes |
 |---|---|---|

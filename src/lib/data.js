@@ -628,9 +628,17 @@ export async function removeParticipant({ liveSessionId, participantId, reason, 
 export async function fetchDashboard(assessmentId) {
   assertConfigured();
 
+  // topic_library ( esrs_subtopic ) is an embedded read through the existing
+  // nullable topic_library_id FK, not a schema change — iros itself has no
+  // subtopic column of its own (subtopic_raw was retired, see
+  // supabase-setup.md), but every IRO snapshotted from the topic library
+  // (snapshotTopicsIntoIros) already carries the FK, so the real ESRS/custom
+  // subtopic text is one join away for anything created the normal way. An
+  // IRO with no topic_library_id (none currently, but the FK is nullable)
+  // just comes back with subtopic: null and falls back to its ESRS topic.
   const { data: iroRows, error: iroError } = await supabase
     .from('iros')
-    .select('id, esrs_topic_id, name, description, iro_type, actual, time_horizon, potential_human_rights_impact, session_notes, order')
+    .select('id, esrs_topic_id, name, description, iro_type, actual, time_horizon, potential_human_rights_impact, session_notes, order, topic_library_id, topic_library:topic_library_id ( esrs_subtopic )')
     .eq('assessment_id', assessmentId)
     .order('order', { ascending: true });
   if (iroError) throw new Error(`iros query failed: ${iroError.message}`);
@@ -686,6 +694,7 @@ export async function fetchDashboard(assessmentId) {
     return {
       id: r.id,
       topic: r.esrs_topic_id,
+      subtopic: r.topic_library?.esrs_subtopic || null,
       name: r.name,
       description: r.description,
       iroType: r.iro_type,

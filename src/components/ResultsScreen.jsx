@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aggregateIro, aggregateTopic, hasImpactAxis, assessmentSeverity } from '../lib/calc';
+import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR } from '../lib/topics';
 import { ResultsIcon } from './icons';
 import { updateCycleThresholds } from '../lib/data';
@@ -163,27 +163,39 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
   // check alone would miss.
   const aggByIroId = new Map(scoredIros.map(({ iro, agg }) => [iro.id, agg]));
 
-  // Topic-level roll-up (calc.js's aggregateTopic, already used by the PDF
-  // report's own Topic Matrix and methodology text — "a topic is material if
-  // any one of its underlying IROs meets or exceeds the applicable
-  // threshold") — added back above the per-IRO bar chart per the builder's
-  // direct request, alongside it rather than replacing it. "Topic" here is
-  // the ESRS category (E1-E5/S1-S4/G1) an IRO belongs to, not the IRO's own
-  // name — a topic can have both impact-type and financial-type IROs under
-  // it, which is the only way a single row can carry both an Impact Score
-  // and a Financial Score.
+  // Subtopic-level roll-up — same OR-rule/max-score idea as calc.js's
+  // aggregateTopic() (still used as-is by the PDF report's own Topic Matrix
+  // and methodology text), but grouped one level finer: by each IRO's own
+  // subtopic (topic_library.esrs_subtopic, read via topic_library_id — see
+  // fetchDashboard in data.js) rather than its broad ESRS topic
+  // (E1-E5/S1-S4/G1). Per the builder's direct follow-up request ("please on
+  // subtopic level") after the topic-level table. A subtopic can still have
+  // both impact-type and financial-type IROs under it (that's the only way a
+  // row carries both an Impact Score and a Financial Score) — an IRO with no
+  // linked topic_library row (subtopic null; none currently, but the FK is
+  // nullable) falls back to its own name so it still gets its own row.
   const presentTopicIds = ESRS_TOPICS.filter((t) => iros.some((i) => i.topic === t.id)).map((t) => t.id);
-  const topicSummaries = presentTopicIds.map((id) => {
-    const topicIros = iros.filter((i) => i.topic === id);
-    const hasImpact = topicIros.some((i) => hasImpactAxis(i.iroType) && i.assessments.length);
-    const hasFinancial = topicIros.some((i) => !hasImpactAxis(i.iroType) && i.assessments.length);
-    const ta = aggregateTopic(id, iros, thresholds);
-    const impactScore = hasImpact ? ta.impactScore : null;
-    const financialScore = hasFinancial ? ta.financialScore : null;
-    const overall = impactScore === null && financialScore === null ? null : Math.max(impactScore ?? -Infinity, financialScore ?? -Infinity);
-    const overallAxis = overall === null ? null : (financialScore !== null && financialScore >= (impactScore ?? -Infinity) ? 'Financial' : 'Impact');
-    return { id, meta: ESRS_TOPICS.find((t) => t.id === id), impactScore, financialScore, overall, overallAxis, isMaterial: ta.isMaterial };
-  });
+  const subtopicGroups = new Map();
+  for (const iro of iros) {
+    const key = iro.subtopic || iro.name;
+    if (!subtopicGroups.has(key)) subtopicGroups.set(key, { key, topicId: iro.topic, iros: [] });
+    subtopicGroups.get(key).iros.push(iro);
+  }
+  const avgOf = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+  const topicSummaries = [...subtopicGroups.values()]
+    .sort((a, b) => presentTopicIds.indexOf(a.topicId) - presentTopicIds.indexOf(b.topicId) || a.key.localeCompare(b.key))
+    .map(({ key, topicId, iros: groupIros }) => {
+      const hasImpact = groupIros.some((i) => hasImpactAxis(i.iroType) && i.assessments.length);
+      const hasFinancial = groupIros.some((i) => !hasImpactAxis(i.iroType) && i.assessments.length);
+      const impactVals = groupIros.filter((i) => hasImpactAxis(i.iroType)).map((i) => aggByIroId.get(i.id)?.effectiveValue).filter((v) => v !== null && v !== undefined);
+      const financialVals = groupIros.filter((i) => !hasImpactAxis(i.iroType)).map((i) => aggByIroId.get(i.id)?.effectiveValue).filter((v) => v !== null && v !== undefined);
+      const impactScore = hasImpact && impactVals.length ? avgOf(impactVals) : null;
+      const financialScore = hasFinancial && financialVals.length ? avgOf(financialVals) : null;
+      const overall = impactScore === null && financialScore === null ? null : Math.max(impactScore ?? -Infinity, financialScore ?? -Infinity);
+      const overallAxis = overall === null ? null : (financialScore !== null && financialScore >= (impactScore ?? -Infinity) ? 'Financial' : 'Impact');
+      const isMaterial = groupIros.some((i) => aggByIroId.get(i.id)?.isMaterial);
+      return { id: key, label: key, topicId, impactScore, financialScore, overall, overallAxis, isMaterial };
+    });
 
   // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
   // magnitude/likelihood for financial IROs. These are the raw dimensions
@@ -274,13 +286,13 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
         Results
       </h2>
 
-      {/* TOPIC SUMMARY — one row per ESRS topic, both axes + the OR rule */}
-      <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">TOPIC SUMMARY — IMPACT vs FINANCIAL, BY ESRS TOPIC</p>
+      {/* TOPIC SUMMARY — one row per subtopic, both axes + the OR rule */}
+      <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">TOPIC SUMMARY — IMPACT vs FINANCIAL, BY SUBTOPIC</p>
       <div className="bg-surface rounded-2xl p-4 mb-1 overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="text-[10.5px] uppercase tracking-wide text-text-secondary text-left">
-              <th className="pb-2 font-semibold">Topic</th>
+              <th className="pb-2 font-semibold">Subtopic</th>
               <th className="pb-2 font-semibold text-right">Impact score</th>
               <th className="pb-2 font-semibold text-right">Financial score</th>
               <th className="pb-2 font-semibold text-right">Overall (max)</th>
@@ -290,9 +302,12 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
           <tbody>
             {topicSummaries.map((t) => (
               <tr key={t.id} className="border-t border-border-apus">
-                <td className="py-2 font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pillarColor(t.id) }} />
-                  {t.meta?.name ?? t.id}
+                <td className="py-2 font-semibold">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pillarColor(t.topicId) }} />
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary shrink-0">{t.topicId}</span>
+                    <span>{t.label}</span>
+                  </div>
                 </td>
                 <td className="py-2 text-right tabular-nums">{t.impactScore !== null ? t.impactScore.toFixed(1) : '–'}</td>
                 <td className="py-2 text-right tabular-nums">{t.financialScore !== null ? t.financialScore.toFixed(1) : '–'}</td>
@@ -308,7 +323,7 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
         </table>
       </div>
       <p className="text-[11px] text-text-secondary mb-6">
-        A topic is Material if any one of its underlying IROs meets or exceeds the applicable threshold on its own axis (the "OR" rule) — Overall is the higher of the topic's two axis scores, shown for reference; materiality itself is decided per-IRO, not by comparing this max to a single line.
+        A subtopic is Material if any one of its underlying IROs meets or exceeds the applicable threshold on its own axis (the "OR" rule) — Overall is the higher of the subtopic's two axis scores, shown for reference; materiality itself is decided per-IRO, not by comparing this max to a single line.
       </p>
 
       {/* PRIMARY — BAR CHART */}
