@@ -41,6 +41,17 @@ function TrashIcon() {
   );
 }
 
+// Not in the original prototype table — jumps straight into running the
+// thing itself: the live session (in-app) or the external survey (Tool A,
+// opened in a new tab), per the builder's direct request.
+function LaunchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M14 4h6v6M20 4l-9 9M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-4" />
+    </svg>
+  );
+}
+
 // Not in the original prototype table — a shortcut straight to Recipients
 // (survey) or Participants (live session) without going through the whole
 // setup wizard, per the builder's direct request.
@@ -71,7 +82,7 @@ function fmtDate(s) {
   return new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete, onRecipients, readOnly }) {
+export default function AssessmentOverview({ assessments, onNew, onEdit, onPreview, onViewResults, onDelete, onRecipients, onGoDirect, readOnly }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
@@ -131,6 +142,11 @@ export default function AssessmentOverview({ assessments, onNew, onEdit, onPrevi
                         <button onClick={() => onPreview(a)} className="hover:text-text-primary" title="Preview how this looks for participants">
                           <EyeIcon />
                         </button>
+                        {!readOnly && (
+                          <button onClick={() => onGoDirect(a)} className="hover:text-text-primary" title={a.type === 'Expert live session' ? 'Go to live session' : 'Go to survey'}>
+                            <LaunchIcon />
+                          </button>
+                        )}
                         {!readOnly && (
                           <button onClick={() => onRecipients(a)} className="hover:text-text-primary" title={a.type === 'Expert live session' ? 'Participants' : 'Recipients'}>
                             <PeopleIcon />

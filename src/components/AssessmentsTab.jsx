@@ -339,6 +339,33 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     }
   }
 
+  // "Go to the external expert survey" — Tool A has no generic, non-personal
+  // entry point (every link is one invitee's own), so this opens the first
+  // invitation's real personal link in a new tab, exactly what "Copy
+  // personal link" on Recipients would give you, just one click instead of
+  // two. Same no-invitations fallback shape as enterLiveSession's own
+  // no-participants guard, for the same reason: nowhere to go yet.
+  async function openExternalSurvey(assessment) {
+    if (readOnly) { setError('Sign-off only cannot open the survey.'); return; }
+    setError('');
+    try {
+      const invitations = await fetchInvitations(assessment.id);
+      if (!invitations.length) {
+        openRecipientsDirect(assessment);
+        setError('Add recipients first — no invitations exist yet to open the survey with.');
+        return;
+      }
+      window.open(buildPersonalLink(assessment.slug, invitations[0].linkCode), '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function goDirect(assessment) {
+    if (assessment.type === 'expert_live_session') enterLiveSession(assessment);
+    else openExternalSurvey(assessment);
+  }
+
   // The Responses screen's "Invitations"/"Resume session" links jump here
   // for one specific assessment, without going through the overview first.
   useEffect(() => {
@@ -485,6 +512,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           onViewResults={(a) => onViewResults?.(assessments.find((x) => x.id === a.id))}
           onDelete={(a) => handleDelete(a)}
           onRecipients={(a) => openRecipientsDirect(assessments.find((x) => x.id === a.id))}
+          onGoDirect={(a) => goDirect(assessments.find((x) => x.id === a.id))}
           readOnly={readOnly}
         />
       )}
@@ -569,6 +597,7 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           topicOverrides={{}}
           onSaveAndExit={handleReviewHubSaveAndExit}
           onDiscardAndExit={() => setFlowStep('overview')}
+          onGoDirect={() => goDirect(activeAssessment)}
           readOnly={readOnly}
         />
       )}

@@ -97,7 +97,7 @@ function TopicRow({ iro, override, onUpdate, readOnly }) {
 export default function AssessmentReviewHub({
   mode, perspectiveFilter, iros, logo, companyName,
   welcomeText, taskText, stakeholders, topicOverrides,
-  onSaveAndExit, onDiscardAndExit, readOnly,
+  onSaveAndExit, onDiscardAndExit, onGoDirect, readOnly,
 }) {
   const relevantIros = iros.filter((i) => {
     if (perspectiveFilter === 'impact') return hasImpactAxis(i.iroType);
@@ -151,9 +151,16 @@ export default function AssessmentReviewHub({
             {readOnly ? 'Click any screen to jump to it — read-only.' : 'Click any screen to jump to it. No answers are required here — this is a preview, not a live session.'}
           </p>
         </div>
-        <button onClick={handleExit} className="text-[12.5px] font-semibold rounded-lg px-4 py-2" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
-          {readOnly ? 'Close' : 'Exit'}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {!readOnly && onGoDirect && (
+            <button onClick={onGoDirect} className="text-[12.5px] font-semibold rounded-lg px-4 py-2 border border-border-apus">
+              {mode === 'expert_live_session' ? 'Go to live session →' : 'Go to survey →'}
+            </button>
+          )}
+          <button onClick={handleExit} className="text-[12.5px] font-semibold rounded-lg px-4 py-2" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
+            {readOnly ? 'Close' : 'Exit'}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-3 mb-5" style={{ scrollbarWidth: 'thin' }}>

@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 37 (Admin & Roles legend: dropped "Tool Owner" — not a role this screen assigns (exactly one, set only from the Supabase dashboard) — and replaced it with a note pointing to the real Tool Owner's name/email, pulled live from the team list, for access questions the other three roles don't cover).
+**Last updated:** 2026-09-25 — session 2, part 38 (Assessment overview and Review Hub: added a type-aware "Go to live session" / "Go to survey" launch button — jumps straight into the running live session in-app, or opens the external Tool A survey in a new tab via the first invitation's real personal link, since Tool A has no generic non-personal entry point).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,45 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 38 (2026-09-25) — Direct "go to it" launch buttons on Assessment overview and Review Hub.**
+
+Builder: "there needs to be an option to go directly to the expert live
+session or to the external expert survey in the assessment overview, also
+in the review (eye symbol) you need to have a button to go to the live
+session vs external assessment survey." Two existing mechanisms already
+did half of this — `enterLiveSession` (jumps straight into the running
+live session, already wired to Responses' "Resume session" deep link) and
+`openRecipientsDirect` (jumps to Recipients/Participants, already on the
+overview row as the people icon, part 11 of an earlier session) — but
+neither was exposed as a one-click launch from the overview row or from
+Review Hub, and there was nothing at all for "go straight to the actual
+external survey."
+
+**New `openExternalSurvey(assessment)`** (`AssessmentsTab.jsx`): Tool A has
+no generic, non-personal survey URL — every link (`buildPersonalLink`) is
+one specific invitee's own. Opens the first invitation's real personal
+link in a new tab (`window.open(..., '_blank', 'noopener,noreferrer')`) —
+literally the external Tool A page, not an in-app stand-in. Mirrors
+`enterLiveSession`'s own shape: no invitations yet → redirect to
+Recipients with an explanatory error, same as the no-participants case;
+Sign-off only → refused with a message, same as the live-session case.
+
+**New `goDirect(assessment)`**: picks `enterLiveSession` or
+`openExternalSurvey` by `assessment.type`. Wired into both places the
+builder named:
+- `AssessmentOverview.jsx` — a new launch icon in the row actions
+  (between the eye and the people icon), titled "Go to live session" or
+  "Go to survey" depending on type, `!readOnly`-gated like Edit/
+  Recipients/Delete (Sign-off only can view but not run either).
+- `AssessmentReviewHub.jsx` (opened by the eye icon) — a new button next
+  to Exit/Close, same type-aware label, same `!readOnly` gate. This one
+  component backs both the overview's eye icon and the "Created" screen's
+  own "Preview" button, so both get it for free.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend, reusing data.js functions that
+already existed (`fetchInvitations`, `buildPersonalLink`).
+
 **Part 37 (2026-09-25) — Admin & Roles legend: dropped "Tool Owner", added a contact note instead.**
 
 Builder, from a screenshot of the same Legend card: "remove tool owner as
