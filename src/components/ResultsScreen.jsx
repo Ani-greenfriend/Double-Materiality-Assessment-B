@@ -156,6 +156,13 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
 
   const maxScore = Math.max(5, ...scoredIros.map((x) => x.score).filter((s) => s !== null));
 
+  // The bar chart's own agg per IRO, reused so the heatmaps mark the exact
+  // same Material/Not material status instead of guessing it from a raw
+  // axis position — isMaterial already accounts for likelihood scaling,
+  // the severity override and any calibration, which a y-value threshold
+  // check alone would miss.
+  const aggByIroId = new Map(scoredIros.map(({ iro, agg }) => [iro.id, agg]));
+
   // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
   // magnitude/likelihood for financial IROs. These are the raw dimensions
   // behind the single combined score, so they need their own averaging
@@ -167,7 +174,7 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
       const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
       if (!severities.length || !likelihoods.length) return null;
       const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(severities), iroType: iro.iroType, topic: iro.topic };
+      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(severities), iroType: iro.iroType, topic: iro.topic, isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
     })
     .filter(Boolean);
 
@@ -178,7 +185,7 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
       const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
       if (!magnitudes.length || !likelihoods.length) return null;
       const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(magnitudes), iroType: iro.iroType, topic: iro.topic };
+      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(magnitudes), iroType: iro.iroType, topic: iro.topic, isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
     })
     .filter(Boolean);
 
@@ -231,7 +238,7 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
           <b className="text-text-primary">Financial score</b> = magnitude × (likelihood ÷ 5) — the same expected-value logic, with no override.
         </p>
         <p className="mb-2">
-          The two heatmaps below plot every rated IRO on its own two raw dimensions — severity/likelihood for impact, magnitude/likelihood for financial — with a reference line at 3.
+          The two heatmaps below plot every rated IRO on its own two raw dimensions — severity/likelihood for impact, magnitude/likelihood for financial — with a reference line at your current threshold, and a ring around any dot that's actually Material.
         </p>
         <p>
           Your two materiality thresholds (adjustable below, default 3.0) decide which scores in the bar chart above count as <b className="text-text-primary">Material</b>.
@@ -285,12 +292,14 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
           title="Impact (Severity × Likelihood)" note="Asymmetric — high severity stays flagged even at low likelihood"
           points={impactPoints} xLabel="Likelihood" yLabel="Severity"
           shapeA="neg_impact" shapeALabel="Negative impact" shapeB="pos_impact" shapeBLabel="Positive impact"
+          threshold={thresholds?.impact ?? 3.0}
           svgRef={impactSvgRef}
         />
         <Heatmap
           title="Financial (Magnitude × Likelihood)" note="Symmetric — no precautionary override on this axis"
           points={financialPoints} xLabel="Likelihood" yLabel="Magnitude"
           shapeA="risk" shapeALabel="Risk" shapeB="opportunity" shapeBLabel="Opportunity"
+          threshold={thresholds?.financial ?? 3.0}
           svgRef={financialSvgRef}
         />
       </div>
@@ -367,7 +376,7 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
   );
 }
 
-function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel, shapeB, shapeBLabel, svgRef }) {
+function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel, shapeB, shapeBLabel, threshold = 3.0, svgRef }) {
   // One unified SVG (background heat + threshold + axis + points) instead of
   // a CSS grid with an overlay — bigger, sharper, and exportable as a single
   // image since it's all one element now.
@@ -375,7 +384,10 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   const plotW = W - M - 14, plotH = H - M - BOTTOM;
   const sx = (v) => M + ((v - 1) / 4) * plotW;
   const sy = (v) => (H - BOTTOM) - ((v - 1) / 4) * plotH;
-  const REF = 3; // a fixed reference line at 3/5 — "elevated" on either axis
+  // The cycle's real, applied threshold — not a fixed 3 — so moving it in
+  // MATERIALITY THRESHOLDS above actually moves this zone instead of the
+  // heatmap silently ignoring it.
+  const REF = threshold;
   const rx = sx(REF), ry = sy(REF);
 
   const FONT = 11, CHAR_W = 5.8, LINE_H = 14;
@@ -424,7 +436,7 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   return (
     <div className="bg-surface rounded-2xl p-5">
       <p className="text-[15px] font-bold mb-0.5">{title}</p>
-      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Reference line at 3.</p>
+      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Reference line at {threshold.toFixed(1)} — a ringed dot is Material.</p>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W} / ${H}`, height: 'auto', display: 'block' }}>
         <rect x={M} y={10} width={plotW} height={plotH} fill="#100E15" />
         {cells}
@@ -442,13 +454,15 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
         {positioned.map((p) => {
           const color = pillarColor(p.topic);
           const isShapeA = p.iroType === shapeA;
+          const ring = p.isMaterial ? '#D79A4C' : '#100E15';
+          const ringWidth = p.isMaterial ? 2.5 : 1.2;
           return (
             <g key={p.id}>
               {Math.abs(p.cy - sy(p.y)) > 1 && <line x1={p.cx} y1={sy(p.y)} x2={p.cx} y2={p.cy} stroke={color} strokeOpacity="0.5" strokeWidth="1" />}
               {isShapeA ? (
-                <circle cx={p.cx} cy={p.cy} r="7" fill={color} stroke="#100E15" strokeWidth="1.2" />
+                <circle cx={p.cx} cy={p.cy} r="7" fill={color} stroke={ring} strokeWidth={ringWidth} />
               ) : (
-                <polygon points={`${p.cx},${p.cy - 8} ${p.cx - 8},${p.cy + 6} ${p.cx + 8},${p.cy + 6}`} fill={color} stroke="#100E15" strokeWidth="1" />
+                <polygon points={`${p.cx},${p.cy - 8} ${p.cx - 8},${p.cy + 6} ${p.cx + 8},${p.cy + 6}`} fill={color} stroke={ring} strokeWidth={ringWidth} />
               )}
               <text x={p.textX} y={p.cy + 4} textAnchor={p.anchorLeft ? 'end' : 'start'} fontSize={FONT} fontWeight="700" fill="#F5F6FA" style={{ paintOrder: 'stroke', stroke: '#07070B', strokeWidth: 3 }}>
                 {p.label}
@@ -465,6 +479,10 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
         <div className="flex items-center gap-1.5">
           <span className="block shrink-0" style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '9px solid #8B8B98' }} />
           <span className="text-[11px] font-medium text-text-secondary">{shapeBLabel}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full block shrink-0" style={{ width: 10, height: 10, background: '#8B8B98', border: '2px solid #D79A4C' }} />
+          <span className="text-[11px] font-medium text-text-secondary">Material (ringed)</span>
         </div>
       </div>
       {points.length === 0 && <p className="text-[11px] text-text-secondary mt-2">No rated IROs on this axis yet.</p>}

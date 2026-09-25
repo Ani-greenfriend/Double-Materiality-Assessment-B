@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 44 (dummy data follow-up: added a real dual-source example — one Full Expert Survey topic, Employee Upskilling Program, now has both a survey average (2.75) and a session value (3.5) genuinely populated side by side, close but not identical. The earlier attempt at this was dropped for hitting a check constraint; re-read it properly — it only requires a real live_session_id, not a matching assessment_id — so the new submission legitimately reuses the Impact Live Session's own live_sessions row).
+**Last updated:** 2026-09-25 — session 2, part 45 (Results heatmaps: the reference line was hardcoded to 3, completely ignoring the cycle's real, editable threshold — adjusting it in MATERIALITY THRESHOLDS never moved the heatmap zone, and dots carried no material/not-material marking at all. Both heatmaps now take the real threshold as a prop and ring each dot using the same aggregateIro().isMaterial the bar chart already uses).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,41 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 45 (2026-09-25) — Heatmaps ignored the real threshold entirely; now they don't.**
+
+Builder, from a screenshot of both heatmaps: "when you adjust the
+threshold in the result part, why are the topics in the matrices not
+shown as material above." Real gap, not a misunderstanding — the
+Heatmap component had `const REF = 3; // a fixed reference line at 3/5`,
+completely independent of `thresholds.impact`/`thresholds.financial`.
+Editing and applying a threshold in the "MATERIALITY THRESHOLDS" block
+(moved out of the Topic Matrix in part 33) changed the real, persisted
+value everywhere else in the app — but the heatmap's shaded zone and
+reference line never read it, so nothing ever visibly moved. On top of
+that, the dots themselves carried no material/not-material marking at
+all — every dot's ring was just a fixed dark `#100E15` regardless of
+status, unlike the bar chart, which already marks Material vs Not
+material (part 33).
+
+**Fix**: `Heatmap` now takes a `threshold` prop —
+`thresholds?.impact ?? 3.0` / `thresholds?.financial ?? 3.0`, the same
+persisted values the bar chart and thresholds block already use — and
+uses it for `REF` instead of the hardcoded 3, so the shaded "HIGHER
+MATERIALITY" zone and reference line actually move when a threshold is
+applied. Each point built in `impactPoints`/`financialPoints` now also
+carries `isMaterial`, looked up from the exact same `aggregateIro(iro,
+thresholds).isMaterial` the bar chart computes (via a small
+`iro.id → agg` map built off the already-computed `scoredIros`) — not a
+fresh, potentially-inconsistent y-axis-position guess. A material dot's
+ring switches from the dark default to orange (`#D79A4C`, 2.5px), same
+convention as the bar chart and the old Topic Matrix. Updated the
+DmaMascot explainer, each heatmap's own caption, and added a "Material
+(ringed)" legend entry to match.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing
+warnings). No schema/RLS change — pure frontend; reused an existing calc
+already being made for the bar chart rather than adding a new one.
+
 **Part 44 (2026-09-25) — Dummy data follow-up: a real dual-source (survey + session) example.**
 
 Builder: "why in the dummy data was the expert live session ratings equal
