@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 38 (Assessment overview and Review Hub: added a type-aware "Go to live session" / "Go to survey" launch button — jumps straight into the running live session in-app, or opens the external Tool A survey in a new tab via the first invitation's real personal link, since Tool A has no generic non-personal entry point).
+**Last updated:** 2026-09-25 — session 2, part 39 (found a second, broader path to the same "ratings upsert failed: row-level security policy" error from part 34 — re-entering an already-finished live session's Questionnaire at all, via the pre-existing "Resume session" or the new "Go to live session" button, both of which happily reopened it with no status check; the very next autosave then hit the frozen-submission RLS wall. enterLiveSession now checks progress.status === 'submitted' first and redirects to that assessment's results with a clear message instead).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,40 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 39 (2026-09-25) — Same RLS error, second real path: re-entering an already-finished live session.**
+
+Builder screenshot: the same `ratings upsert failed: new row violates
+row-level security policy (USING expression) for table "ratings"` error
+from part 34 — but this time on an early topic screen ("A few quick
+questions per topic"), not the finish screen, so the part-34 double-click
+guard wasn't the cause here.
+
+**Root cause**: `enterLiveSession` (used by both the pre-existing "Resume
+session" link on Responses and this session's new "Go to live session"
+button) fetches `fetchLiveSessionProgress`, which already returns
+`status: submission.status` — but nothing ever read it. Opening an
+already-**finished** live session (submission already `submitted`, frozen
+per CLAUDE.md Business Rules — "a submitted response is frozen for every
+role") went straight into the live, editable Questionnaire exactly as if
+it were still in progress. The Questionnaire autosaves on mount
+(`onProgress`'s `useEffect` fires on the very first render, not just on
+each topic change), so the first autosave attempt immediately hit the RLS
+policy that correctly refuses to touch a submitted response's ratings —
+surfacing as the same raw error, just from a different trigger than
+part 34's double-click.
+
+**Fix**: `enterLiveSession` now checks `progress.status === 'submitted'`
+right after fetching it, before ever opening the Questionnaire. On a
+finished session it sets a plain-language message ("already finished —
+its ratings are locked and can't be re-entered") and calls `onViewResults`
+to take the builder straight to that assessment's Calibrate & Results
+instead of leaving them stuck on a broken-looking screen.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — the policy was already correct and nothing was
+corrupted (a refused write never persists); this closes the second real
+way to trigger it, on top of part 34's double-click guard.
+
 **Part 38 (2026-09-25) — Direct "go to it" launch buttons on Assessment overview and Review Hub.**
 
 Builder: "there needs to be an option to go directly to the expert live

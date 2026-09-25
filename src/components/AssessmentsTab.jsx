@@ -327,11 +327,21 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         setError('Add who participates first — this session has no participants yet.');
         return;
       }
+      const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
+      // A submitted response is frozen for every role (CLAUDE.md Business
+      // Rules) — the RLS policy already refuses any further write to it, but
+      // without this check the Questionnaire would open anyway and the very
+      // first autosave would fail with a raw "row-level security policy"
+      // error. Redirect to the results it already produced instead.
+      if (progress.status === 'submitted') {
+        setError('This live session already finished — its ratings are locked and can\'t be re-entered. Opening its results instead.');
+        onViewResults?.(assessment);
+        return;
+      }
       const { iros } = await fetchDashboard(assessment.id);
       setActiveIros(iros);
       setActiveAssessment(assessment);
       setLiveSession({ ...ls, participants: active });
-      const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
       setSessionProgress(progress);
       setFlowStep(progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
     } catch (err) {
