@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { SettingsIcon } from './icons';
 
 function BellIcon() {
   return (
@@ -22,9 +23,10 @@ function initials(name, email) {
 // that space, per product-spec.md Section 8's "Guidance on every screen").
 // Real me/avatar data — not the reference prototype's disconnected
 // local-state "Set up your profile" stub this replaces on Dashboard.
-export default function GlobalHeader({ me, assessments, onOpenProfile }) {
+export default function GlobalHeader({ me, assessments, onOpenProfile, onOpenAdminRoles }) {
   const [bellOpen, setBellOpen] = useState(false);
   const ref = useRef(null);
+  const canManageTeam = me.isOwner || me.isAdmin;
 
   useEffect(() => {
     function onClickOutside(e) {
@@ -45,8 +47,14 @@ export default function GlobalHeader({ me, assessments, onOpenProfile }) {
       className="sticky top-0 z-30 flex items-center justify-end gap-3 py-3 mb-5"
       style={{ background: 'rgba(7,7,11,0.92)', backdropFilter: 'blur(6px)', borderBottom: '1px solid #2A2830' }}
     >
+      {canManageTeam && (
+        <button onClick={onOpenAdminRoles} title="Settings" className="w-9 h-9 rounded-full bg-surface flex items-center justify-center text-text-secondary hover:text-text-primary">
+          <SettingsIcon size={17} />
+        </button>
+      )}
+
       <div className="relative" ref={ref}>
-        <button onClick={() => setBellOpen((o) => !o)} className="w-9 h-9 rounded-full bg-surface flex items-center justify-center relative text-text-secondary hover:text-text-primary">
+        <button onClick={() => setBellOpen((o) => !o)} title="Notifications" className="w-9 h-9 rounded-full bg-surface flex items-center justify-center relative text-text-secondary hover:text-text-primary">
           <BellIcon />
           {closingSoon.length > 0 && <span className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full" style={{ background: '#D79A4C' }} />}
         </button>
@@ -64,7 +72,7 @@ export default function GlobalHeader({ me, assessments, onOpenProfile }) {
         )}
       </div>
 
-      <button onClick={onOpenProfile} className="shrink-0" title="Your profile">
+      <button onClick={onOpenProfile} title="Edit profile" className="shrink-0">
         {me.avatarUrl ? (
           <img src={me.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" />
         ) : (

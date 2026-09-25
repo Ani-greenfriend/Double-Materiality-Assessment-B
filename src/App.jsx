@@ -308,7 +308,7 @@ export default function App() {
       <main className="flex-1 px-10 py-8 overflow-x-auto">
         <div className="max-w-6xl mx-auto">
           {tab !== 'assessments' && (
-            <GlobalHeader me={me} assessments={allAssessmentsForHeader} onOpenProfile={() => setTab('profile')} />
+            <GlobalHeader me={me} assessments={allAssessmentsForHeader} onOpenProfile={() => setTab('profile')} onOpenAdminRoles={() => setTab('admin-roles')} />
           )}
           {loadError && <p className="text-[12px] text-badge-amber mb-4">{loadError}</p>}
 

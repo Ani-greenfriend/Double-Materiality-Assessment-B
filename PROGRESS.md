@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 34 (fixed the live-session "ratings upsert failed: row-level security policy" bug on Finish: the "To Results" button had no double-click guard, so two clicks fired two concurrent submits — the first correctly froze the submission, the second's ratings upsert then hit the RLS policy that enforces that freeze. Disabled the button while a submit is in flight, in both Questionnaire.jsx and its AssessmentsTab.jsx caller).
+**Last updated:** 2026-09-25 — session 2, part 35 (GlobalHeader: added a Settings gear icon (owner/admin only, opens Admin & Roles) next to the notification bell, and hover tooltips on all three top-right controls — "Settings", "Notifications", "Edit profile" — per the builder's direct request).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,30 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 35 (2026-09-25) — GlobalHeader: Settings gear + hover tooltips.**
+
+Builder, with a screenshot of the sidebar's `SettingsMenu` avatar chip:
+"please this part on the top right with a settings symbol next to the
+notification symbol and profile edit on the image. when hover over
+explain what it does: settings; edit profile, notification." Read as: add
+a Settings (gear) control to `GlobalHeader.jsx` (part 32's top-right
+profile+notification bar) alongside the existing bell and avatar, and add
+hover tooltips explaining each of the three.
+
+Added a new `SettingsIcon` (a literal gear, distinct from `AdminIcon`'s
+shield already used inside `SettingsMenu`'s dropdown) to `icons.jsx`. In
+`GlobalHeader.jsx`: a gear button, visible only to `me.isOwner ||
+me.isAdmin` (same `canManageTeam` gate `SettingsMenu.jsx` already uses,
+since its destination — Admin & Roles — is owner/admin-only; showing it to
+someone it would 403 made no sense), opens Admin & Roles via a new
+`onOpenAdminRoles` prop wired the same way `onOpenProfile` already was.
+Added `title` attributes for native hover tooltips on all three controls:
+"Settings" (gear, new), "Notifications" (bell, had none before), "Edit
+profile" (avatar — was "Your profile", reworded to name the action).
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend.
+
 **Part 34 (2026-09-25) — Fixed the live-session "ratings upsert failed: row-level security policy" bug on Finish.**
 
 Builder screenshot: the live session's "All 3 topics rated" success screen,

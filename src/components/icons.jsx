@@ -129,6 +129,17 @@ export function AdminIcon({ size = 18 }) {
   );
 }
 
+// GlobalHeader's "Settings" shortcut (opens Admin & Roles) — a literal gear,
+// distinct from AdminIcon's shield (used inside the SettingsMenu dropdown).
+export function SettingsIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 13a7.97 7.97 0 000-2l2.1-1.6-2-3.4-2.5 1a8 8 0 00-1.7-1L15 3h-6l-.3 2.6a8 8 0 00-1.7 1l-2.5-1-2 3.4L4.6 11a7.97 7.97 0 000 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 001.7 1L9 21h6l.3-2.6a8 8 0 001.7-1l2.5 1 2-3.4L19.4 13z" />
+    </svg>
+  );
+}
+
 export function ChevronDownIcon({ size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
