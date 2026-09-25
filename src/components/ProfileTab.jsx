@@ -17,7 +17,6 @@ function accessDescription(me) {
 export default function ProfileTab({ me, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(me.name || '');
-  const [phone, setPhone] = useState(me.phoneNumber || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +26,7 @@ export default function ProfileTab({ me, onChanged }) {
     setSaving(true);
     setError('');
     try {
-      await updateOwnProfile(me.id, { name, phoneNumber: phone });
+      await updateOwnProfile(me.id, { name });
       onChanged?.();
       setEditing(false);
     } catch (err) {
@@ -55,6 +54,21 @@ export default function ProfileTab({ me, onChanged }) {
     <div className="max-w-xl">
       <h1 className="text-[20px] font-semibold mb-1">Profile</h1>
       <p className="text-[12.5px] text-text-secondary mb-5">Your own details — visible to the rest of the team in Settings → Admin & Roles.</p>
+
+      <div className="bg-surface rounded-2xl p-5 mb-5 grid grid-cols-3 gap-3">
+        <div>
+          <p className="text-[10.5px] text-text-secondary mb-1">ROLE</p>
+          <p className="text-[14px] font-semibold">{me.roleTitle || '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10.5px] text-text-secondary mb-1">EMAIL</p>
+          <p className="text-[14px] font-semibold truncate" title={me.email}>{me.email}</p>
+        </div>
+        <div>
+          <p className="text-[10.5px] text-text-secondary mb-1">ADMIN</p>
+          <p className="text-[14px] font-semibold" style={{ color: me.isAdmin ? '#5ED996' : undefined }}>{me.isAdmin ? 'Yes' : 'No'}</p>
+        </div>
+      </div>
 
       <div className="bg-surface rounded-2xl p-6 mb-5">
         <div className="flex items-center gap-5 mb-6">
@@ -85,18 +99,11 @@ export default function ProfileTab({ me, onChanged }) {
                 className="w-full bg-app-black border border-border-apus rounded-lg px-3 py-2 text-[13px] outline-none"
               />
             </div>
-            <div className="mb-4">
-              <p className="text-[10.5px] text-text-secondary mb-1">PHONE NUMBER</p>
-              <input
-                value={phone} onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-app-black border border-border-apus rounded-lg px-3 py-2 text-[13px] outline-none"
-              />
-            </div>
             <div className="flex gap-2">
               <button type="submit" disabled={saving} className="text-[12px] font-semibold rounded-lg px-3.5 py-2 disabled:opacity-40" style={{ background: '#4C6FFF', color: '#07070B' }}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button type="button" onClick={() => { setEditing(false); setName(me.name || ''); setPhone(me.phoneNumber || ''); setError(''); }} className="text-[12px] font-semibold rounded-lg px-3.5 py-2 border border-border-apus">
+              <button type="button" onClick={() => { setEditing(false); setName(me.name || ''); setError(''); }} className="text-[12px] font-semibold rounded-lg px-3.5 py-2 border border-border-apus">
                 Cancel
               </button>
             </div>
@@ -107,10 +114,6 @@ export default function ProfileTab({ me, onChanged }) {
               <p className="text-[10.5px] text-text-secondary mb-1">NAME</p>
               <p className="text-[13.5px]">{me.name || '—'}</p>
             </div>
-            <div className="mb-3">
-              <p className="text-[10.5px] text-text-secondary mb-1">PHONE NUMBER</p>
-              <p className="text-[13.5px]">{me.phoneNumber || '—'}</p>
-            </div>
             <button onClick={() => setEditing(true)} className="text-[12px] font-semibold rounded-lg px-3.5 py-2 border border-border-apus">
               Edit
             </button>
@@ -119,14 +122,6 @@ export default function ProfileTab({ me, onChanged }) {
       </div>
 
       <div className="bg-surface rounded-2xl p-6">
-        <div className="mb-4">
-          <p className="text-[10.5px] text-text-secondary mb-1">EMAIL</p>
-          <p className="text-[13.5px]">{me.email} <span className="text-[11px] text-text-secondary">(not editable — this must match your login)</span></p>
-        </div>
-        <div className="mb-4">
-          <p className="text-[10.5px] text-text-secondary mb-1">ROLE</p>
-          <p className="text-[13.5px]">{me.roleTitle || '—'} <span className="text-[11px] text-text-secondary">(set by Tool Owner/Admin in Admin &amp; Roles)</span></p>
-        </div>
         <div className="mb-4">
           <p className="text-[10.5px] text-text-secondary mb-1">MEMBER SINCE</p>
           <p className="text-[13.5px]">{me.createdAt ? new Date(me.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '—'}</p>

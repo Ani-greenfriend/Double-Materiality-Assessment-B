@@ -287,8 +287,21 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
 
   // ---- Created ----
 
-  function handleCopyInvitation(inv) {
-    navigator.clipboard?.writeText(inv.link).catch(() => {});
+  // Was fire-and-forget with a swallowed `.catch(() => {})` — copying could
+  // silently fail (clipboard permission denied, insecure/non-standard
+  // context, no Clipboard API at all) with zero feedback either way, so
+  // "the button doesn't work" was indistinguishable from "it worked but
+  // nothing told you." Now returns a result the caller (ExpertAssessmentCreated)
+  // uses to show "Link copied" or fall back to select-to-copy-by-hand —
+  // never silent.
+  async function handleCopyInvitation(inv) {
+    if (!navigator.clipboard?.writeText) return { ok: false, reason: 'unsupported' };
+    try {
+      await navigator.clipboard.writeText(inv.link);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'denied' };
+    }
   }
 
   // Jumps straight to Recipients (survey) or Participants (live session)
@@ -590,12 +603,14 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
         <ExpertAssessmentCreated
           mode={assessmentMode}
           surveyName={surveyMeta.name}
-          invitations={activeInvitations.map((inv) => ({ id: inv.id, name: inv.name, link: buildPersonalLink(activeAssessment.slug, inv.linkCode) }))}
+          assessmentSlug={activeAssessment.slug}
+          invitations={activeInvitations.map((inv) => ({ id: inv.id, name: inv.name, email: inv.email, groupName: inv.groupName, status: inv.status, link: buildPersonalLink(activeAssessment.slug, inv.linkCode) }))}
           startDate={surveyMeta.startDate}
           endDate={surveyMeta.endDate}
           alreadyRun={false}
           participantCount={activeParticipantCount}
           hasStakeholderGroups={stakeholderMap.some((g) => g.perspectives.includes('impact') || g.perspectives.includes('financial'))}
+          readOnly={readOnly}
           onCopyInvitation={handleCopyInvitation}
           onPreview={() => openReviewHub(activeAssessment)}
           onKickOff={() => enterLiveSession(activeAssessment)}
