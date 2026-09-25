@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 50 (Responses detail panel's comment cards show the exact Severity/Likelihood or Magnitude/Likelihood behind each justification now, matched to its own rating via invitation_id/live_session_id — not just the single criterion it's attached to).
+**Last updated:** 2026-09-25 — session 2, part 51 (Responses detail panel gained a RATINGS BREAKDOWN table — every assessor's full rating side by side, not scattered across optional per-criterion comment cards).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,31 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 51 (2026-09-25) — Responses detail panel gained a RATINGS BREAKDOWN table: every assessor's full rating, side by side, not scattered across optional per-criterion comment cards.**
+
+Builder's follow-up after Part 50 (which explained why comment cards only
+ever show whichever single criterion an assessor wrote a justification
+for — optional, per-criterion or per-topic depending on
+`justification_mode`, so never a complete picture): "but i want to see the
+break down ratings per IRO in here next to each other."
+
+**Added**, `ResponsesTab.jsx`'s `DetailPanel`, above the comments section:
+one row per `iro.assessments` entry (the same shape `aggregateIro` already
+reduces to a single Severity/Score) — Source, Stakeholder group, then
+either Scale/Scope/Irreversibility(neg_impact only)/Likelihood(omitted for
+actual/potential-human-rights-impact)/Severity for impact-type IROs, or
+Magnitude/Likelihood for financial-type — plus each row's own computed
+Score (`assessmentImpactScore`/`assessmentFinancialScore`, the exact
+calc.js functions `aggregateIro` itself calls) and a small "!" tag when a
+criterion at 5 triggered the precautionary override on that specific row.
+This is every rated criterion from every assessor, unconditionally — not
+gated on whether anyone wrote a justification, and distinct from the
+COMBINED figure elsewhere on the panel (which can be a calibrated
+override, per Part 49): these rows are always the raw computed values.
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS/data change — reused
+`iro.assessments`, already loaded for this screen, no new query.
+
 **Part 50 (2026-09-25) — Responses detail panel's comment cards now show the exact Severity/Likelihood (or Magnitude/Likelihood) behind that specific justification, not just the one criterion it's attached to.**
 
 Builder, from a screenshot of the same detail panel Part 49 touched: "in

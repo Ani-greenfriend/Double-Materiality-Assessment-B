@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
+import { aggregateIro, hasImpactAxis, assessmentSeverity, assessmentImpactScore, assessmentFinancialScore } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR, MATERIAL_BADGE, pillarFor } from '../lib/topics';
 import { ResponsesIcon } from './icons';
 import DmaMascot from './DmaMascot';
@@ -170,6 +170,78 @@ function DetailPanel({ iro, thresholds, onOpenCalibrate }) {
       </div>
 
       <button onClick={() => onOpenCalibrate(iro)} className="text-[11.5px] font-semibold text-badge-blue mb-3">Open in Calibrate →</button>
+
+      {/* RATINGS BREAKDOWN — every assessor's own rating, side by side. The
+          comment cards below are optional per-criterion justifications (see
+          justification_mode) and don't cover every rated criterion, let
+          alone every assessor — this is the full underlying data instead,
+          one row per submission, straight from iro.assessments (the same
+          shape aggregateIro reduces down to a single Severity/Score). */}
+      {iro.assessments.length > 0 && (
+        <div className="mb-4">
+          <p className="text-[11px] font-semibold text-text-secondary mb-2">RATINGS BREAKDOWN</p>
+          <div className="overflow-x-auto rounded-lg border border-border-apus">
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="text-[9.5px] uppercase tracking-wide text-text-secondary text-left bg-surface-2">
+                  <th className="py-1.5 pl-2 pr-2 font-semibold">Source</th>
+                  <th className="py-1.5 pr-2 font-semibold">Group</th>
+                  {hasImpactAxis(iro.iroType) ? (
+                    <>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Scale</th>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Scope</th>
+                      {iro.iroType === 'neg_impact' && <th className="py-1.5 pr-2 font-semibold text-right">Irrev.</th>}
+                      {!(iro.actual || iro.potentialHumanRightsImpact) && <th className="py-1.5 pr-2 font-semibold text-right">Likelihood</th>}
+                      <th className="py-1.5 pr-2 font-semibold text-right">Severity</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Magnitude</th>
+                      <th className="py-1.5 pr-2 font-semibold text-right">Likelihood</th>
+                    </>
+                  )}
+                  <th className="py-1.5 pr-2 font-semibold text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {iro.assessments.map((a, idx) => {
+                  const severity = hasImpactAxis(iro.iroType) ? assessmentSeverity(iro, a) : null;
+                  const rowScore = hasImpactAxis(iro.iroType) ? assessmentImpactScore(iro, a) : assessmentFinancialScore(a);
+                  const overridden = iro.iroType === 'neg_impact' && severity === 5 && [a.scale, a.scope, a.irreversibility].includes(5);
+                  return (
+                    <tr key={idx} className="border-t border-border-apus">
+                      <td className="py-1.5 pl-2 pr-2">
+                        <span className="text-[9.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: a.source === 'expert_survey' ? 'rgba(94,217,150,0.14)' : 'rgba(76,111,255,0.14)', color: a.source === 'expert_survey' ? '#5ED996' : '#4C6FFF' }}>
+                          {a.source === 'expert_survey' ? 'Survey' : 'Session'}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-2 text-text-secondary">{a.stakeholderGroup ?? '–'}</td>
+                      {hasImpactAxis(iro.iroType) ? (
+                        <>
+                          <td className="py-1.5 pr-2 text-right">{a.scale ?? '–'}</td>
+                          <td className="py-1.5 pr-2 text-right">{a.scope ?? '–'}</td>
+                          {iro.iroType === 'neg_impact' && <td className="py-1.5 pr-2 text-right">{a.irreversibility ?? '–'}</td>}
+                          {!(iro.actual || iro.potentialHumanRightsImpact) && <td className="py-1.5 pr-2 text-right">{a.likelihood ?? '–'}</td>}
+                          <td className="py-1.5 pr-2 text-right font-semibold">
+                            {severity !== null ? severity.toFixed(1) : '–'}
+                            {overridden && <span title="Precautionary override — a criterion was rated 5" style={{ color: '#D79A4C' }}> !</span>}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-1.5 pr-2 text-right">{a.magnitude ?? '–'}</td>
+                          <td className="py-1.5 pr-2 text-right">{a.likelihood ?? '–'}</td>
+                        </>
+                      )}
+                      <td className="py-1.5 pr-2 text-right font-bold">{rowScore !== null ? rowScore.toFixed(1) : '–'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-2">
         <p className="text-[11px] font-semibold text-text-secondary">COMMENTS AND JUSTIFICATIONS</p>
