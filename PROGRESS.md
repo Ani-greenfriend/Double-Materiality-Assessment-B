@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 45 (Results heatmaps: the reference line was hardcoded to 3, completely ignoring the cycle's real, editable threshold — adjusting it in MATERIALITY THRESHOLDS never moved the heatmap zone, and dots carried no material/not-material marking at all. Both heatmaps now take the real threshold as a prop and ring each dot using the same aggregateIro().isMaterial the bar chart already uses).
+**Last updated:** 2026-09-25 — session 2, part 46 (Heatmap threshold zone was a square, not the real curved material boundary — fixed on both the live Results screen and the PDF report; added a topic-level summary table above the per-IRO bar chart, builder-confirmed as additive not a replacement; reported a Netlify deploy-preview failure on PR #6 that's still unresolved).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,85 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 46 (2026-09-25) — Heatmap threshold zone was a square, not the real (curved) material boundary; added a topic-level summary table; PDF report's own charts brought in line; Netlify deploy failure reported on PR #6.**
+
+Builder, from a screenshot of the bar chart + both heatmaps (Part 45's fix
+was live but not yet propagated — see the Netlify note below): "material
+topics are not shown as material e.g. supply chain compliance etc. also
+the material tag was removed on the top... is this a calculation issue?"
+First confirmed it wasn't: `aggregateIro(iro, thresholds).isMaterial` is
+computed once per IRO and both the bar chart and both heatmaps read that
+exact same value — they can't disagree in the code as it stood. Diffing
+against `origin/main` showed the real cause: none of this session's Results
+work (or anything back to PR #5) is merged — `main` is ~3500 lines behind
+this branch — and PR #6's own deploy preview for `f954c76` was failing
+(GitHub's check_run events arrived mid-investigation), so the screenshot
+was necessarily from a build with none of these fixes. **Posted one comment
+on PR #6** documenting this: third consecutive deploy-preview failure
+across unrelated diffs (a code commit, a docs-only commit, now this one),
+local `npm run build` clean every time, `netlify.toml` unremarkable — code
+isn't the cause. No means to read the actual Netlify log or re-run the
+check from this sandbox (egress to `app.netlify.com` blocked, no Netlify
+MCP connector per CLAUDE.md) — asked the builder to check the log or the
+account's Usage/Billing page (best guess: free-tier build-minutes
+exhaustion). **Still unresolved** — see Known issues.
+
+Separately, the builder's screenshot also came with three real, correct
+observations that don't depend on the deploy being stale, since they hold
+against the actual formula in `calc.js`:
+
+1. **The heatmap's shaded "HIGHER MATERIALITY" zone was a square** (x≥threshold
+   AND y≥threshold, straight reference lines) — but the real score is
+   `likelihood × severity(or magnitude) ÷ 5` (`assessmentImpactScore`/
+   `assessmentFinancialScore`), which is multiplicative. A point right at the
+   square's near corner (e.g. x=3.2, y=3.2, threshold 3.0) scores 2.05 and is
+   correctly *not* Material — but sat inside the shaded "material" square
+   anyway, which is exactly what made the zone misleading. **Fixed**: both
+   `Heatmap` (ResultsScreen.jsx) and the PDF's `buildHeatmapSvg`
+   (reportPdf.js) now shade the true region bounded by the hyperbola
+   `y = 5×threshold/x`, sampled as a polygon path, replacing the straight
+   dashed rect. (Actual-impact / potential-human-rights-impact IROs skip
+   likelihood entirely — severity alone, unscaled — so their true boundary
+   is the flat `y = threshold` line, not this curve; their per-dot ring is
+   still correct either way, only the shared background shape is a
+   simplification for that subset. Noted in the live caption.)
+
+2. **The PDF report's own heatmap had no threshold shading or material ring
+   at all** (unlike the live screen) — brought in line with the same curve
+   fix, plus rings on Material points, now that `scoredIros` in `reportPdf.js`
+   carries `agg` (not just `score`) so `isMaterial` can be looked up per point
+   the same way ResultsScreen.jsx already does. The PDF's separate Topic
+   Matrix (`buildMatrixSvg`) was *not* changed — its axes are already
+   post-computed effective-value scores (0-5, same units as the threshold),
+   not raw likelihood/severity, so its existing straight dashed cross-lines
+   are correct as-is; only `buildHeatmapSvg` plots raw dimensions and needed
+   the curve.
+
+3. **The user's proposed table** (Topic / Impact Score / Financial Score /
+   Overall (max) / Status, one row per topic) only makes sense at topic
+   grain — a single IRO only ever has one axis (impact-type IROs never get a
+   Financial score and vice versa, per real ESRS DMA methodology), so a row
+   with both scores has to be an aggregate across a topic's IROs. Asked the
+   builder to confirm scope via AskUserQuestion, since the live Results
+   screen deliberately dropped its topic-level matrix in Part 33 ("per the
+   builder's direct request") in favor of per-IRO rows — reintroducing a
+   topic table reverses that. Builder chose "show both": keep the per-IRO
+   bar chart, add the topic table above it, not replacing it. **Added**: a
+   new "TOPIC SUMMARY" table in ResultsScreen.jsx above the bar chart, one
+   row per ESRS topic present in the assessment (E1-E5/S1-S4/G1 — "topic"
+   here is the IRO's `esrs_topic_id`, not the IRO's own name; a topic can
+   hold both impact-type and financial-type IROs), built from the existing
+   `aggregateTopic()` in calc.js (already used by the PDF's own Topic
+   Matrix and methodology text — "a topic is material if any one of its
+   underlying IROs meets or exceeds the applicable threshold", the real OR
+   rule) — no new calc logic, just a new consumer of it. Overall = max of
+   the topic's two axis scores, shown for reference; materiality itself
+   stays per-IRO (`isMaterial = pairs.some(...)`), exactly as before — the
+   column doesn't introduce a second, competing definition of Material.
+
+`npm run build`/`npx oxlint src` clean after each change (same
+pre-existing unrelated warnings only). No schema/RLS change.
+
 **Part 45 (2026-09-25) — Heatmaps ignored the real threshold entirely; now they don't.**
 
 Builder, from a screenshot of both heatmaps: "when you adjust the
@@ -2685,6 +2764,19 @@ schema — every new field the flow needed already existed).
   scope cut for a fast first dashboard, not a "port faithfully" violation —
   those pieces are unbuilt, not redesigned.
 ## Known issues
+- **Open — Netlify deploy preview failing on PR #6, root cause unknown.** Three
+  consecutive failures (`eaf2c9c`, `e96a137` — docs-only, zero `src/` changes
+  — and `f954c76`) across unrelated diffs, while `npm run build` succeeds
+  cleanly and quickly every time locally. Rules out this branch's code.
+  Posted a comment on the PR (Part 46) asking the builder to check the
+  actual Netlify deploy log or the account's Usage/Billing page — best
+  guess is free-tier build-minutes exhaustion. This sandbox cannot reach
+  `app.netlify.com` (egress blocked) and has no Netlify MCP connector, so
+  there is no way to read the log or re-run the deploy from here. **This
+  also explains Part 45/46's screenshots looking "wrong"** — none of PR
+  #6's fixes (going back to PR #5) are on `main`, which is what Netlify's
+  production site actually deploys; the screenshots were from a build
+  without any of this session's Results-screen work.
 - **`VITE_SURVEY_BASE_URL` must be set in Netlify before the next deploy
   or personal-link building breaks.** Part 22 renamed this from
   `VITE_TOOL_A_URL` and removed its hardcoded fallback (per direct

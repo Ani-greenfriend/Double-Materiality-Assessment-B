@@ -70,7 +70,7 @@ function buildBarChartSvg(scoredIros) {
   };
 }
 
-function buildHeatmapSvg({ points, xLabel, yLabel, title }) {
+function buildHeatmapSvg({ points, xLabel, yLabel, title, threshold = 3.0 }) {
   const W = 480, H = 360, M = 46, BOTTOM = 40;
   const plotW = W - M - 16, plotH = H - M - BOTTOM;
   const sx = (v) => M + ((v - 1) / 4) * plotW;
@@ -80,12 +80,28 @@ function buildHeatmapSvg({ points, xLabel, yLabel, title }) {
     <text x="${sx(v)}" y="${H - BOTTOM + 16}" text-anchor="middle" font-size="10" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">${v}</text>
     <text x="${M - 10}" y="${sy(v) + 3}" text-anchor="end" font-size="10" fill="${TEXT_MUTED}" font-family="Helvetica,Arial,sans-serif">${v}</text>
   `).join('');
-  const dots = points.map((p) => `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="5" fill="${PRINT_PILLAR_COLOR[pillarOf(p.topic)]}" />`).join('');
+  // Score = likelihood x severity/magnitude / 5 (calc.js assessmentImpactScore/
+  // assessmentFinancialScore) — the material region is bounded by the hyperbola
+  // y = 5*threshold/x, not the square x>=threshold AND y>=threshold, so the
+  // shaded zone here has to curve the same way the live Results screen's does.
+  const Tc = Math.min(5, Math.max(1, threshold));
+  const materialRegionPath = (() => {
+    const steps = 24;
+    const pts = [];
+    for (let i = 0; i <= steps; i++) {
+      const x = Tc + (5 - Tc) * (i / steps);
+      const y = Math.min(5, (5 * Tc) / x);
+      pts.push(`${sx(x).toFixed(2)},${sy(y).toFixed(2)}`);
+    }
+    return `M ${sx(5)},${sy(5)} L ${sx(Tc)},${sy(5)} L ${pts.join(' L ')} Z`;
+  })();
+  const dots = points.map((p) => `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="5" fill="${PRINT_PILLAR_COLOR[pillarOf(p.topic)]}" stroke="${p.isMaterial ? AMBER : 'none'}" stroke-width="${p.isMaterial ? 2 : 0}" />`).join('');
   return {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       <rect width="${W}" height="${H}" fill="#FFFFFF"/>
       <text x="${M}" y="18" font-size="13" font-weight="700" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${escapeXml(title)}</text>
       <rect x="${M}" y="${M - 6}" width="${plotW}" height="${plotH + 6}" fill="none" stroke="${GRID}" />
+      <path d="${materialRegionPath}" fill="rgba(179,107,31,0.12)" stroke="${AMBER}" stroke-width="1" stroke-dasharray="3 2" />
       ${grid}${dots}
       <text x="${M + plotW / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif">${escapeXml(xLabel)}</text>
       <text x="12" y="${H / 2}" text-anchor="middle" font-size="11" fill="${TEXT_DARK}" font-family="Helvetica,Arial,sans-serif" transform="rotate(-90 12 ${H / 2})">${escapeXml(yLabel)}</text>
@@ -564,8 +580,9 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
     y = subheading(doc, 'Visual analysis', y);
 
     const scoredIros = scopedIros
-      .map((iro) => ({ iro, score: aggregateIro(iro, thresholds).effectiveValue }))
+      .map((iro) => { const agg = aggregateIro(iro, thresholds); return { iro, agg, score: agg.effectiveValue }; })
       .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+    const aggByIroId = new Map(scoredIros.map(({ iro, agg }) => [iro.id, agg]));
     const bar = buildBarChartSvg(scoredIros);
     const barPng = await svgStringToPngDataUrl(bar.svg, bar.width, bar.height);
     const barW = contentW, barH = (bar.height / bar.width) * barW;
@@ -579,20 +596,20 @@ export async function buildReportPdf({ cycle, iros, groupEngagement, thresholdCh
       const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
       if (!severities.length || !likelihoods.length) return null;
       const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { topic: iro.topic, x: avg(likelihoods), y: avg(severities) };
+      return { topic: iro.topic, x: avg(likelihoods), y: avg(severities), isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
     }).filter(Boolean);
     const financialPoints = scopedIros.filter((iro) => !hasImpactAxis(iro.iroType) && iro.assessments.length).map((iro) => {
       const magnitudes = iro.assessments.map((a) => a.magnitude).filter((v) => v !== null && v !== undefined);
       const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
       if (!magnitudes.length || !likelihoods.length) return null;
       const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { topic: iro.topic, x: avg(likelihoods), y: avg(magnitudes) };
+      return { topic: iro.topic, x: avg(likelihoods), y: avg(magnitudes), isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
     }).filter(Boolean);
 
     y = ensureSpace(doc, y, 220);
     doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(TEXT_DARK); doc.text('Impact and financial heatmaps', MARGIN, y); doc.setFont(undefined, 'normal'); y += 10;
-    const impactHm = buildHeatmapSvg({ points: impactPoints, xLabel: 'Likelihood', yLabel: 'Severity', title: 'Impact heatmap' });
-    const financialHm = buildHeatmapSvg({ points: financialPoints, xLabel: 'Likelihood', yLabel: 'Magnitude', title: 'Financial heatmap' });
+    const impactHm = buildHeatmapSvg({ points: impactPoints, xLabel: 'Likelihood', yLabel: 'Severity', title: 'Impact heatmap', threshold: thresholds.impact });
+    const financialHm = buildHeatmapSvg({ points: financialPoints, xLabel: 'Likelihood', yLabel: 'Magnitude', title: 'Financial heatmap', threshold: thresholds.financial });
     const [impactPng, financialPng] = await Promise.all([
       svgStringToPngDataUrl(impactHm.svg, impactHm.width, impactHm.height),
       svgStringToPngDataUrl(financialHm.svg, financialHm.width, financialHm.height),

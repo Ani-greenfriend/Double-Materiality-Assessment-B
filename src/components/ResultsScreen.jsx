@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
+import { aggregateIro, aggregateTopic, hasImpactAxis, assessmentSeverity } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR } from '../lib/topics';
 import { ResultsIcon } from './icons';
 import { updateCycleThresholds } from '../lib/data';
@@ -163,6 +163,28 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
   // check alone would miss.
   const aggByIroId = new Map(scoredIros.map(({ iro, agg }) => [iro.id, agg]));
 
+  // Topic-level roll-up (calc.js's aggregateTopic, already used by the PDF
+  // report's own Topic Matrix and methodology text — "a topic is material if
+  // any one of its underlying IROs meets or exceeds the applicable
+  // threshold") — added back above the per-IRO bar chart per the builder's
+  // direct request, alongside it rather than replacing it. "Topic" here is
+  // the ESRS category (E1-E5/S1-S4/G1) an IRO belongs to, not the IRO's own
+  // name — a topic can have both impact-type and financial-type IROs under
+  // it, which is the only way a single row can carry both an Impact Score
+  // and a Financial Score.
+  const presentTopicIds = ESRS_TOPICS.filter((t) => iros.some((i) => i.topic === t.id)).map((t) => t.id);
+  const topicSummaries = presentTopicIds.map((id) => {
+    const topicIros = iros.filter((i) => i.topic === id);
+    const hasImpact = topicIros.some((i) => hasImpactAxis(i.iroType) && i.assessments.length);
+    const hasFinancial = topicIros.some((i) => !hasImpactAxis(i.iroType) && i.assessments.length);
+    const ta = aggregateTopic(id, iros, thresholds);
+    const impactScore = hasImpact ? ta.impactScore : null;
+    const financialScore = hasFinancial ? ta.financialScore : null;
+    const overall = impactScore === null && financialScore === null ? null : Math.max(impactScore ?? -Infinity, financialScore ?? -Infinity);
+    const overallAxis = overall === null ? null : (financialScore !== null && financialScore >= (impactScore ?? -Infinity) ? 'Financial' : 'Impact');
+    return { id, meta: ESRS_TOPICS.find((t) => t.id === id), impactScore, financialScore, overall, overallAxis, isMaterial: ta.isMaterial };
+  });
+
   // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
   // magnitude/likelihood for financial IROs. These are the raw dimensions
   // behind the single combined score, so they need their own averaging
@@ -251,6 +273,43 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
         </span>
         Results
       </h2>
+
+      {/* TOPIC SUMMARY — one row per ESRS topic, both axes + the OR rule */}
+      <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">TOPIC SUMMARY — IMPACT vs FINANCIAL, BY ESRS TOPIC</p>
+      <div className="bg-surface rounded-2xl p-4 mb-1 overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wide text-text-secondary text-left">
+              <th className="pb-2 font-semibold">Topic</th>
+              <th className="pb-2 font-semibold text-right">Impact score</th>
+              <th className="pb-2 font-semibold text-right">Financial score</th>
+              <th className="pb-2 font-semibold text-right">Overall (max)</th>
+              <th className="pb-2 font-semibold text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {topicSummaries.map((t) => (
+              <tr key={t.id} className="border-t border-border-apus">
+                <td className="py-2 font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pillarColor(t.id) }} />
+                  {t.meta?.name ?? t.id}
+                </td>
+                <td className="py-2 text-right tabular-nums">{t.impactScore !== null ? t.impactScore.toFixed(1) : '–'}</td>
+                <td className="py-2 text-right tabular-nums">{t.financialScore !== null ? t.financialScore.toFixed(1) : '–'}</td>
+                <td className="py-2 text-right font-bold tabular-nums">{t.overall !== null ? `${t.overall.toFixed(1)} (${t.overallAxis})` : '–'}</td>
+                <td className="py-2 text-right">
+                  <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: t.overall === null ? '#5B5B66' : t.isMaterial ? '#D79A4C' : '#5B5B66' }}>
+                    {t.overall === null ? '–' : t.isMaterial ? 'Material' : 'Not material'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-text-secondary mb-6">
+        A topic is Material if any one of its underlying IROs meets or exceeds the applicable threshold on its own axis (the "OR" rule) — Overall is the higher of the topic's two axis scores, shown for reference; materiality itself is decided per-IRO, not by comparing this max to a single line.
+      </p>
 
       {/* PRIMARY — BAR CHART */}
       <p className="text-[13px] font-bold text-text-secondary tracking-wide mb-2">PRIMARY — IROs BY SCORE</p>
@@ -388,7 +447,31 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   // MATERIALITY THRESHOLDS above actually moves this zone instead of the
   // heatmap silently ignoring it.
   const REF = threshold;
-  const rx = sx(REF), ry = sy(REF);
+
+  // The real score for a plotted point is x*y/5 (likelihood x severity/magnitude,
+  // scaled to 0-5 — see calc.js assessmentImpactScore/assessmentFinancialScore),
+  // not a simple "both axes past the threshold" square — so the material region
+  // is bounded by the hyperbola y = 5*threshold/x, not by straight lines at x=REF
+  // and y=REF. A point can sit inside the old square (e.g. x=3.2, y=3.2, score
+  // 2.05) and still not be Material; this curve is what the per-dot ring
+  // (isMaterial, computed from the real formula) actually follows.
+  // Actual-impact / potential-human-rights-impact IROs skip likelihood entirely
+  // (severity alone, unscaled) so their true boundary is the flat y = threshold
+  // line, not this curve — their ring is still correct even where the shaded
+  // region here isn't a perfect match for them.
+  const Tc = Math.min(5, Math.max(1, REF));
+  const materialRegionPath = (() => {
+    const steps = 28;
+    const pts = [];
+    for (let i = 0; i <= steps; i++) {
+      const x = Tc + (5 - Tc) * (i / steps);
+      const y = Math.min(5, (5 * Tc) / x);
+      pts.push([sx(x), sy(y)]);
+    }
+    const top = `M ${sx(5)},${sy(5)} L ${sx(Tc)},${sy(5)}`;
+    const curve = pts.map(([px, py]) => `L ${px.toFixed(2)},${py.toFixed(2)}`).join(' ');
+    return `${top} ${curve} Z`;
+  })();
 
   const FONT = 11, CHAR_W = 5.8, LINE_H = 14;
   const placedBoxes = [];
@@ -436,11 +519,11 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   return (
     <div className="bg-surface rounded-2xl p-5">
       <p className="text-[15px] font-bold mb-0.5">{title}</p>
-      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Reference line at {threshold.toFixed(1)} — a ringed dot is Material.</p>
+      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Shaded region is score ≥ {threshold.toFixed(1)} (likelihood × value ÷ 5) — a ringed dot is Material.</p>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W} / ${H}`, height: 'auto', display: 'block' }}>
         <rect x={M} y={10} width={plotW} height={plotH} fill="#100E15" />
         {cells}
-        <rect x={rx} y={10} width={M + plotW - rx} height={ry - 10} fill="rgba(215,154,76,0.16)" stroke="#D79A4C" strokeOpacity="0.5" strokeDasharray="4 3" />
+        <path d={materialRegionPath} fill="rgba(215,154,76,0.16)" stroke="#D79A4C" strokeOpacity="0.6" strokeWidth="1.5" strokeDasharray="4 3" />
         <text x={M + plotW - 4} y={22} textAnchor="end" fontSize="10" fontWeight="700" fill="#D79A4C">HIGHER MATERIALITY</text>
         {[1, 2, 3, 4, 5].map((v) => (
           <text key={`x${v}`} x={sx(v)} y={H - BOTTOM + 16} textAnchor="middle" fontSize="10" fontWeight="600" fill="#8B8B98">{v}</text>
