@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 47 (Topic summary table regrouped from ESRS topic to subtopic per the builder's follow-up — reads topic_library.esrs_subtopic through the existing topic_library_id FK, no schema change).
+**Last updated:** 2026-09-25 — session 2, part 48 (Heatmap dot position rebuilt from a precise 6-point builder spec: position now derives from the exact same effective score as the bar chart, so a dot's on/off-curve status can no longer disagree with the bar chart's Material label; also fixed a real grid/tick misalignment, an inverted heat gradient, and a colour collision between the Social pillar and the "Material" ring — both were literally #D79A4C).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,76 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 48 (2026-09-25) — Heatmap dot position was independently averaged from the bar chart's score, so they could genuinely disagree; rebuilt the heatmap's point math, curve, colours, and per-dot signals from a precise 6-point builder spec.**
+
+Builder gave an exact spec rather than a screenshot this time, after
+spotting the heatmaps could still contradict the bar chart even after
+Part 45/46's curve fix. Root cause: `impactPoints`/`financialPoints` were
+plotting `avg(severity)` against `avg(likelihood)` — two *independently*
+averaged raw dimensions — while the bar chart's Material/Not material came
+from `aggregateIro().effectiveValue`, which is `avg(severity_i *
+likelihood_i/5)` (or a calibrated override entirely divorced from the raw
+averages). `avg(a)*avg(b) != avg(a*b)` in general, and calibration wasn't
+reflected in dot position at all — so a dot could sit outside the material
+curve while the bar chart called the same IRO Material, or the reverse.
+
+Implemented exactly as specified:
+1. **Point position now derives from the score, not the other way round.**
+   X = the likelihood the score actually used — 5 for actual/potential-
+   human-rights-impact IROs (they skip likelihood, scoring on severity
+   alone), the financial likelihood (`a.likelihood`) for risks/
+   opportunities. Y = `agg.effectiveValue / (X/5)`, capped at 5. Since
+   `X*Y/5` now equals `effectiveValue` exactly, "inside the shaded curve"
+   and "the bar chart calls it Material" are the same statement by
+   construction — not two separately-computed things that can drift.
+   Documented one honest edge case: a heavily calibrated IRO with very low
+   likelihood can need Y>5 to reach its calibrated value; it renders capped
+   at the top edge, and the ring (driven by `agg.isMaterial` directly, not
+   by geometry) still correctly shows Material even where the shaded curve
+   itself doesn't visually reach that far left.
+2. Boundary curve unchanged in form (`y = 5*threshold/x`, from Part 45) —
+   now exactly consistent with point position by the same construction.
+3. **Grid/axis alignment fix, a real bug, not cosmetic:** the background
+   heat cells were 5 equal pixel-bands, but `sx`/`sy` place the 5 tick
+   values across 4 quarter-intervals — the two systems never lined up, so
+   no tick actually sat on a cell boundary. Also found the heat gradient
+   itself was inverted (keyed on pixel row/col, and SVG y is flipped, so
+   it ran hottest toward the bottom-right instead of the labelled
+   top-right). Rebuilt as 4×4 bands keyed on data x/y and aligned to the
+   same `sx`/`sy` scale as the ticks, plus explicit thin gridlines at each
+   integer 1-5 so a tick unambiguously sits on a line.
+4. **Colour fix, and a real find:** `PILLAR_COLOR.S` (Social) and the
+   "Material" ring were both `#D79A4C` — the exact same hex — so a
+   Social-pillar dot's ring was invisible/ambiguous by construction. Pillar
+   colour is now the *only* thing fill colour ever means (bar fill no
+   longer dims to grey for Not material either — that was also colour
+   doing status's job). Materiality reads from label text and a ring only,
+   both now a neutral white (`#F5F6FA`, `MATERIAL_MARK`) never overlapping
+   any pillar hue. Fixed the bar chart's legend to match — it had shown a
+   literal orange dot for "Material," which was never true (bars were
+   pillar-coloured, not orange, when material) even before this pass.
+5. **Calibrated IROs render hollow** (`fill: none`, pillar-coloured stroke
+   instead of solid fill) on both heatmaps, composable independently of the
+   Material ring (a calibrated + Material dot is hollow *and* ringed).
+   Added a native SVG `<title>` tooltip per dot (name, score, Material
+   status, Calibrated, override) — heatmap dots had no hover detail before.
+6. **Precautionary-override tag:** a small amber "!" badge on any dot/bar
+   row where `agg.overrideTriggered` (one of scale/scope/irreversibility
+   was rated 5, forcing severity to 5) — this is a deliberately different
+   visual (a tiny corner badge, not the dot's ring or fill) from the
+   Material signal, so it doesn't reopen the colour collision.
+
+Verified against live data before calling it done: Supply Chain Compliance
+Incentive (opportunity, likelihood 4, magnitude 3, single assessor) scores
+2.4 (< the 3.0 threshold) → plots at x=4, y=2.4/(4/5)=3.0; curve at x=4
+requires y≥3.75 → correctly outside the shaded region and unringed,
+matching the bar chart's "Not material." `npm run build`/`npx oxlint src`
+clean (same one pre-existing, unrelated `shapeB` warning). No schema/RLS
+change — pure frontend. PDF report's own heatmap (`reportPdf.js`) was
+**not** touched this pass — it still uses the older raw-average plotting
+and the Part 45 curve without these six fixes; flagged as a follow-up, not
+done silently.
+
 **Part 47 (2026-09-25) — Topic summary table regrouped from ESRS topic to subtopic, reading `topic_library.esrs_subtopic` through the existing `topic_library_id` FK — no schema change.**
 
 Builder, replying directly to a screenshot of Part 46's new topic-level

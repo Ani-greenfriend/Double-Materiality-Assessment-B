@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aggregateIro, hasImpactAxis, assessmentSeverity } from '../lib/calc';
+import { aggregateIro, hasImpactAxis } from '../lib/calc';
 import { ESRS_TOPICS, TYPE_LABEL, PILLAR_COLOR } from '../lib/topics';
 import { ResultsIcon } from './icons';
 import { updateCycleThresholds } from '../lib/data';
@@ -197,29 +197,67 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
       return { id: key, label: key, topicId, impactScore, financialScore, overall, overallAxis, isMaterial };
     });
 
-  // Two-axis points for the heatmaps — severity/likelihood for impact IROs,
-  // magnitude/likelihood for financial IROs. These are the raw dimensions
-  // behind the single combined score, so they need their own averaging
-  // rather than reusing impactScore/financialScore directly.
+  // Two-axis points for the heatmaps. Position is now DERIVED from the same
+  // effective score/isMaterial the bar chart uses, not from an independent
+  // raw average of severity/magnitude — that was the actual bug: averaging
+  // severity and likelihood separately (avg(a)*avg(b)) doesn't equal
+  // avg(a*b) in general, and completely ignores a calibrated override, so a
+  // dot could land outside the material curve while the bar chart called it
+  // Material (or vice versa). Fixing it: X is the likelihood the score
+  // itself used (5 for actual/potential-human-rights-impact IROs, which
+  // skip likelihood and score on severity alone — see
+  // assessmentImpactScore; the financial likelihood for risks/
+  // opportunities), and Y is backed out from the effective score so that
+  // x*y/5 == effectiveValue exactly: Y = effectiveValue / (X/5), capped at
+  // 5 for display. That makes "dot inside the shaded curve" and "bar chart
+  // says Material" the same statement by construction, not two
+  // independently-computed things that happen to usually agree. (Edge case,
+  // documented rather than silently patched over: a heavily calibrated IRO
+  // with very low likelihood can still need Y > 5 to hit its calibrated
+  // value — it renders capped at the top edge, ring still correctly shows
+  // Material via agg.isMaterial even though the shaded curve itself doesn't
+  // reach that far left.)
+  const clamp15 = (v) => Math.min(5, Math.max(1, v));
+  const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
+
   const impactPoints = iros
     .filter((iro) => hasImpactAxis(iro.iroType) && iro.assessments.length)
     .map((iro) => {
-      const severities = iro.assessments.map((a) => assessmentSeverity(iro, a));
-      const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
-      if (!severities.length || !likelihoods.length) return null;
-      const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(severities), iroType: iro.iroType, topic: iro.topic, isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
+      const agg = aggByIroId.get(iro.id);
+      if (!agg || agg.effectiveValue === null) return null;
+      let x;
+      if (iro.actual || iro.potentialHumanRightsImpact) {
+        x = 5; // skips likelihood entirely — score is severity, unscaled
+      } else {
+        const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
+        if (!likelihoods.length) return null;
+        x = clamp15(avg(likelihoods));
+      }
+      const y = Math.min(5, agg.effectiveValue / (x / 5));
+      return {
+        id: iro.id, label: iro.name, x, y, iroType: iro.iroType, topic: iro.topic,
+        score: agg.effectiveValue, isMaterial: agg.isMaterial,
+        calibrated: iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined,
+        overrideTriggered: agg.overrideTriggered, overrideDimension: agg.overrideDimension,
+      };
     })
     .filter(Boolean);
 
   const financialPoints = iros
     .filter((iro) => !hasImpactAxis(iro.iroType) && iro.assessments.length)
     .map((iro) => {
-      const magnitudes = iro.assessments.map((a) => a.magnitude).filter((v) => v !== null && v !== undefined);
+      const agg = aggByIroId.get(iro.id);
+      if (!agg || agg.effectiveValue === null) return null;
       const likelihoods = iro.assessments.map((a) => a.likelihood).filter((v) => v !== null && v !== undefined);
-      if (!magnitudes.length || !likelihoods.length) return null;
-      const avg = (arr) => arr.reduce((s, v) => s + v, 0) / arr.length;
-      return { id: iro.id, label: iro.name, x: avg(likelihoods), y: avg(magnitudes), iroType: iro.iroType, topic: iro.topic, isMaterial: aggByIroId.get(iro.id)?.isMaterial ?? false };
+      if (!likelihoods.length) return null;
+      const x = clamp15(avg(likelihoods)); // a risk/opportunity's `likelihood` IS the financial likelihood
+      const y = Math.min(5, agg.effectiveValue / (x / 5));
+      return {
+        id: iro.id, label: iro.name, x, y, iroType: iro.iroType, topic: iro.topic,
+        score: agg.effectiveValue, isMaterial: agg.isMaterial,
+        calibrated: iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined,
+        overrideTriggered: agg.overrideTriggered, overrideDimension: agg.overrideDimension,
+      };
     })
     .filter(Boolean);
 
@@ -233,9 +271,9 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
       }
       if (downloadSections.heatmaps) {
         downloadCsv('heatmap-impact-financial.csv', [
-          ['Axis', 'IRO', 'ESRS Topic', 'IRO Type', 'X (Likelihood)', 'Y (Severity or Magnitude)'],
-          ...impactPoints.map((p) => ['Impact', p.label, p.topic, TYPE_LABEL[p.iroType], p.x.toFixed(2), p.y.toFixed(2)]),
-          ...financialPoints.map((p) => ['Financial', p.label, p.topic, TYPE_LABEL[p.iroType], p.x.toFixed(2), p.y.toFixed(2)]),
+          ['Axis', 'IRO', 'ESRS Topic', 'IRO Type', 'X (Likelihood)', 'Y (Effective position)', 'Score', 'Material', 'Calibrated'],
+          ...impactPoints.map((p) => ['Impact', p.label, p.topic, TYPE_LABEL[p.iroType], p.x.toFixed(2), p.y.toFixed(2), p.score.toFixed(2), p.isMaterial ? 'Yes' : 'No', p.calibrated ? 'Yes' : 'No']),
+          ...financialPoints.map((p) => ['Financial', p.label, p.topic, TYPE_LABEL[p.iroType], p.x.toFixed(2), p.y.toFixed(2), p.score.toFixed(2), p.isMaterial ? 'Yes' : 'No', p.calibrated ? 'Yes' : 'No']),
         ]);
       }
       return;
@@ -331,14 +369,24 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
       <div className="bg-surface rounded-2xl p-4 mb-1">
         {scoredIros.map(({ iro, score, agg }) => {
           const color = pillarColor(iro.topic);
-          // Material vs not material is the one status that matters most on
-          // this chart — every bar was the same pillar color before, so a
-          // just-under-threshold IRO looked identical to a clearly material
-          // one. Only a material bar keeps its full pillar color; a
-          // not-material one dims to grey, and the label spells it out.
-          const barColor = score === null ? '#3A3842' : agg.isMaterial ? color : '#3A3842';
+          // Colour is pillar only, here and on the heatmap dots — it never
+          // also encodes Material/Not material, because the Social pillar's
+          // colour (#D79A4C) is the exact same amber the app uses elsewhere
+          // for the "Material" semantic, so dimming a bar to signal
+          // materiality made a Social-pillar bar ambiguous (was it dimmed,
+          // or is that just what Social looks like?). Materiality is read
+          // from the label text alone now (bold white vs grey), never a hue.
+          const barColor = score === null ? '#3A3842' : color;
+          const calibrated = iro.calibration?.calibrated_value !== null && iro.calibration?.calibrated_value !== undefined;
+          const title = [
+            iro.name,
+            score !== null ? `Score ${score.toFixed(2)}` : 'Unrated',
+            score !== null ? (agg.isMaterial ? 'Material' : 'Not material') : null,
+            calibrated ? 'Calibrated value' : null,
+            agg.overrideTriggered ? `Precautionary override — ${agg.overrideDimension} rated 5` : null,
+          ].filter(Boolean).join(' — ');
           return (
-            <div key={iro.id} className="flex items-center gap-3 mb-2.5 last:mb-0">
+            <div key={iro.id} className="flex items-center gap-3 mb-2.5 last:mb-0" title={title}>
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
               <span className="text-[13px] font-semibold w-48 truncate">{iro.name}</span>
               <div className="flex-1 bg-surface-2 rounded h-5 relative overflow-hidden">
@@ -346,17 +394,32 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
               </div>
               <span
                 className="text-[10px] font-bold w-[74px] text-right uppercase tracking-wide shrink-0"
-                style={{ color: score === null ? '#5B5B66' : agg.isMaterial ? '#D79A4C' : '#5B5B66' }}
+                style={{ color: score === null ? '#5B5B66' : agg.isMaterial ? '#F5F6FA' : '#5B5B66' }}
               >
                 {score === null ? '–' : agg.isMaterial ? 'Material' : 'Not material'}
               </span>
-              <span className="text-[13px] font-bold w-10 text-right">{score !== null ? score.toFixed(1) : '–'}</span>
+              <span className="text-[13px] font-bold w-10 text-right flex items-center justify-end gap-1">
+                {score !== null ? score.toFixed(1) : '–'}
+                {agg.overrideTriggered && (
+                  <span
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[9px] font-bold shrink-0"
+                    style={{ background: '#D79A4C', color: '#07070B' }}
+                    title={`Precautionary override — ${agg.overrideDimension} rated 5, severity forced to 5`}
+                  >!</span>
+                )}
+              </span>
             </div>
           );
         })}
       </div>
-      <p className="text-[11px] text-text-secondary mb-6">
-        <span style={{ color: '#D79A4C' }}>●</span> Material (score ≥ threshold) · <span style={{ color: '#5B5B66' }}>●</span> Not material
+      <p className="text-[11px] text-text-secondary mb-6 flex items-center gap-4 flex-wrap">
+        <span>Bar colour = ESRS pillar, not status.</span>
+        <span><b style={{ color: '#F5F6FA' }}>MATERIAL</b> = score ≥ threshold</span>
+        <span style={{ color: '#5B5B66' }}>NOT MATERIAL = below threshold</span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[9px] font-bold" style={{ background: '#D79A4C', color: '#07070B' }}>!</span>
+          precautionary override (a severity criterion rated 5)
+        </span>
       </p>
 
       {/* SECONDARY — HEATMAPS */}
@@ -450,12 +513,32 @@ export default function ResultsScreen({ iros, thresholds, cycle, userId, onChang
   );
 }
 
+// Material colour, deliberately NOT the brand's amber (#D79A4C) — that hex
+// is already PILLAR_COLOR.S (Social), so using it for "Material" too made
+// a Social-pillar dot ambiguous (was the ring there, or is that just what
+// Social looks like?). Ring/curve/label all use this instead; dot and bar
+// FILL is pillar colour only, never repurposed to signal status.
+const MATERIAL_MARK = '#F5F6FA';
+
+// A scaled-up outline of the same triangle shape drawn below, for the
+// "Material" outer ring on opportunity/pos_impact points — offset from the
+// triangle's own centroid, not its bounding box, so it reads as one shape
+// growing outward rather than a mismatched halo.
+function trianglePts(cx, cy, scale) {
+  const verts = [[0, -8], [-8, 6], [8, 6]];
+  const centroidY = (-8 + 6 + 6) / 3;
+  return verts.map(([dx, dy]) => `${(cx + dx * scale).toFixed(2)},${(cy + centroidY + (dy - centroidY) * scale).toFixed(2)}`).join(' ');
+}
+
 function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel, shapeB, shapeBLabel, threshold = 3.0, svgRef }) {
   // One unified SVG (background heat + threshold + axis + points) instead of
   // a CSS grid with an overlay — bigger, sharper, and exportable as a single
   // image since it's all one element now.
   const W = 400, H = 300, M = 40, BOTTOM = 34;
   const plotW = W - M - 14, plotH = H - M - BOTTOM;
+  // The grid spans exactly 1-5 on both axes — sx(1)/sy(1) land exactly on
+  // the plot's own edges, sx(5)/sy(5) on the opposite edges, so every tick
+  // below sits precisely on a grid line, not offset from one.
   const sx = (v) => M + ((v - 1) / 4) * plotW;
   const sy = (v) => (H - BOTTOM) - ((v - 1) / 4) * plotH;
   // The cycle's real, applied threshold — not a fixed 3 — so moving it in
@@ -467,13 +550,14 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
   // scaled to 0-5 — see calc.js assessmentImpactScore/assessmentFinancialScore),
   // not a simple "both axes past the threshold" square — so the material region
   // is bounded by the hyperbola y = 5*threshold/x, not by straight lines at x=REF
-  // and y=REF. A point can sit inside the old square (e.g. x=3.2, y=3.2, score
-  // 2.05) and still not be Material; this curve is what the per-dot ring
-  // (isMaterial, computed from the real formula) actually follows.
+  // and y=REF. Points are now plotted on this exact same relation (see
+  // impactPoints/financialPoints above — Y is derived from the effective
+  // score, not an independent raw average), so "inside this curve" and "the
+  // bar chart calls it Material" are the same statement, not two
+  // independently-computed things that can drift apart.
   // Actual-impact / potential-human-rights-impact IROs skip likelihood entirely
-  // (severity alone, unscaled) so their true boundary is the flat y = threshold
-  // line, not this curve — their ring is still correct even where the shaded
-  // region here isn't a perfect match for them.
+  // (severity alone, unscaled, plotted at x=5) so they land exactly on this
+  // curve's own y=threshold point at x=5 — no separate case needed.
   const Tc = Math.min(5, Math.max(1, REF));
   const materialRegionPath = (() => {
     const steps = 28;
@@ -513,33 +597,39 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
     return { ...p, cx, cy, textX, anchorLeft, label: rawLabel };
   });
 
-  // Background heat cells, drawn as SVG rects (5x5) so the whole chart is one
-  // exportable element — cool blue-grey (low) fading to hot amber (top-right,
-  // high on both axes), with a distinct highlighted zone beyond the reference
-  // line so "more material" reads as an actual region, not just a gradient.
-  const cellW = plotW / 5, cellH = plotH / 5;
+  // Background heat bands, in 4 x 4 cells aligned to the same sx/sy scale as
+  // the ticks (previously 5 equal pixel-bands that didn't line up with the
+  // 5 tick positions at all — a real misalignment, not just cosmetic) — and
+  // keyed on DATA x/y (not pixel row/col, which was inverted on the y axis)
+  // so top-right, the actually-highest-score corner, is the hottest cell.
   const cells = [];
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      const heat = (row + col) / 8;
+  for (let yi = 0; yi < 4; yi++) {
+    for (let xi = 0; xi < 4; xi++) {
+      const heat = (xi + yi) / 6;
       const r = Math.round(76 + heat * (215 - 76));
       const g = Math.round(111 + heat * (154 - 111));
       const b = Math.round(255 + heat * (76 - 255));
+      const xv0 = xi + 1, xv1 = xi + 2, yv0 = yi + 1, yv1 = yi + 2;
       cells.push(
-        <rect key={`${row}-${col}`} x={M + col * cellW} y={10 + row * cellH} width={cellW} height={cellH} fill={`rgba(${r},${g},${b},${0.18 + heat * 0.4})`} />
+        <rect key={`${xi}-${yi}`} x={sx(xv0)} y={sy(yv1)} width={sx(xv1) - sx(xv0)} height={sy(yv0) - sy(yv1)} fill={`rgba(${r},${g},${b},${0.18 + heat * 0.4})`} />
       );
     }
   }
+  const gridLines = [1, 2, 3, 4, 5].flatMap((v) => [
+    <line key={`gx${v}`} x1={sx(v)} y1={10} x2={sx(v)} y2={H - BOTTOM} stroke="#2A2830" strokeWidth="0.75" />,
+    <line key={`gy${v}`} x1={M} y1={sy(v)} x2={M + plotW} y2={sy(v)} stroke="#2A2830" strokeWidth="0.75" />,
+  ]);
 
   return (
     <div className="bg-surface rounded-2xl p-5">
       <p className="text-[15px] font-bold mb-0.5">{title}</p>
-      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Shaded region is score ≥ {threshold.toFixed(1)} (likelihood × value ÷ 5) — a ringed dot is Material.</p>
+      <p className="text-[11.5px] text-text-secondary mb-3">Top-right = high on both axes = most material. Shaded region is score ≥ {threshold.toFixed(1)} (likelihood × value ÷ 5) — hover a dot for its score; a ringed dot is Material, a hollow one is calibrated.</p>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ aspectRatio: `${W} / ${H}`, height: 'auto', display: 'block' }}>
         <rect x={M} y={10} width={plotW} height={plotH} fill="#100E15" />
         {cells}
-        <path d={materialRegionPath} fill="rgba(215,154,76,0.16)" stroke="#D79A4C" strokeOpacity="0.6" strokeWidth="1.5" strokeDasharray="4 3" />
-        <text x={M + plotW - 4} y={22} textAnchor="end" fontSize="10" fontWeight="700" fill="#D79A4C">HIGHER MATERIALITY</text>
+        {gridLines}
+        <path d={materialRegionPath} fill="rgba(245,246,250,0.08)" stroke={MATERIAL_MARK} strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="4 3" />
+        <text x={M + plotW - 4} y={22} textAnchor="end" fontSize="10" fontWeight="700" fill={MATERIAL_MARK}>HIGHER MATERIALITY</text>
         {[1, 2, 3, 4, 5].map((v) => (
           <text key={`x${v}`} x={sx(v)} y={H - BOTTOM + 16} textAnchor="middle" fontSize="10" fontWeight="600" fill="#8B8B98">{v}</text>
         ))}
@@ -552,15 +642,39 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
         {positioned.map((p) => {
           const color = pillarColor(p.topic);
           const isShapeA = p.iroType === shapeA;
-          const ring = p.isMaterial ? '#D79A4C' : '#100E15';
-          const ringWidth = p.isMaterial ? 2.5 : 1.2;
+          // Fill is pillar colour only — never repurposed for status. Two
+          // independent, composable signals layer on top of it: a
+          // calibrated value renders the shape hollow (fill none, pillar
+          // stroke instead), and Material adds a second, larger outline in
+          // MATERIAL_MARK — never orange, so it can't be mistaken for the
+          // Social pillar's own amber.
+          const tooltip = [
+            p.label,
+            `Score ${p.score.toFixed(2)}`,
+            p.isMaterial ? 'Material' : 'Not material',
+            p.calibrated ? 'Calibrated value' : null,
+            p.overrideTriggered ? `Precautionary override — ${p.overrideDimension} rated 5` : null,
+          ].filter(Boolean).join(' — ');
           return (
             <g key={p.id}>
+              <title>{tooltip}</title>
               {Math.abs(p.cy - sy(p.y)) > 1 && <line x1={p.cx} y1={sy(p.y)} x2={p.cx} y2={p.cy} stroke={color} strokeOpacity="0.5" strokeWidth="1" />}
               {isShapeA ? (
-                <circle cx={p.cx} cy={p.cy} r="7" fill={color} stroke={ring} strokeWidth={ringWidth} />
+                <>
+                  {p.isMaterial && <circle cx={p.cx} cy={p.cy} r="10" fill="none" stroke={MATERIAL_MARK} strokeWidth="2" />}
+                  <circle cx={p.cx} cy={p.cy} r="7" fill={p.calibrated ? 'none' : color} stroke={color} strokeWidth={p.calibrated ? 2 : 1.5} />
+                </>
               ) : (
-                <polygon points={`${p.cx},${p.cy - 8} ${p.cx - 8},${p.cy + 6} ${p.cx + 8},${p.cy + 6}`} fill={color} stroke={ring} strokeWidth={ringWidth} />
+                <>
+                  {p.isMaterial && <polygon points={trianglePts(p.cx, p.cy, 1.4)} fill="none" stroke={MATERIAL_MARK} strokeWidth="2" />}
+                  <polygon points={trianglePts(p.cx, p.cy, 1)} fill={p.calibrated ? 'none' : color} stroke={color} strokeWidth={p.calibrated ? 2 : 1.5} />
+                </>
+              )}
+              {p.overrideTriggered && (
+                <g>
+                  <circle cx={p.cx + 9} cy={p.cy - 9} r="4.5" fill="#D79A4C" />
+                  <text x={p.cx + 9} y={p.cy - 6} textAnchor="middle" fontSize="7.5" fontWeight="800" fill="#07070B">!</text>
+                </g>
               )}
               <text x={p.textX} y={p.cy + 4} textAnchor={p.anchorLeft ? 'end' : 'start'} fontSize={FONT} fontWeight="700" fill="#F5F6FA" style={{ paintOrder: 'stroke', stroke: '#07070B', strokeWidth: 3 }}>
                 {p.label}
@@ -579,8 +693,16 @@ function Heatmap({ title, note, points = [], xLabel, yLabel, shapeA, shapeALabel
           <span className="text-[11px] font-medium text-text-secondary">{shapeBLabel}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="rounded-full block shrink-0" style={{ width: 10, height: 10, background: '#8B8B98', border: '2px solid #D79A4C' }} />
-          <span className="text-[11px] font-medium text-text-secondary">Material (ringed)</span>
+          <span className="rounded-full block shrink-0" style={{ width: 10, height: 10, background: 'none', border: `2px solid ${MATERIAL_MARK}` }} />
+          <span className="text-[11px] font-medium text-text-secondary">Material (ringed, not coloured)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full block shrink-0" style={{ width: 10, height: 10, background: 'none', border: '1.5px solid #8B8B98' }} />
+          <span className="text-[11px] font-medium text-text-secondary">Calibrated (hollow)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[9px] font-bold shrink-0" style={{ background: '#D79A4C', color: '#07070B' }}>!</span>
+          <span className="text-[11px] font-medium text-text-secondary">Precautionary override</span>
         </div>
       </div>
       {points.length === 0 && <p className="text-[11px] text-text-secondary mt-2">No rated IROs on this axis yet.</p>}
