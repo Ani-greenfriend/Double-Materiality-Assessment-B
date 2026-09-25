@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 51 (Responses detail panel gained a RATINGS BREAKDOWN table — every assessor's full rating side by side, not scattered across optional per-criterion comment cards).
+**Last updated:** 2026-09-25 — session 2, part 52 ("Copy personal link" was silently failing — a swallowed clipboard-write error with zero feedback either way; fixed with real success/fallback UI, plus a new invitations CSV export for mail merge, gated to roles that can read invitations).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,52 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 52 (2026-09-25) — "Copy personal link" was silently failing (a swallowed `.catch`, zero feedback either way); fixed it with real success/fallback UI, and added a per-assessment invitations CSV export for mail merge.**
+
+Builder, two direct instructions:
+
+**1. Fix Copy.** Root-caused before touching anything: `handleCopyInvitation`
+(`AssessmentsTab.jsx`) was `navigator.clipboard?.writeText(inv.link).catch(()
+=> {})` — fire-and-forget, catch swallowed. Checked the other named
+suspect first and ruled it out: `VITE_SURVEY_BASE_URL` is confirmed present
+on the deployed build, since `buildPersonalLink()` throws synchronously if
+it's unset and the screen was rendering real, fully-formed URLs (visible in
+the builder's own screenshot) — if the env var were missing, the whole
+"Created" screen would fail to render at all, not just the Copy button. So
+the real bug was purely the clipboard call itself giving no feedback on
+either outcome, exactly matching "doesn't work" with no other symptom.
+
+**Fix**: `handleCopyInvitation` is now `async` and returns `{ ok: true }` or
+`{ ok: false, reason }` instead of swallowing the error.
+`ExpertAssessmentCreated.jsx` awaits it per row: on success the button
+reads "✓ Copied" (green) for 2s; on failure (or no Clipboard API at all —
+`navigator.clipboard?.writeText` missing) it auto-selects that row's own
+`<input readOnly>` link field (already on screen) and shows an inline
+"Couldn't copy automatically — the link above is selected, press Ctrl+C"
+note. Never silent either way, per instruction.
+
+**2. Invitations CSV, for mail merge.** There is no separate "Invitations"
+screen in this codebase (checked — `fetchInvitations` is only ever
+consumed here, in the Created screen's "PERSONAL LINKS" panel; no
+`InvitationsPanel.jsx` or status-tracking table exists, in this repo or
+reference-prototype/) — this panel is the one and only invitations list,
+so that's where the download went. Added "⭳ Download Excel (CSV)" at its
+top, gated `!readOnly` (Sign-off only has no access to `invitations` at
+all per access-matrix.md's Rule 2 resolution — "no access to
+`topic_library` or `invitations`, full stop" — matching the same
+`readOnly={isSignOffOnly}` prop this tab already threads through). Reused
+`RecipientsScreen.jsx`'s own `downloadCsv` shape exactly (comma-delimited,
+quoted cells, same Blob/anchor pattern) rather than inventing a second
+convention. Columns: Name, Email, Stakeholder group, Status, Personal
+link — `email`/`groupName`/`status` were already returned by
+`fetchInvitations` (data.js) but never threaded into the array
+`AssessmentsTab.jsx` passes down (only `{id, name, link}` before); extended
+that mapping, plus a new `assessmentSlug` prop for the filename
+(`<slug>-invitations.csv`).
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS change — reused
+existing `fetchInvitations` fields, no new query.
+
 **Part 51 (2026-09-25) — Responses detail panel gained a RATINGS BREAKDOWN table: every assessor's full rating, side by side, not scattered across optional per-criterion comment cards.**
 
 Builder's follow-up after Part 50 (which explained why comment cards only

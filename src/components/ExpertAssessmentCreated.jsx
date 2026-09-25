@@ -1,5 +1,47 @@
-export default function ExpertAssessmentCreated({ mode, surveyName, invitations = [], startDate, endDate, alreadyRun, participantCount = 0, hasStakeholderGroups = true, onCopyInvitation, onPreview, onKickOff, onGoToRecipients, onGoToStakeholders, onGoToOverview }) {
+import { useRef, useState } from 'react';
+
+// Matches RecipientsScreen.jsx's own downloadCsv exactly (comma-delimited,
+// quoted cells, same Blob/anchor-click pattern) — "same format and naming
+// style as the existing Recipients download," per direct instruction.
+function downloadCsv(rows, header, filename) {
+  const lines = [header, ...rows].map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export default function ExpertAssessmentCreated({ mode, surveyName, assessmentSlug, invitations = [], startDate, endDate, alreadyRun, participantCount = 0, hasStakeholderGroups = true, readOnly, onCopyInvitation, onPreview, onKickOff, onGoToRecipients, onGoToStakeholders, onGoToOverview }) {
   const isQuant = mode === 'expert_survey';
+  // Per-invitation copy feedback — never silent, per direct instruction.
+  // 'copied' auto-clears after 2s; 'failed' stays until the next attempt,
+  // with the row's own link field selected as the copy-by-hand fallback.
+  const [copyState, setCopyState] = useState({});
+  const inputRefs = useRef({});
+
+  async function handleCopyClick(inv) {
+    const result = await onCopyInvitation(inv);
+    if (result?.ok) {
+      setCopyState((s) => ({ ...s, [inv.id]: 'copied' }));
+      setTimeout(() => setCopyState((s) => (s[inv.id] === 'copied' ? { ...s, [inv.id]: undefined } : s)), 2000);
+    } else {
+      setCopyState((s) => ({ ...s, [inv.id]: 'failed' }));
+      const el = inputRefs.current[inv.id];
+      el?.focus();
+      el?.select();
+    }
+  }
+
+  function downloadInvitationsCsv() {
+    downloadCsv(
+      invitations.map((inv) => [inv.name, inv.email ?? '', inv.groupName ?? '', inv.status ?? '', inv.link]),
+      ['Name', 'Email', 'Stakeholder group', 'Status', 'Personal link'],
+      `${assessmentSlug}-invitations.csv`
+    );
+  }
+
   return (
     <div className="max-w-xl mx-auto text-center">
       <div className="bg-surface rounded-2xl p-10">
@@ -30,7 +72,12 @@ export default function ExpertAssessmentCreated({ mode, surveyName, invitations 
             </div>
 
             <div className="text-left bg-surface-2 rounded-xl p-4 mb-6">
-              <p className="text-[10.5px] font-semibold text-text-secondary mb-1">PERSONAL LINKS — OUTSIDE THIS PLATFORM</p>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-[10.5px] font-semibold text-text-secondary">PERSONAL LINKS — OUTSIDE THIS PLATFORM</p>
+                {!readOnly && invitations.length > 0 && (
+                  <button onClick={downloadInvitationsCsv} className="text-[10.5px] text-text-secondary hover:text-text-primary shrink-0">⭳ Download Excel (CSV)</button>
+                )}
+              </div>
               <p className="text-[11.5px] text-text-secondary mb-3">
                 Each invitee has their own link to fill in the assessment on their own device — separately from this tool, no account needed. Manage the full list any time from Recipients.
               </p>
@@ -39,10 +86,29 @@ export default function ExpertAssessmentCreated({ mode, surveyName, invitations 
               ) : (
                 <div className="flex flex-col gap-2">
                   {invitations.map((inv) => (
-                    <div key={inv.id} className="flex items-center gap-2">
-                      <span className="text-[11.5px] w-28 truncate shrink-0">{inv.name}</span>
-                      <input readOnly value={inv.link} className="flex-1 bg-app-black rounded-lg px-3 py-2 text-[12px] outline-none" />
-                      <button onClick={() => onCopyInvitation(inv)} className="text-[11.5px] border border-border-apus rounded-lg px-3 py-2 shrink-0">Copy</button>
+                    <div key={inv.id}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11.5px] w-28 truncate shrink-0">{inv.name}</span>
+                        <input
+                          readOnly
+                          ref={(el) => { inputRefs.current[inv.id] = el; }}
+                          value={inv.link}
+                          onFocus={(e) => e.target.select()}
+                          className="flex-1 bg-app-black rounded-lg px-3 py-2 text-[12px] outline-none"
+                        />
+                        <button
+                          onClick={() => handleCopyClick(inv)}
+                          className="text-[11.5px] border rounded-lg px-3 py-2 shrink-0"
+                          style={{ borderColor: copyState[inv.id] === 'copied' ? '#5ED996' : '#2A2830', color: copyState[inv.id] === 'copied' ? '#5ED996' : undefined }}
+                        >
+                          {copyState[inv.id] === 'copied' ? '✓ Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      {copyState[inv.id] === 'failed' && (
+                        <p className="text-[10.5px] mt-1" style={{ color: '#D79A4C' }}>
+                          Couldn't copy automatically — the link above is selected, press Ctrl+C (⌘+C on Mac) to copy it.
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
