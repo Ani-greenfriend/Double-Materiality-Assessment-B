@@ -397,6 +397,10 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   }
 
   async function handleQuestionnaireFinish(ratings, relevantIros, sessionNotes, justifications) {
+    // Belt-and-braces alongside Questionnaire.jsx's own button guard — a
+    // second concurrent call here would re-submit an already-submitted
+    // response and hit the RLS policy that freezes it.
+    if (busy) return;
     setBusy(true);
     setError('');
     try {

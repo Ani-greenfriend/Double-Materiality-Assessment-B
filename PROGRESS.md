@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-24 — session 2, part 33 (Results screen: cut the Topic Matrix per the builder's direct request, keeping only the bar chart and the two Impact/Financial heatmaps; relocated the Apply+reason threshold editor out of the matrix section so that CLAUDE.md business rule stays intact; the bar chart now visually marks Material vs Not material — dimmed grey bar plus an explicit label — instead of every bar looking the same pillar color regardless of status).
+**Last updated:** 2026-09-25 — session 2, part 34 (fixed the live-session "ratings upsert failed: row-level security policy" bug on Finish: the "To Results" button had no double-click guard, so two clicks fired two concurrent submits — the first correctly froze the submission, the second's ratings upsert then hit the RLS policy that enforces that freeze. Disabled the button while a submit is in flight, in both Questionnaire.jsx and its AssessmentsTab.jsx caller).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,46 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 34 (2026-09-25) — Fixed the live-session "ratings upsert failed: row-level security policy" bug on Finish.**
+
+Builder screenshot: the live session's "All 3 topics rated" success screen,
+with an orange error banner on top reading `ratings upsert failed: new row
+violates row-level security policy (USING expression) for table "ratings"`.
+
+**Root cause, confirmed against the live RLS policies** (`pg_policies` for
+`ratings`): the UPDATE policy `full access update draft ratings` requires
+`submissions.status = 'draft'` in its `USING` clause. A plain `UPDATE`
+hitting a non-matching row is silently filtered by RLS (0 rows, no error —
+the pattern this session already hit for `submissions`/`iros` deletes).
+But `saveLiveSessionProgress`'s write is `.upsert(..., { onConflict:
+'submission_id,iro_id,criterion_key' })` — an `INSERT ... ON CONFLICT DO
+UPDATE` — and Postgres does **not** silently skip RLS failures on that
+path; it raises the error, which is exactly the message shown.
+
+That only happens if the ratings upsert runs against a submission that's
+already `submitted` — but `finishLiveSession` (data.js) always upserts
+ratings *before* setting `submissions.status = 'submitted'`, so a single
+well-behaved call should never hit this. The real bug: `Questionnaire.jsx`'s
+"To Results →" button (the summary screen's only action) had no `disabled`
+guard and wasn't wired to `AssessmentsTab.jsx`'s `busy` state at all — a
+second click before the first request completed fired `onFinish` twice.
+The first call submits normally (ratings upsert while still draft, then
+flips status to submitted); the second call's ratings upsert now runs
+against an already-submitted, frozen submission and hits the RLS wall —
+which is doing exactly what CLAUDE.md requires ("a submitted response is
+frozen for every role"), just surfacing as a confusing error on a screen
+that already looked finished.
+
+**Fix**: added local `finishing` state in `Questionnaire.jsx` — the button
+disables itself and shows "Submitting…" for the duration of the (now
+awaited) `onFinish` call, re-enabling only if it throws. Added a matching
+`if (busy) return;` guard at the top of `AssessmentsTab.jsx`'s
+`handleQuestionnaireFinish` as a second layer, independent of the button
+state. No RLS/schema change — the policy was already correct; the app
+just needed to stop calling it twice.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+
 **Part 33 (2026-09-24) — Results: cut the Topic Matrix, keep bar chart + heatmaps; mark Material vs Not material on the bar chart.**
 
 Builder: "leave out the combined matrix and keep focus on balkendiagramm

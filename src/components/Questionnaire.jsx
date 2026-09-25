@@ -135,6 +135,13 @@ export default function Questionnaire({
   const [sessionNotes, setSessionNotes] = useState({});
   const [touched, setTouched] = useState(() => new Set(initialRatings[relevantIros[startIndex]?.id] ? Object.keys(initialRatings[relevantIros[startIndex].id]) : []));
   const [finished, setFinished] = useState(false);
+  // Guards "To Results" against a double click — without it, a second click
+  // before the first request lands fires onFinish twice; the first submits
+  // the session (submission becomes 'submitted'), and the second's ratings
+  // upsert then hits the RLS wall that freezes a submitted response (by
+  // design, per CLAUDE.md), surfacing as an "upsert failed: row-level
+  // security policy" error on top of this already-shown summary screen.
+  const [finishing, setFinishing] = useState(false);
   // Section 8, Live session: "a justification per criterion or per topic
   // according to the assessment's justification mode (required once a
   // value is entered)" — per_criterion: { [iroId]: { [criterionKey]: text } };
@@ -194,11 +201,20 @@ export default function Questionnaire({
           </div>
 
           <button
-            onClick={() => onFinish(ratings, relevantIros, sessionNotes, justifications)}
-            className="text-[13px] font-semibold rounded-xl px-6 py-3"
+            onClick={async () => {
+              if (finishing) return;
+              setFinishing(true);
+              try {
+                await onFinish(ratings, relevantIros, sessionNotes, justifications);
+              } finally {
+                setFinishing(false);
+              }
+            }}
+            disabled={finishing}
+            className="text-[13px] font-semibold rounded-xl px-6 py-3 disabled:opacity-50"
             style={{ background: '#4C6FFF', color: '#F5F6FA' }}
           >
-            To Results →
+            {finishing ? 'Submitting…' : 'To Results →'}
           </button>
         </div>
       </div>
