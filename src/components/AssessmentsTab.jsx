@@ -70,6 +70,9 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   const [activeIros, setActiveIros] = useState([]);
   const [liveSession, setLiveSession] = useState(null);
   const [sessionProgress, setSessionProgress] = useState(null);
+  // Set fresh on every enterLiveSession call, never stale between sessions —
+  // true only when that session was already finished (submitted, frozen).
+  const [liveSessionReadOnly, setLiveSessionReadOnly] = useState(false);
   const [activeParticipantCount, setActiveParticipantCount] = useState(0);
 
   const reloadAssessments = useCallback(() => {
@@ -329,21 +332,18 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
       }
       const progress = await fetchLiveSessionProgress(assessment.id, ls.id, assessment.perspectiveFilter);
       // A submitted response is frozen for every role (CLAUDE.md Business
-      // Rules) — the RLS policy already refuses any further write to it, but
-      // without this check the Questionnaire would open anyway and the very
-      // first autosave would fail with a raw "row-level security policy"
-      // error. Redirect to the results it already produced instead.
-      if (progress.status === 'submitted') {
-        setError('This live session already finished — its ratings are locked and can\'t be re-entered. Opening its results instead.');
-        onViewResults?.(assessment);
-        return;
-      }
+      // Rules) — the RLS policy already refuses any further write to it.
+      // Rather than refusing to open it at all, open the Questionnaire in
+      // its read-only review mode, landing on the results summary: browse
+      // any topic, but nothing here can attempt the write RLS would refuse.
+      const alreadySubmitted = progress.status === 'submitted';
+      setLiveSessionReadOnly(alreadySubmitted);
       const { iros } = await fetchDashboard(assessment.id);
       setActiveIros(iros);
       setActiveAssessment(assessment);
       setLiveSession({ ...ls, participants: active });
       setSessionProgress(progress);
-      setFlowStep(progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
+      setFlowStep(alreadySubmitted || progress.currentTopicIndex > 0 || Object.keys(progress.ratings).length > 0 ? 'questionnaire' : 'intro');
     } catch (err) {
       setError(err.message);
     }
@@ -647,6 +647,8 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           justificationMode={activeAssessment.justificationMode || justificationMode}
           initialJustifications={sessionProgress.justifications}
           participants={(liveSession?.participants || []).map((p) => ({ name: p.name }))}
+          readOnly={liveSessionReadOnly}
+          startFinished={liveSessionReadOnly}
         />
       )}
 

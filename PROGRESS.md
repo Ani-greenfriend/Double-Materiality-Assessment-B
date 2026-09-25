@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 40 ("Go to survey" (part 38) silently did nothing — window.open() was called after an await, which loses the click's user-activation in most browsers and gets eaten by the popup blocker with no error. Fixed by opening the tab synchronously in the same tick as the click, then navigating it once the personal link is fetched).
+**Last updated:** 2026-09-25 — session 2, part 41 (revised part 39's fix per direct builder instruction: "Go to live session" on an already-finished session no longer redirects away — it opens the Questionnaire itself in a new read-only review mode, landing on the results summary, with full topic-by-topic back-navigation and every input inert; a note points to Calibration for actual adjustments, since a submitted response stays frozen per CLAUDE.md).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,49 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 41 (2026-09-25) — "Go to live session" on a finished session now opens a real read-only review, not a redirect.**
+
+Builder, refining part 39's fix: "if the live session is completed you can
+go to the final results screen of the session when you click go to live
+session in the assessment overview and still click back through the
+topics to adjust if needed." Part 39's redirect-to-Calibrate&Results was
+safe but threw away the actual ask — being able to open the finished
+session itself and step back through its topics.
+
+**`Questionnaire.jsx`** gained a real read-only review mode:
+`readOnly`/`startFinished` props. When `readOnly`: the autosave effect
+(`onProgress`) never fires — the one thing that must never touch a
+frozen, submitted response again; every rating slider, justification
+textarea and session-notes textarea is inert (`disabled`/`readOnly`,
+dimmed); the finish screen replaces "To Results →" (which would call
+`onFinish` → `finishLiveSession` → another write) with "← Review topics"
+(jumps to the last topic and clears `finished`, exactly the requested
+"click back through the topics") and "Close"; the top nav's "Save and
+pause session" becomes a plain "Close"; the intro banner and finish-screen
+copy explain the session is locked and point to **Calibration** as where
+an actual adjustment happens — reusing the mechanism that already exists
+for exactly this (writes to `calibrations`, not frozen `ratings`, fully
+logged) rather than pretending this screen can write again. `next()`/
+`prev()`/`loadTopic()` needed no changes — they only ever touched local
+React state; the crash was always the autosave call layered on top, now
+gated off entirely.
+
+**`AssessmentsTab.jsx`**: `enterLiveSession` now sets a new
+`liveSessionReadOnly` state from `progress.status === 'submitted'` (reset
+fresh on every call, no stale leakage between sessions) instead of
+redirecting to results, and opens the Questionnaire with
+`readOnly={liveSessionReadOnly} startFinished={liveSessionReadOnly}` —
+landing straight on the results summary, exactly as asked. Single code
+path (`enterLiveSession`), so this covers every entry point already
+wired to it: the overview's "Go to live session" button, Responses'
+"Resume session", the Created screen's "Kick off", and Review Hub's
+launch button.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — the frozen-submission rule stays enforced exactly
+as strictly as before; this only makes hitting it impossible instead of
+routing around it.
+
 **Part 40 (2026-09-25) — "Go to survey" (part 38) silently did nothing: popup blocker, not a logic bug.**
 
 Builder: "when you click on go to survey in the assessment overview it
