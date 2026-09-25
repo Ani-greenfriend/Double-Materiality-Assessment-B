@@ -358,15 +358,26 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
   async function openExternalSurvey(assessment) {
     if (readOnly) { setError('Sign-off only cannot open the survey.'); return; }
     setError('');
+    // Open the tab synchronously, in the same tick as the click, and
+    // navigate it once the link is known — a window.open() called after an
+    // await (fetchInvitations below) loses the click's "user activation" in
+    // most browsers and gets silently eaten by the popup blocker, which is
+    // exactly why this looked like nothing happened at all. Can't pass
+    // noopener/noreferrer here since navigating the tab afterward needs a
+    // live reference to it; Tool A is our own trusted site, so that's fine.
+    const tab = window.open('', '_blank');
     try {
       const invitations = await fetchInvitations(assessment.id);
       if (!invitations.length) {
+        tab?.close();
         openRecipientsDirect(assessment);
         setError('Add recipients first — no invitations exist yet to open the survey with.');
         return;
       }
-      window.open(buildPersonalLink(assessment.slug, invitations[0].linkCode), '_blank', 'noopener,noreferrer');
+      if (tab) tab.location.href = buildPersonalLink(assessment.slug, invitations[0].linkCode);
+      else setError('Your browser blocked the new tab — allow pop-ups for this site, or use Recipients to copy the link instead.');
     } catch (err) {
+      tab?.close();
       setError(err.message);
     }
   }

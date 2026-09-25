@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 39 (found a second, broader path to the same "ratings upsert failed: row-level security policy" error from part 34 — re-entering an already-finished live session's Questionnaire at all, via the pre-existing "Resume session" or the new "Go to live session" button, both of which happily reopened it with no status check; the very next autosave then hit the frozen-submission RLS wall. enterLiveSession now checks progress.status === 'submitted' first and redirects to that assessment's results with a clear message instead).
+**Last updated:** 2026-09-25 — session 2, part 40 ("Go to survey" (part 38) silently did nothing — window.open() was called after an await, which loses the click's user-activation in most browsers and gets eaten by the popup blocker with no error. Fixed by opening the tab synchronously in the same tick as the click, then navigating it once the personal link is fetched).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,32 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 40 (2026-09-25) — "Go to survey" (part 38) silently did nothing: popup blocker, not a logic bug.**
+
+Builder: "when you click on go to survey in the assessment overview it
+doesnt go to the external survey." No error, nothing visible — that
+absence was the clue. `openExternalSurvey` called `window.open(url, ...)`
+*after* `await fetchInvitations(...)` — browsers tie a `window.open()`
+call's permission to the click's "user activation," which most browsers
+treat as expired once an `await` yields back to the event loop, even for a
+fast Promise. The call doesn't throw; it's just silently blocked, so the
+try/catch never saw anything to report.
+
+Fixed by opening the tab **synchronously**, in the same tick as the click
+(`const tab = window.open('', '_blank')`, before the `await`), then
+setting `tab.location.href` once the invitation's personal link is
+fetched. Dropped `noopener`/`noreferrer` for this specific call — you need
+a live reference to the tab to navigate it afterward, and Tool A is our
+own trusted site, so there's no real reverse-tabnabbing risk here. Added a
+fallback message ("Your browser blocked the new tab...") for the rare case
+a popup blocker prevents even the blank open.
+
+`npm run build`/`npx oxlint src` clean (same three pre-existing warnings).
+No schema/RLS change — pure frontend, and confirmed `assessment.slug`
+(the other plausible cause — a malformed link — was already present on
+every row from `fetchAssessmentsForOverview`) wasn't the issue before
+settling on the popup-timing explanation.
+
 **Part 39 (2026-09-25) — Same RLS error, second real path: re-entering an already-finished live session.**
 
 Builder screenshot: the same `ratings upsert failed: new row violates
