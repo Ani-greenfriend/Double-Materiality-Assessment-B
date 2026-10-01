@@ -17,6 +17,7 @@ import {
   fetchLiveSessionWithParticipants, addParticipantsFromRecipients, fetchLiveSessionProgress,
   saveLiveSessionProgress, finishLiveSession, fetchDashboard,
   loadStakeholderMapForModule, saveStakeholderMapForModule, uploadClientLogo,
+  signOffAssessmentTopics,
 } from '../lib/data';
 
 // Section 8, New assessment: Mode -> Perspective -> General info -> Review &
@@ -37,7 +38,7 @@ function candidateIroShape(t) {
   return { id: t.id, name: t.short_title, description: t.description || '', iroType: t.iro_type, actual: t.actual, esrsTopicId: t.esrs_topic_id, timeHorizon: t.time_horizon, potentialHumanRightsImpact: t.potential_human_rights_impact };
 }
 
-export default function AssessmentsTab({ perspective, userId, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal, readOnly }) {
+export default function AssessmentsTab({ perspective, userId, canSignoffTopics, onChanged, onViewResults, onGoToStakeholders, deepLink, onDeepLinkHandled, resetSignal, readOnly }) {
   const [flowStep, setFlowStep] = useState('overview');
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -302,6 +303,20 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
     } catch {
       return { ok: false, reason: 'denied' };
     }
+  }
+
+  // v2.1 access-stage gate: assessments.iro_list_signed_off, advisory only.
+  // Routed through sign_off_assessment_topics() (SECURITY DEFINER), which
+  // checks is_full_access() OR can_signoff_topics() itself — readOnly here
+  // only decides whether this button renders at all for Sign-off only
+  // (canSignoffTopics), full-access can always reach it.
+  async function handleSignOffTopics() {
+    if (!activeAssessment) return;
+    await signOffAssessmentTopics(activeAssessment.id);
+    const now = new Date().toISOString();
+    setActiveAssessment((prev) => (prev ? { ...prev, iroListSignedOff: true, iroListSignedOffAt: now } : prev));
+    reloadAssessments();
+    onChanged?.();
   }
 
   // Jumps straight to Recipients (survey) or Participants (live session)
@@ -635,6 +650,10 @@ export default function AssessmentsTab({ perspective, userId, onChanged, onViewR
           onDiscardAndExit={() => setFlowStep('overview')}
           onGoDirect={() => goDirect(activeAssessment)}
           readOnly={readOnly}
+          iroListSignedOff={activeAssessment.iroListSignedOff}
+          iroListSignedOffAt={activeAssessment.iroListSignedOffAt}
+          canSignOffTopics={!readOnly || canSignoffTopics}
+          onSignOffTopics={handleSignOffTopics}
         />
       )}
 

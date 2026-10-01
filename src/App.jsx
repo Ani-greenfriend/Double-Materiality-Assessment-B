@@ -351,6 +351,7 @@ export default function App() {
             <AssessmentsTab
               perspective={assessmentsPerspective}
               userId={session.user.id}
+              canSignoffTopics={!!me.canSignoffTopics}
               onChanged={reloadCyclesAndAssessments}
               onViewResults={(a) => { setAssessmentId(a.id); setCrInitialSub('results'); setTab('calibrate-results'); }}
               onGoToStakeholders={() => { setTab('stakeholders'); setOpenGroupId(null); }}
@@ -398,6 +399,7 @@ export default function App() {
                   thresholds={thresholds}
                   cycle={cycles.find((c) => c.id === currentAssessment?.cycle?.id) ?? null}
                   userId={session.user.id}
+                  canSignoffResults={!!me.canSignoffResults}
                   onChanged={() => { reload(); reloadCyclesAndAssessments(); }}
                   initialSub={crInitialSub}
                   readOnly={isSignOffOnly}

@@ -98,6 +98,7 @@ export default function AssessmentReviewHub({
   mode, perspectiveFilter, iros, logo, companyName,
   welcomeText, taskText, stakeholders, topicOverrides,
   onSaveAndExit, onDiscardAndExit, onGoDirect, readOnly,
+  iroListSignedOff, iroListSignedOffAt, canSignOffTopics, onSignOffTopics,
 }) {
   const relevantIros = iros.filter((i) => {
     if (perspectiveFilter === 'impact') return hasImpactAxis(i.iroType);
@@ -111,6 +112,20 @@ export default function AssessmentReviewHub({
   const [draftOverrides, setDraftOverrides] = useState(topicOverrides);
   const [dirty, setDirty] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [signingOff, setSigningOff] = useState(false);
+  const [signOffError, setSignOffError] = useState('');
+
+  async function handleSignOffTopics() {
+    setSigningOff(true);
+    setSignOffError('');
+    try {
+      await onSignOffTopics();
+    } catch (err) {
+      setSignOffError(err.message);
+    } finally {
+      setSigningOff(false);
+    }
+  }
 
   // Every topic is summarized under one "Topics" nav item — a single
   // scrollable page listing all of them — rather than one tab per topic,
@@ -224,6 +239,33 @@ export default function AssessmentReviewHub({
           <div className="max-h-[70vh] overflow-y-auto pr-1">
             <p className="text-[13px] font-semibold mb-1">All topics in this assessment</p>
             <p className="text-[10.5px] text-text-secondary mb-4 italic">Shown for reference only — nothing here is recorded.</p>
+
+            {onSignOffTopics && (
+              <div className="rounded-xl p-3.5 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ background: iroListSignedOff ? 'rgba(94,217,150,0.1)' : 'rgba(139,139,152,0.08)' }}>
+                <div>
+                  <p className="text-[12px] font-semibold" style={{ color: iroListSignedOff ? '#5ED996' : undefined }}>
+                    {iroListSignedOff ? '✓ Topic list signed off' : 'Topic list not yet signed off'}
+                  </p>
+                  <p className="text-[10.5px] text-text-secondary">
+                    {iroListSignedOff
+                      ? `${iroListSignedOffAt ? new Date(iroListSignedOffAt).toLocaleString() : ''} — advisory only, this never blocks starting or continuing the assessment.`
+                      : 'Confirms the topic selection was reviewed — advisory only, doesn’t block anything.'}
+                  </p>
+                  {signOffError && <p className="text-[10.5px] mt-1" style={{ color: '#D79A4C' }}>{signOffError}</p>}
+                </div>
+                {!iroListSignedOff && canSignOffTopics && (
+                  <button
+                    onClick={handleSignOffTopics}
+                    disabled={signingOff}
+                    className="text-[11.5px] font-semibold rounded-lg px-3.5 py-2 shrink-0 disabled:opacity-40"
+                    style={{ background: '#5ED996', color: '#07070B' }}
+                  >
+                    {signingOff ? 'Signing off…' : 'Sign off topic list'}
+                  </button>
+                )}
+              </div>
+            )}
+
             {relevantIros.map((iro) => (
               <TopicRow key={iro.id} iro={iro} override={draftOverrides[iro.id]} onUpdate={updateTopic} readOnly={readOnly} />
             ))}

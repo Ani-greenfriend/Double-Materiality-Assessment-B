@@ -133,6 +133,7 @@ export async function fetchCycles() {
       impact_threshold, financial_threshold, baseline_impact_threshold, baseline_financial_threshold,
       require_both_sources, silent_stakeholders_considered, silent_stakeholders_note,
       approver_name, approver_role, minutes_reference, signed_off_at, created_at,
+      results_signed_off, results_signed_off_by, results_signed_off_at,
       clients ( id, name, logo_url )
     `)
     .order('created_at', { ascending: false });
@@ -214,6 +215,9 @@ export async function fetchCycles() {
       approverRole: c.approver_role,
       minutesReference: c.minutes_reference,
       signedOffAt: c.signed_off_at,
+      resultsSignedOff: c.results_signed_off,
+      resultsSignedOffBy: c.results_signed_off_by,
+      resultsSignedOffAt: c.results_signed_off_at,
       createdAt: c.created_at,
       assessments: cycleAssessments,
       submittedSources,
@@ -342,6 +346,40 @@ export async function updateCycleThresholds({ cycleId, oldImpact, newImpact, old
     const { error: historyError } = await supabase.from('threshold_changes').insert(rows);
     if (historyError) throw new Error(`threshold_changes insert failed: ${historyError.message}`);
   }
+}
+
+// ---- v2.1 access-stage sign-off gates — assessments.iro_list_signed_off
+// (advisory only, never blocks anything) and cycles.results_signed_off (a
+// real lock: once true, calibrations.calibrated_value/.band_value for that
+// cycle can't be updated by anyone except through an explicit Revoke).
+// Both routed through the existing SECURITY DEFINER functions
+// (sign_off_assessment_topics/sign_off_cycle_results — same pattern as
+// Tool A's six link-code functions), which check the caller's own
+// authorization internally (is_full_access() OR the matching
+// can_signoff_* flag) rather than relying on a broad RLS UPDATE policy —
+// confirmed live against the actual function bodies before wiring this up,
+// not assumed from the docs alone. Revoke has no function by design — it
+// only ever goes through cycles' general is_full_access()-only UPDATE
+// policy, so Sign-off only can never revoke, by construction.
+export async function signOffAssessmentTopics(assessmentId) {
+  assertConfigured();
+  const { error } = await supabase.rpc('sign_off_assessment_topics', { p_assessment_id: assessmentId });
+  if (error) throw new Error(`sign_off_assessment_topics failed: ${error.message}`);
+}
+
+export async function signOffCycleResults(cycleId) {
+  assertConfigured();
+  const { error } = await supabase.rpc('sign_off_cycle_results', { p_cycle_id: cycleId });
+  if (error) throw new Error(`sign_off_cycle_results failed: ${error.message}`);
+}
+
+export async function revokeCycleResultsSignoff(cycleId) {
+  assertConfigured();
+  const { error } = await supabase
+    .from('cycles')
+    .update({ results_signed_off: false, results_signed_off_by: null, results_signed_off_at: null })
+    .eq('id', cycleId);
+  if (error) throw new Error(`cycles update failed: ${error.message}`);
 }
 
 // RLS-gated: only succeeds when no response exists anywhere in the cycle
@@ -1514,7 +1552,7 @@ export async function fetchAssessmentsForOverview() {
   assertConfigured();
   const { data, error } = await supabase
     .from('assessments')
-    .select('id, cycle_id, name, slug, type, perspective_filter, justification_mode, description, start_date, end_date, welcome_text, task_text, mandatory, created_at, cycles ( financial_year, esrs_version, stage )')
+    .select('id, cycle_id, name, slug, type, perspective_filter, justification_mode, description, start_date, end_date, welcome_text, task_text, mandatory, created_at, iro_list_signed_off, iro_list_signed_off_at, cycles ( financial_year, esrs_version, stage )')
     .order('created_at', { ascending: false });
   if (error) throw new Error(`assessments query failed: ${error.message}`);
   if (!data.length) return [];
@@ -1546,6 +1584,8 @@ export async function fetchAssessmentsForOverview() {
       taskText: a.task_text,
       mandatory: a.mandatory,
       createdAt: a.created_at,
+      iroListSignedOff: a.iro_list_signed_off,
+      iroListSignedOffAt: a.iro_list_signed_off_at,
       financialYear: a.cycles?.financial_year ?? null,
       esrsVersion: a.cycles?.esrs_version ?? null,
       cycleStage: a.cycles?.stage ?? null,

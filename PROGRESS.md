@@ -4,8 +4,8 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 53 (Profile screen: removed Phone number, added a top ROLE/EMAIL/ADMIN summary block per direct instruction).
+**Session:** 3
+**Last updated:** 2026-10-01 — session 3, part 54 (Sign-off only's two gated actions — IRO/topic list sign-off, results sign-off — had the permission grantable in Admin & Roles but no UI anywhere to exercise it, for any role; the DB side was already fully built and live-verified, this pass wired the frontend to it).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,90 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 54 (2026-10-01) — Sign-off only's two gated actions (IRO/topic list sign-off, results sign-off) had no UI anywhere, for any role — the permission was grantable (Admin & Roles) but completely unreachable. Built both.**
+
+Builder, from a screenshot of a test "Sign-off only" holder (Topics + Results
+both checked): "the access of for the sign-off functionality is not
+correct. the person that receives sign off access needs to be able to
+access IRO signoff functionality and Calibration sign off functionality,
+result view only."
+
+Investigated before building anything, since `App.jsx` locks Sign-off only
+out of the Topics *nav tab* (topic_library — confirmed correct,
+access-matrix.md's own per-table section says `topic_library`: read = no
+for Sign-off only, full stop) — a real gap turned out to be one level
+down: `assessments.iro_list_signed_off` (what Admin & Roles' "Topics"
+checkbox, `can_signoff_topics`, actually gates) and
+`cycles.results_signed_off` (the "Results" checkbox, `can_signoff_results`)
+had **zero references anywhere in `src/`** — confirmed by grep before
+assuming. The DB side was already fully built and live-verified back in
+the access stage (Part 23-26): two `SECURITY DEFINER` functions,
+`sign_off_assessment_topics(p_assessment_id)` and
+`sign_off_cycle_results(p_cycle_id)`, each checking
+`is_full_access() OR can_signoff_*()` internally (confirmed by reading the
+actual function bodies live, not just the docs) — but nothing in the
+frontend had ever called either one, for any role, including Owner/Admin.
+Revoke of a results sign-off deliberately has no function — it only ever
+goes through `cycles`' general `is_full_access()`-only UPDATE policy, so
+Sign-off only can never revoke, "by construction" per
+docs/supabase-setup.md; confirmed that policy's exact shape live too.
+
+**Real spec tension, flagged rather than silently resolved**: both
+`CalibrateResultsTab.jsx` and `CalibrationTab.jsx` carried a header comment
+quoting product-spec.md v2.0 amended 9 verbatim — "no global stage banner,
+no global sign-off... sign-off is per IRO, as in the prototype" — which
+is what Part 31 built *to*. That's still correct for the per-IRO
+`reviewed_with_owner` tick (untouched) and the retired `cycles.stage`
+column (still unused). But CLAUDE.md's own "RLS and roles" section and
+docs/access-matrix.md — both later and authoritative over a stale inline
+comment — separately and explicitly describe `cycles.results_signed_off`
+as "a real lock," fully built. The builder's own message here ("needs to
+be able to access... Calibration sign off functionality") is the direct
+confirmation needed to build it; updated both comments in place to say so
+rather than leaving the old "no cycle-level sign-off" line standing
+uncorrected next to new code that does exactly that.
+
+**Built**:
+- `data.js`: `signOffAssessmentTopics(assessmentId)`, `signOffCycleResults(cycleId)`
+  (both thin RPC wrappers), `revokeCycleResultsSignoff(cycleId)` (a direct
+  `cycles` update — intentionally not a function, matching the "by
+  construction" design). `fetchAssessmentsForOverview`/`fetchCycles` now
+  select the new columns (`iro_list_signed_off(_at)`,
+  `results_signed_off(_by)(_at)`) — previously not selected at all.
+- `AssessmentReviewHub.jsx`'s Topics panel: a status/action block —
+  "Sign off topic list" (advisory only, no block on anything), visible to
+  Owner/Admin/Full always and Sign-off only when `can_signoff_topics`.
+  Threaded through `AssessmentsTab.jsx` (new `canSignoffTopics` prop from
+  `App.jsx`'s `me.canSignoffTopics`) and a new `handleSignOffTopics`
+  handler.
+- `CalibrateResultsTab.jsx`'s `WorkspaceHeader`: "Sign off results" /
+  "Revoke" — Sign off visible to Owner/Admin/Full always and Sign-off only
+  when `can_signoff_results`; **Revoke visible only when `!readOnly`**
+  (Owner/Admin/Full), never to Sign-off only even with the permission,
+  matching the DB design exactly.
+- `CalibrationTab.jsx`: new `resultsLocked` prop (`!!cycle.resultsSignedOff`)
+  — disables "Adjust this topic"/"Reset to calculated" with an explanatory
+  title, so a locked cycle fails in the UI before it would fail at the DB
+  trigger (`enforce_results_signoff_lock()`), not after. Owner, moderator,
+  notes and the per-IRO `reviewed_with_owner` tick stay editable either
+  way, per CLAUDE.md ("never locked").
+- "Result view only" (the builder's third requirement) was already true —
+  Sign-off only's existing `readOnly` wiring across `ResultsScreen.jsx`/
+  `CalibrationTab.jsx` already blocks every other edit; these two sign-off
+  actions are the one correctly-scoped exception each.
+
+**Known gap, not built this round** (out of what was asked, flagged rather
+than silently skipped): access-matrix.md's `assessments` section says
+"editing the topic selection auto-clears `iro_list_signed_off` if set" —
+confirmed live via `information_schema.triggers` that no DB trigger
+implements this, and `updateIroOverrides`/`updateAssessment` don't do it
+app-side either. A signed-off topic list can currently go stale silently
+if topics are edited afterward. Worth a follow-up.
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS/function change —
+everything on the DB side already existed and was already verified live;
+this pass is entirely new frontend code calling what was already there.
+
 **Part 53 (2026-09-25) — Profile screen: dropped Phone number, added a top ROLE/EMAIL/ADMIN summary block.**
 
 Builder, direct instruction: "remove phone number section but add role on
