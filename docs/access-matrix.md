@@ -122,13 +122,20 @@ be deleted, to keep the audit trail."
 
 ### topic_library
 
-| Action | Owner/Admin/Full | Sign-off only |
-|---|---|---|
-| create (incl. CSV upload) | yes | no |
-| read | yes | no |
-| update | yes; editing a signed-off entry clears its own `signed_off_by`/`signed_off_at` (a second, separate sign-off from the two v2.1 gates above — this one is per library entry, always editable, never a lock) | no |
-| change state → signed off / revoked | yes | no |
-| delete | only if no `iros` snapshot references it | no |
+**Corrected 2026-10-02 (part 55, supersedes the 2026-09-24 resolution in
+Section 6 below)**: this table, not `assessments.iro_list_signed_off`, is
+"IRO signoff" — the existing per-entry sign-off/revoke (`signed_off_by`/
+`signed_off_at`) is Sign-off only's `can_signoff_topics` grant. Read is
+all rows, same as the `assessments`/`iros` blanket grant; create/full
+update/delete stay Owner/Admin/Full only.
+
+| Action | Owner/Admin/Full | Sign-off only (`can_signoff_topics`) | Sign-off only (no permission) |
+|---|---|---|---|
+| create (incl. CSV upload) | yes | no | no |
+| read | yes | yes, all rows | yes, all rows |
+| update (any field other than the sign-off columns) | yes; editing a signed-off entry clears its own `signed_off_by`/`signed_off_at` (a second, separate sign-off from the two v2.1 gates above — this one is per library entry, always editable, never a lock) | no | no |
+| sign off / revoke a single entry (`signed_off_by`/`signed_off_at` only) | yes | yes — via `sign_off_topic_library_entry`/`revoke_topic_library_entry_signoff` (`SECURITY DEFINER`, scoped to just these two columns) | no |
+| delete | only if no `iros` snapshot references it | no | no |
 
 ### iros (per-assessment snapshot)
 
@@ -331,23 +338,34 @@ Seed: Anika Lerch's `team_members` row as above. No other named people exist yet
 | 12 | submissions | delete | Owner/Admin/Full | refused unless `status = 'draft'` and the assessment is Closed or Completed | policy (DELETE) | Anika deletes an old draft on a closed assessment (works); attempts the same on a submitted response (refused) |
 | 13 | avatars bucket | upload/read/delete | any team_member | own avatar only for upload/delete; any avatar readable (for the header) | bucket policy | Anika uploads her own photo; a second account cannot delete it |
 
-**Rule 2, resolved by builder 2026-09-24.** This row originally also listed
-`topic_library` and `invitations` in Sign-off only's blanket read grant,
-contradicting both tables' own per-table sections in Section 1.2 (which say
-`no`, the latter with an explicit reason: "sign-off-only sees responses
-[submissions/ratings], never the invitee's name/email"). Builder decision:
-the per-table sections and user-stories.md win — **Sign-off only has no
-access to `topic_library` or `invitations`**, full stop. The row above is
-corrected accordingly (also adding `iros`, `topic_justifications`,
-`live_session_participants` and `attendance_edit_log`, which the per-table
-sections grant but this row had omitted; `calibration_history` stays
-excluded, per its own section — append-only, Owner/Admin/Full read only).
+**Rule 2, resolved by builder 2026-09-24, `topic_library` part superseded
+2026-10-02 (part 55).** This row originally also listed `topic_library`
+and `invitations` in Sign-off only's blanket read grant, contradicting
+both tables' own per-table sections in Section 1.2 (which said `no`, the
+latter with an explicit reason: "sign-off-only sees responses
+[submissions/ratings], never the invitee's name/email"). 2026-09-24
+builder decision: the per-table sections and user-stories.md win —
+Sign-off only has no access to `topic_library` or `invitations`, full
+stop. The row above was corrected accordingly (also adding `iros`,
+`topic_justifications`, `live_session_participants` and
+`attendance_edit_log`, which the per-table sections grant but this row
+had omitted; `calibration_history` stays excluded, per its own section —
+append-only, Owner/Admin/Full read only).
+
+**2026-10-02 correction**: a direct, more specific builder instruction
+(screenshots of the existing per-entry sign-off button on the Topics
+screen) identified that screen — `topic_library` — as the actual "IRO
+signoff" spot can_signoff_topics is meant to gate, not a new per-assessment
+screen. `topic_library`'s per-table section above is updated: Sign-off
+only now reads all rows and may sign off/revoke a single entry when
+granted `can_signoff_topics`, still no create/full-update/delete.
+`invitations` stays excluded — unaffected by this correction, no access
+either way.
+
 `cycles` was never in this row and stays governed solely by its own
 narrower condition (rule 4 and its per-table section): Sign-off only reads
 `cycles` **only** with `can_signoff_results` — holding `can_signoff_topics`
-alone grants no `cycles` access. If a Topics sign-off screen ever needs a
-cycle-level field (e.g. the financial year or ESRS version for display),
-that's a gap to report, not a reason to widen this grant.
+alone grants no `cycles` access.
 
 **The gate.** The refusal test has two halves, recorded in PROGRESS.md before this stage
 deploys. **Half A (Claude Code):** every `no` cell and one `own`/scoped boundary attempted

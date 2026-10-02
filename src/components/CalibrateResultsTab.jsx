@@ -143,6 +143,17 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, c
       </h2>
       <p className="text-[12px] text-text-secondary mb-4">One workspace — results as calculated, and calibration where the group agrees an adjustment is needed.</p>
 
+      {readOnly && (
+        <div className="rounded-xl p-3.5 mb-5" style={{ background: 'rgba(76,111,255,0.08)', border: '1px solid rgba(76,111,255,0.25)' }}>
+          <p className="text-[12px] font-semibold" style={{ color: '#4C6FFF' }}>You're reviewing the final material topics</p>
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            {canSignoffResults
+              ? 'Read-only except results sign-off, below: once the group agrees the materiality matrix is final, sign off — this locks every calibrated value for this cycle until it\'s revoked.'
+              : 'Read-only — you don\'t have sign-off rights for results. Ask your Admin if this is unexpected.'}
+          </p>
+        </div>
+      )}
+
       {cycle && <WorkspaceHeader cycle={cycle} allSignedOff={allSignedOff} canSignoffResults={canSignOffResultsNow} readOnly={readOnly} onChanged={onChanged} />}
 
       <div className="flex gap-2 mb-5 border-b border-border-apus">

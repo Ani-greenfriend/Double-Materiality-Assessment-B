@@ -1089,6 +1089,39 @@ well under the 1.5 discrepancy threshold, and both now genuinely visible
 side by side wherever that IRO is shown. Counts after: submissions 6
 (was 5), ratings 73 (was 70) — everything else unchanged.
 
+### RLS/functions — Sign-off only's "IRO signoff" is `topic_library`, not `assessments.iro_list_signed_off` (resolved, builder decision 2026-10-02, part 55)
+
+**Supersedes** the 2026-09-24 resolution quoted above ("Sign-off only has
+no access to `topic_library`... full stop") and the Known gap note that
+followed it. A direct builder instruction, with screenshots of the
+existing per-entry "✓ Sign off this topic" button on the Topics screen,
+confirmed that screen — the master `topic_library` list, read once and
+signed off entry by entry, independent of any assessment — is the actual
+"IRO signoff" spot, not a new per-assessment gate on Review Hub
+(`assessments.iro_list_signed_off`, built part 54, now unused by the UI —
+same treatment as `cycles.stage`).
+
+Migration `signoff_only_topic_library_access`:
+- New `SELECT` policy `"signoff only read topic_library"`: `access_level
+  = 'signoff'` (any active Sign-off only member) reads all rows. The
+  existing `"full access topic_library"` ALL policy (`is_full_access()`)
+  is unchanged — Sign-off only still has no INSERT/UPDATE/DELETE grant on
+  this table at the RLS layer, so a generic write stays refused no matter
+  what the frontend sends.
+- New `SECURITY DEFINER` functions `sign_off_topic_library_entry(p_topic_id)`
+  / `revoke_topic_library_entry_signoff(p_topic_id)`, each checking
+  `is_full_access() OR can_signoff_topics` internally (same pattern as
+  `sign_off_assessment_topics`/`sign_off_cycle_results`) and touching only
+  `signed_off_by`/`signed_off_at` — the one correctly-scoped write
+  Sign-off only gets on this table, deliberately not a broader UPDATE
+  grant (which would also allow editing/deleting topics, not read +
+  conditional sign-off).
+
+Frontend (`TopicsTab.jsx`) routes the sign-off/revoke actions through
+these two functions only when `readOnly` (Sign-off only); the existing
+bulk `saveTopicLibraryForModule` upsert (add/edit/delete/CSV) stays on the
+generic `onUpdate` path, full-access-only, completely untouched.
+
 ## Notes
 - Network egress from the Claude Code sandbox to `*.supabase.co` is blocked by
   this environment's proxy policy (confirmed via `curl -v` — `CONNECT tunnel

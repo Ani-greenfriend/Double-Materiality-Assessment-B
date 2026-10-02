@@ -5,7 +5,7 @@
 > History lives in git.
 
 **Session:** 3
-**Last updated:** 2026-10-01 — session 3, part 54 (Sign-off only's two gated actions — IRO/topic list sign-off, results sign-off — had the permission grantable in Admin & Roles but no UI anywhere to exercise it, for any role; the DB side was already fully built and live-verified, this pass wired the frontend to it).
+**Last updated:** 2026-10-02 — session 3, part 55 (correction to part 54: "IRO signoff" is the master topic_library list, read once with the whole list and signed off per entry on the Topics screen — not a per-assessment gate on Review Hub. Reverted part 54's Review Hub sign-off UI; moved the gated action onto Topics, which Sign-off only can now open).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,69 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 55 (2026-10-02) — Correction to Part 54: "IRO signoff" is the master topic_library list (Topics), not a per-assessment gate. Reverted Part 54's Review Hub sign-off UI; moved it to Topics, which Sign-off only can now open.**
+
+Builder: "the iro signoff shouldnt be on assessment level but before that one
+time with the entire list therefore the IRO section needs to be shown,"
+then, with two screenshots: the Topics screen already has a "✓ Sign off
+this topic" button per entry (prototype-era, untouched by Part 54), and the
+Assessments overview's action icons route to Calibrate & Results — "there
+was already a sign off button in the original mvp, this one is dedicated to
+the person who needs to sign off the IROs, as well as the sign off of the
+final material topics... these are the go to spots for the sign-off
+responsible, they just require a bit of guidance."
+
+So Part 54 built the right permission against the wrong surface:
+`can_signoff_topics` should gate the existing per-entry sign-off on the
+**Topics** screen (`topic_library` — one master list, read once and signed
+off entry by entry, independent of any assessment), not
+`assessments.iro_list_signed_off` on Review Hub (which only exists once an
+assessment has already been created, and only covers that one assessment's
+snapshot). `can_signoff_results` on Calibrate & Results was already the
+correct surface — unchanged this part.
+
+**Reverted**: `AssessmentReviewHub.jsx`'s "Sign off topic list" status/action
+block and its new props (`iroListSignedOff(At)`, `canSignOffTopics`,
+`onSignOffTopics`); `AssessmentsTab.jsx`'s `handleSignOffTopics` and
+`canSignoffTopics` prop; `App.jsx`'s `canSignoffTopics` prop into
+`AssessmentsTab`. `sign_off_assessment_topics()`/`assessments.iro_list_signed_off`
+stay in the schema, unused — same treatment as `cycles.stage`.
+
+**Built instead** — Topics unlocked for Sign-off only (read + the existing
+per-entry sign-off, nothing else):
+- New migration `signoff_only_topic_library_access`: a `SELECT` policy on
+  `topic_library` for `access_level = 'signoff'` (previously zero access —
+  access-matrix.md records a 2026-09-24 builder resolution reading
+  user-stories.md's "sign off this round's topic selection" as excluding
+  `topic_library` entirely; this new, more specific instruction is the
+  correction overriding that), and two new `SECURITY DEFINER` functions,
+  `sign_off_topic_library_entry`/
+  `revoke_topic_library_entry_signoff`, each checking
+  `is_full_access() OR can_signoff_topics` and touching only
+  `signed_off_by`/`signed_off_at` — never a general `topic_library` UPDATE
+  grant, which would also let Sign-off only edit or delete topics. Mirrors
+  the `sign_off_assessment_topics`/`sign_off_cycle_results` pattern.
+- `data.js`: `signOffTopicLibraryEntry`/`revokeTopicLibraryEntrySignoff`
+  (thin RPC wrappers).
+- `App.jsx`: `topics` removed from `SIGNOFF_ONLY_LOCKED_TABS`; `TopicsTab`
+  now renders for Sign-off only too, with `readOnly`/`canSignoffTopics`.
+- `TopicsTab.jsx`: new `readOnly`/`canSignoffTopics` props, a guidance
+  banner when `readOnly` explaining the one-time-per-entry sign-off (or
+  "no sign-off rights" if `canSignoffTopics` is false), and
+  `handleSignOffEntry`/`handleRevokeSignOffEntry` that call the two new
+  RPCs and patch local state — kept entirely separate from the existing
+  `saveTopicLibraryForModule` bulk-upsert path (full-access-only, untouched).
+- `TopicsModule.jsx`/`TopicRow`: `readOnly` hides Add topic, Bulk upload,
+  the "Set up an assessment" CTA, and each entry's Edit/Delete; the
+  existing "Sign off this topic"/Revoke buttons stay, but when `readOnly`
+  they call the new scoped handlers instead of the generic `onUpdate`
+  (which would otherwise hit the full-access-only bulk save).
+- `CalibrateResultsTab.jsx`: added the same guidance banner for `readOnly`
+  viewers (the "bit of guidance" asked for on both spots), pointing at the
+  "Sign off results" control already built in Part 54.
+
+`npm run build`/`npx oxlint src` clean.
+
 **Part 54 (2026-10-01) — Sign-off only's two gated actions (IRO/topic list sign-off, results sign-off) had no UI anywhere, for any role — the permission was grantable (Admin & Roles) but completely unreachable. Built both.**
 
 Builder, from a screenshot of a test "Sign-off only" holder (Topics + Results

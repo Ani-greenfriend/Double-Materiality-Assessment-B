@@ -129,7 +129,7 @@ function TopicForm({ draft, setDraft, onSave, onCancel, esrsVersion, clients = [
   );
 }
 
-function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUserEmail }) {
+function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUserEmail, readOnly, canSignoffTopics, onSignOffEntry, onRevokeSignOffEntry }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
@@ -138,6 +138,10 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
   const pillar = esrs ? PILLAR_COLOR[esrs.cat] : null;
   const isSignedOff = !!topic.signedOffBy;
   const clientName = topic.clientId ? clients.find((c) => c.id === topic.clientId)?.name : null;
+  // Sign-off only never gets the generic onUpdate path (that's a full
+  // table upsert, which would also let them edit/delete) — readOnly swaps
+  // the sign-off/revoke actions onto the two scoped functions instead.
+  const canSignOffThisRow = !readOnly || canSignoffTopics;
 
   function startEdit() {
     setEditDraft({
@@ -164,14 +168,16 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
   }
 
   function confirmSignOff() {
-    onUpdate(topic.id, { signedOffBy: currentUserEmail, signedOffAt: Date.now() });
+    if (readOnly) onSignOffEntry(topic.id);
+    else onUpdate(topic.id, { signedOffBy: currentUserEmail, signedOffAt: Date.now() });
     setSigning(false);
   }
 
   function revokeSignOff(e) {
     e.stopPropagation();
     if (window.confirm('Revoke sign-off on this topic?')) {
-      onUpdate(topic.id, { signedOffBy: null, signedOffAt: null });
+      if (readOnly) onRevokeSignOffEntry(topic.id);
+      else onUpdate(topic.id, { signedOffBy: null, signedOffAt: null });
     }
   }
 
@@ -189,9 +195,11 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
           <span className="text-[10px] font-mono text-text-secondary shrink-0">{topic.referenceCode}</span>
           <span className="text-[10.5px] font-semibold rounded-full px-2 py-0.5 shrink-0" style={{ color: TYPE_COLOR[topic.iroType].text, background: TYPE_COLOR[topic.iroType].bg }}>{TYPE_LABEL[topic.iroType]}</span>
         </button>
-        <button onClick={handleDelete} className="text-text-secondary hover:text-[#E0645A] shrink-0" title="Delete this topic">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" /></svg>
-        </button>
+        {!readOnly && (
+          <button onClick={handleDelete} className="text-text-secondary hover:text-[#E0645A] shrink-0" title="Delete this topic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" /></svg>
+          </button>
+        )}
         <button onClick={() => setOpen((o) => !o)} className="text-text-secondary shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: open ? 'rotate(180deg)' : 'none' }}><path d="M6 9l6 6 6-6" /></svg>
         </button>
@@ -203,9 +211,11 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
           </div>
         ) : (
           <div className="px-4 pb-4 text-[12px] text-text-secondary flex flex-col gap-1.5 border-t border-border-apus pt-3">
-            <div className="flex justify-end -mt-1 mb-1 gap-3">
-              <button onClick={startEdit} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>Edit</button>
-            </div>
+            {!readOnly && (
+              <div className="flex justify-end -mt-1 mb-1 gap-3">
+                <button onClick={startEdit} className="text-[11.5px] font-semibold" style={{ color: '#4C6FFF' }}>Edit</button>
+              </div>
+            )}
             <p><b className="text-text-primary">ESRS:</b> {esrs?.name}{topic.subtopic && ` · ${topic.subtopic}`}</p>
             {topic.description && <p><b className="text-text-primary">Description:</b> {topic.description}</p>}
             <p><b className="text-text-primary">Actual / Potential:</b> {topic.actual ? 'Actual' : 'Potential'}</p>
@@ -217,8 +227,10 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
             {isSignedOff ? (
               <div className="rounded-lg px-3 py-2.5 mt-1.5 flex items-center justify-between" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
                 <p className="text-[11.5px]" style={{ color: '#5ED996' }}>✓ Signed off by <b>{topic.signedOffBy}</b> · {new Date(topic.signedOffAt).toLocaleDateString()}</p>
-                <button onClick={revokeSignOff} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0">Revoke</button>
+                {canSignOffThisRow && <button onClick={revokeSignOff} className="text-[11px] text-text-secondary hover:text-text-primary shrink-0">Revoke</button>}
               </div>
+            ) : !canSignOffThisRow ? (
+              <p className="text-[11px] text-text-secondary mt-1.5">Not yet signed off.</p>
             ) : signing ? (
               <div className="bg-app-black rounded-lg p-3 mt-1.5">
                 <p className="text-[10.5px] text-text-secondary mb-1.5">Sign off as the logged-in user</p>
@@ -240,7 +252,7 @@ function TopicRow({ topic, onUpdate, onDelete, esrsVersion, clients, currentUser
   );
 }
 
-function PerspectiveSection({ title, color, topics, types, addingType, setAddingType, draft, setDraft, onSave, onCancel, filter, onUpdateTopic, onDeleteTopic, esrsVersion, clients, currentUserEmail }) {
+function PerspectiveSection({ title, color, topics, types, addingType, setAddingType, draft, setDraft, onSave, onCancel, filter, onUpdateTopic, onDeleteTopic, esrsVersion, clients, currentUserEmail, readOnly, canSignoffTopics, onSignOffEntry, onRevokeSignOffEntry }) {
   const filtered = topics.filter((t) => types.includes(t.iroType) && t.esrsVersion === esrsVersion && (filter === 'all' || ESRS_TOPICS.find((e) => e.id === t.esrsTopicId)?.cat === filter));
   return (
     <div className="mb-8">
@@ -250,7 +262,7 @@ function PerspectiveSection({ title, color, topics, types, addingType, setAdding
           <p className="text-[13px] font-semibold">{title}</p>
           <span className="text-[10.5px] text-text-secondary">({filtered.length})</span>
         </div>
-        {!addingType && (
+        {!addingType && !readOnly && (
           <button onClick={() => setAddingType(types[0])} className="text-[11.5px] font-semibold border border-border-apus rounded-lg px-3 py-1.5">+ Add topic</button>
         )}
       </div>
@@ -261,14 +273,19 @@ function PerspectiveSection({ title, color, topics, types, addingType, setAdding
         <p className="text-[12px] text-text-secondary py-4 text-center bg-surface-2 rounded-xl">No topics here yet.</p>
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map((t) => <TopicRow key={t.id} topic={t} onUpdate={onUpdateTopic} onDelete={onDeleteTopic} esrsVersion={esrsVersion} clients={clients} currentUserEmail={currentUserEmail} />)}
+          {filtered.map((t) => (
+            <TopicRow
+              key={t.id} topic={t} onUpdate={onUpdateTopic} onDelete={onDeleteTopic} esrsVersion={esrsVersion} clients={clients} currentUserEmail={currentUserEmail}
+              readOnly={readOnly} canSignoffTopics={canSignoffTopics} onSignOffEntry={onSignOffEntry} onRevokeSignOffEntry={onRevokeSignOffEntry}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-export default function TopicsModule({ topicLibrary, setTopicLibrary, onGoNext, esrsVersion, setEsrsVersion, clients = [], currentUserEmail }) {
+export default function TopicsModule({ topicLibrary, setTopicLibrary, onGoNext, esrsVersion, setEsrsVersion, clients = [], currentUserEmail, readOnly, canSignoffTopics, onSignOffEntry, onRevokeSignOffEntry }) {
   const [addingType, setAddingType] = useState(null);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [filter, setFilter] = useState('all');
@@ -351,31 +368,33 @@ export default function TopicsModule({ topicLibrary, setTopicLibrary, onGoNext, 
         ))}
       </div>
 
-      <div className="bg-surface rounded-2xl p-4 mb-6 flex items-center justify-between">
-        <div>
-          <p className="text-[12.5px] font-semibold mb-0.5">Bulk upload</p>
-          <p className="text-[11px] text-text-secondary">Semicolon-separated CSV — download the template to see the exact columns and valid values.</p>
+      {!readOnly && (
+        <div className="bg-surface rounded-2xl p-4 mb-6 flex items-center justify-between">
+          <div>
+            <p className="text-[12.5px] font-semibold mb-0.5">Bulk upload</p>
+            <p className="text-[11px] text-text-secondary">Semicolon-separated CSV — download the template to see the exact columns and valid values.</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const blob = new Blob([generateTopicLibraryExampleCsv(ESRS_SUBTOPICS)], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'topics-template.csv';
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              className="text-[11.5px] font-semibold border border-border-apus rounded-lg px-3 py-2"
+            >
+              ⭳ Download template
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="text-[11.5px] font-semibold rounded-lg px-3 py-2" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
+              ⭱ Upload CSV
+            </button>
+            <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+          </div>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button
-            onClick={() => {
-              const blob = new Blob([generateTopicLibraryExampleCsv(ESRS_SUBTOPICS)], { type: 'text/csv;charset=utf-8;' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = 'topics-template.csv';
-              document.body.appendChild(a); a.click(); document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }}
-            className="text-[11.5px] font-semibold border border-border-apus rounded-lg px-3 py-2"
-          >
-            ⭳ Download template
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} className="text-[11.5px] font-semibold rounded-lg px-3 py-2" style={{ background: '#4C6FFF', color: '#F5F6FA' }}>
-            ⭱ Upload CSV
-          </button>
-          <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
-        </div>
-      </div>
+      )}
 
       {csvErrors.length > 0 && (
         <div className="rounded-xl p-4 mb-6" style={{ background: 'rgba(215,154,76,0.1)', border: '1px solid rgba(215,154,76,0.3)' }}>
@@ -411,6 +430,7 @@ export default function TopicsModule({ topicLibrary, setTopicLibrary, onGoNext, 
         setAddingType={startAdd} draft={draft} setDraft={setDraft} onSave={save} onCancel={() => setAddingType(null)}
         onUpdateTopic={updateTopic} onDeleteTopic={deleteTopic}
         esrsVersion={esrsVersion} clients={clients} currentUserEmail={currentUserEmail}
+        readOnly={readOnly} canSignoffTopics={canSignoffTopics} onSignOffEntry={onSignOffEntry} onRevokeSignOffEntry={onRevokeSignOffEntry}
       />
       <PerspectiveSection
         title="Risks and opportunities — financial perspective" color="#4C6FFF"
@@ -419,9 +439,10 @@ export default function TopicsModule({ topicLibrary, setTopicLibrary, onGoNext, 
         setAddingType={startAdd} draft={draft} setDraft={setDraft} onSave={save} onCancel={() => setAddingType(null)}
         onUpdateTopic={updateTopic} onDeleteTopic={deleteTopic}
         esrsVersion={esrsVersion} clients={clients} currentUserEmail={currentUserEmail}
+        readOnly={readOnly} canSignoffTopics={canSignoffTopics} onSignOffEntry={onSignOffEntry} onRevokeSignOffEntry={onRevokeSignOffEntry}
       />
 
-      {topicLibrary.some((t) => t.esrsVersion === esrsVersion) && (
+      {!readOnly && topicLibrary.some((t) => t.esrsVersion === esrsVersion) && (
         <div className="rounded-2xl p-5 mt-3 flex items-center justify-between" style={{ background: 'linear-gradient(115deg, #3654D6, #2FA88A)' }}>
           <div>
             <p className="text-[14px] font-bold text-white">Topics defined — what's next?</p>

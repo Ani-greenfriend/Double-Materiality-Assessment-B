@@ -352,15 +352,19 @@ export async function updateCycleThresholds({ cycleId, oldImpact, newImpact, old
 // (advisory only, never blocks anything) and cycles.results_signed_off (a
 // real lock: once true, calibrations.calibrated_value/.band_value for that
 // cycle can't be updated by anyone except through an explicit Revoke).
-// Both routed through the existing SECURITY DEFINER functions
-// (sign_off_assessment_topics/sign_off_cycle_results — same pattern as
-// Tool A's six link-code functions), which check the caller's own
-// authorization internally (is_full_access() OR the matching
-// can_signoff_* flag) rather than relying on a broad RLS UPDATE policy —
-// confirmed live against the actual function bodies before wiring this up,
+// Routed through the existing sign_off_cycle_results SECURITY DEFINER
+// function (same pattern as Tool A's six link-code functions), which
+// checks the caller's own authorization internally (is_full_access() OR
+// can_signoff_results) rather than relying on a broad RLS UPDATE policy —
+// confirmed live against the actual function body before wiring this up,
 // not assumed from the docs alone. Revoke has no function by design — it
 // only ever goes through cycles' general is_full_access()-only UPDATE
 // policy, so Sign-off only can never revoke, by construction.
+//
+// sign_off_assessment_topics() (the per-assessment counterpart) stays in
+// the schema, unused by the UI — same treatment as cycles.stage. The
+// builder corrected "IRO signoff" to mean the master topic_library list
+// (see signOffTopicLibraryEntry below), not a per-assessment gate.
 export async function signOffAssessmentTopics(assessmentId) {
   assertConfigured();
   const { error } = await supabase.rpc('sign_off_assessment_topics', { p_assessment_id: assessmentId });
@@ -380,6 +384,24 @@ export async function revokeCycleResultsSignoff(cycleId) {
     .update({ results_signed_off: false, results_signed_off_by: null, results_signed_off_at: null })
     .eq('id', cycleId);
   if (error) throw new Error(`cycles update failed: ${error.message}`);
+}
+
+// Sign-off only's "IRO signoff" is the master topic_library list, read +
+// a scoped per-entry sign-off — not assessments.iro_list_signed_off (that
+// stays in the schema unused, same treatment as cycles.stage). These two
+// RPCs are the only write path signed-off-only ever gets on topic_library;
+// the generic bulk upsert in saveTopicLibraryForModule below stays
+// full-access-only.
+export async function signOffTopicLibraryEntry(topicId) {
+  assertConfigured();
+  const { error } = await supabase.rpc('sign_off_topic_library_entry', { p_topic_id: topicId });
+  if (error) throw new Error(`sign_off_topic_library_entry failed: ${error.message}`);
+}
+
+export async function revokeTopicLibraryEntrySignoff(topicId) {
+  assertConfigured();
+  const { error } = await supabase.rpc('revoke_topic_library_entry_signoff', { p_topic_id: topicId });
+  if (error) throw new Error(`revoke_topic_library_entry_signoff failed: ${error.message}`);
 }
 
 // RLS-gated: only succeeds when no response exists anywhere in the cycle
