@@ -224,6 +224,7 @@ export default function AssessmentReviewHub({
           <div className="max-h-[70vh] overflow-y-auto pr-1">
             <p className="text-[13px] font-semibold mb-1">All topics in this assessment</p>
             <p className="text-[10.5px] text-text-secondary mb-4 italic">Shown for reference only — nothing here is recorded.</p>
+
             {relevantIros.map((iro) => (
               <TopicRow key={iro.id} iro={iro} override={draftOverrides[iro.id]} onUpdate={updateTopic} readOnly={readOnly} />
             ))}

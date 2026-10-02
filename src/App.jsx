@@ -37,11 +37,14 @@ const TABS = [
   { key: 'report', label: 'Report', Icon: ReportIcon },
 ];
 
-// access-matrix.md's people table: Sign-off only's screens are exactly
-// Assessments, Responses, Calibrate & Results (all read-only, per Group 2's
-// grant) — Dashboard, Stakeholders, Topics and Report have no table access
-// for this role at all and are refused outright, not just hidden.
-const SIGNOFF_ONLY_LOCKED_TABS = new Set(['dashboard', 'stakeholders', 'topics', 'report']);
+// access-matrix.md's people table: Sign-off only's screens are Topics (read
+// + conditional sign-off — the "IRO signoff" granted by can_signoff_topics,
+// done once against the master topic_library list, never per-assessment),
+// Assessments, Responses and Calibrate & Results (read + conditional
+// sign-off via can_signoff_results) — Dashboard, Stakeholders and Report
+// have no table access for this role at all and are refused outright, not
+// just hidden.
+const SIGNOFF_ONLY_LOCKED_TABS = new Set(['dashboard', 'stakeholders', 'report']);
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
@@ -344,9 +347,12 @@ export default function App() {
               onChanged={reloadStakeholderMaster}
             />
           ))}
-          {tab === 'topics' && (isSignOffOnly ? <LockedScreen title="Topics" /> : (
-            <TopicsTab clients={clients} currentUserEmail={session.user.email} onGoNext={() => setTab('assessments')} />
-          ))}
+          {tab === 'topics' && (
+            <TopicsTab
+              clients={clients} currentUserEmail={session.user.email} onGoNext={() => setTab('assessments')}
+              readOnly={isSignOffOnly} canSignoffTopics={!!me.canSignoffTopics}
+            />
+          )}
           {tab === 'assessments' && (
             <AssessmentsTab
               perspective={assessmentsPerspective}
@@ -398,6 +404,7 @@ export default function App() {
                   thresholds={thresholds}
                   cycle={cycles.find((c) => c.id === currentAssessment?.cycle?.id) ?? null}
                   userId={session.user.id}
+                  canSignoffResults={!!me.canSignoffResults}
                   onChanged={() => { reload(); reloadCyclesAndAssessments(); }}
                   initialSub={crInitialSub}
                   readOnly={isSignOffOnly}

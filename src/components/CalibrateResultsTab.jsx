@@ -2,18 +2,53 @@ import { useState } from 'react';
 import ResultsScreen from './ResultsScreen';
 import CalibrationTab from './CalibrationTab';
 import { CalibrationIcon } from './icons';
+import { signOffCycleResults, revokeCycleResultsSignoff } from '../lib/data';
 
 const ESRS_LABEL = { esrs_2023_amended: 'ESRS 2023 as amended', esrs_2026: 'ESRS 2026' };
 
 // Section 8, Calibrate & Results workspace (v2.0 amended 9): "only the
 // financial year and the filters... that persist across the three tabs.
-// There is no global stage banner, no global sign-off, no 'require both
-// sources' setting and no Start calibration or Revoke controls — sign-off
-// is per IRO, as in the prototype." This header is now purely
-// informational — client/financial year/ESRS version/thresholds, and a
-// Provisional/Final label computed from whether every IRO has been signed
-// off (not the retired cycles.stage column, never read here).
-function WorkspaceHeader({ cycle, allSignedOff }) {
+// There is no global stage banner... no 'require both sources' setting and
+// no Start calibration... — sign-off is per IRO, as in the prototype." That
+// is still true of cycles.stage (retired, never read) and the per-IRO
+// reviewed_with_owner tick below, unchanged. The v2.1 access stage then
+// added a *separate* concept on top: cycles.results_signed_off, a real
+// data lock (not advisory) gated by the can_signoff_results permission —
+// CLAUDE.md's "RLS and roles" section and docs/access-matrix.md are
+// authoritative here and postdate the v2.0-amended-9 line above; this is
+// the "Calibration sign off functionality" the builder asked be reachable,
+// not a reversal of the per-IRO decision.
+function WorkspaceHeader({ cycle, allSignedOff, canSignoffResults, readOnly, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSignOff() {
+    setBusy(true);
+    setError('');
+    try {
+      await signOffCycleResults(cycle.id);
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!window.confirm('Revoke the results sign-off for this cycle? Calibrated values become editable again.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      await revokeCycleResultsSignoff(cycle.id);
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="bg-surface border border-border-apus rounded-2xl p-5 mb-5">
       <div className="flex items-center gap-3 flex-wrap">
@@ -28,6 +63,31 @@ function WorkspaceHeader({ cycle, allSignedOff }) {
           Impact threshold <b className="text-text-primary">{Number(cycle.impactThreshold).toFixed(1)}</b> · Financial threshold <b className="text-text-primary">{Number(cycle.financialThreshold).toFixed(1)}</b>
         </span>
       </div>
+
+      <div className="flex items-center gap-3 flex-wrap mt-3 pt-3 border-t border-border-apus">
+        <p className="text-[11.5px] font-semibold" style={{ color: cycle.resultsSignedOff ? '#5ED996' : undefined }}>
+          {cycle.resultsSignedOff ? '✓ Results signed off' : 'Results not yet signed off'}
+        </p>
+        {cycle.resultsSignedOff && cycle.resultsSignedOffAt && (
+          <span className="text-[10.5px] text-text-secondary">{new Date(cycle.resultsSignedOffAt).toLocaleString()} — calibrated values are locked until revoked.</span>
+        )}
+        {!cycle.resultsSignedOff && (
+          <span className="text-[10.5px] text-text-secondary">Locks every IRO's calibrated value for this cycle until revoked.</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {!cycle.resultsSignedOff && canSignoffResults && (
+            <button onClick={handleSignOff} disabled={busy} className="text-[11.5px] font-semibold rounded-lg px-3.5 py-1.5 disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>
+              {busy ? 'Signing off…' : 'Sign off results'}
+            </button>
+          )}
+          {cycle.resultsSignedOff && !readOnly && (
+            <button onClick={handleRevoke} disabled={busy} title="Only Owner/Admin/Full access can revoke — Sign-off only can sign off but never revoke" className="text-[11.5px] font-semibold text-text-secondary hover:text-text-primary px-2 py-1.5 disabled:opacity-40">
+              {busy ? 'Revoking…' : 'Revoke'}
+            </button>
+          )}
+        </div>
+      </div>
+      {error && <p className="text-[11px] mt-2" style={{ color: '#D79A4C' }}>{error}</p>}
     </div>
   );
 }
@@ -63,13 +123,15 @@ function FilterBar({ activeCats, setActiveCats, showMaterial, setShowMaterial, s
 // nav item count matches the spec's six process steps. Calibration and
 // threshold edits are always available (v2.0 amended 9) — there's no more
 // "locked" / stage-gated read-only state to thread through.
-export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, onChanged, initialSub = 'results', readOnly }) {
+export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, canSignoffResults, onChanged, initialSub = 'results', readOnly }) {
   const [sub, setSub] = useState(initialSub);
   const [activeCats, setActiveCats] = useState(['E', 'S', 'G']);
   const [showMaterial, setShowMaterial] = useState(true);
   const [showNotMaterial, setShowNotMaterial] = useState(true);
 
   const allSignedOff = iros.length > 0 && iros.every((iro) => iro.calibration?.reviewed_with_owner);
+  // Full access can always sign off; Sign-off only needs the specific grant.
+  const canSignOffResultsNow = !readOnly || canSignoffResults;
 
   return (
     <div>
@@ -81,7 +143,18 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, o
       </h2>
       <p className="text-[12px] text-text-secondary mb-4">One workspace — results as calculated, and calibration where the group agrees an adjustment is needed.</p>
 
-      {cycle && <WorkspaceHeader cycle={cycle} allSignedOff={allSignedOff} />}
+      {readOnly && (
+        <div className="rounded-xl p-3.5 mb-5" style={{ background: 'rgba(76,111,255,0.08)', border: '1px solid rgba(76,111,255,0.25)' }}>
+          <p className="text-[12px] font-semibold" style={{ color: '#4C6FFF' }}>You're reviewing the final material topics</p>
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            {canSignoffResults
+              ? 'Read-only except results sign-off, below: once the group agrees the materiality matrix is final, sign off — this locks every calibrated value for this cycle until it\'s revoked.'
+              : 'Read-only — you don\'t have sign-off rights for results. Ask your Admin if this is unexpected.'}
+          </p>
+        </div>
+      )}
+
+      {cycle && <WorkspaceHeader cycle={cycle} allSignedOff={allSignedOff} canSignoffResults={canSignOffResultsNow} readOnly={readOnly} onChanged={onChanged} />}
 
       <div className="flex gap-2 mb-5 border-b border-border-apus">
         {[{ id: 'results', label: 'Results' }, { id: 'calibrate', label: 'Calibrate' }].map((t) => (
@@ -101,7 +174,7 @@ export default function CalibrateResultsTab({ iros, thresholds, cycle, userId, o
         <ResultsScreen iros={iros} thresholds={thresholds} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} cycle={cycle} userId={userId} onChanged={onChanged} readOnly={readOnly} />
       )}
       {sub === 'calibrate' && (
-        <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} userId={userId} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} readOnly={readOnly} />
+        <CalibrationTab iros={iros} thresholds={thresholds} cycleId={cycle?.id ?? null} userId={userId} onChanged={onChanged} activeCats={activeCats} showMaterial={showMaterial} showNotMaterial={showNotMaterial} readOnly={readOnly} resultsLocked={!!cycle?.resultsSignedOff} />
       )}
     </div>
   );

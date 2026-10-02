@@ -4,8 +4,8 @@
 > anything. Update it at every save point. Replace content — do not append.
 > History lives in git.
 
-**Session:** 2
-**Last updated:** 2026-09-25 — session 2, part 53 (Profile screen: removed Phone number, added a top ROLE/EMAIL/ADMIN summary block per direct instruction).
+**Session:** 3
+**Last updated:** 2026-10-02 — session 3, part 55 (correction to part 54: "IRO signoff" is the master topic_library list, read once with the whole list and signed off per entry on the Topics screen — not a per-assessment gate on Review Hub. Reverted part 54's Review Hub sign-off UI; moved the gated action onto Topics, which Sign-off only can now open).
 **Live URL:** none yet — PR #4 (data layer + first v2.0 shell) superseded for UI purposes by PR #5 (prototype restore, in progress); Netlify preview pending
 
 ## Current state
@@ -49,6 +49,153 @@ Code (sandbox can't reach Supabase) — the builder is testing directly on
 the Netlify branch deploy as each push lands.
 
 ## Last session
+**Part 55 (2026-10-02) — Correction to Part 54: "IRO signoff" is the master topic_library list (Topics), not a per-assessment gate. Reverted Part 54's Review Hub sign-off UI; moved it to Topics, which Sign-off only can now open.**
+
+Builder: "the iro signoff shouldnt be on assessment level but before that one
+time with the entire list therefore the IRO section needs to be shown,"
+then, with two screenshots: the Topics screen already has a "✓ Sign off
+this topic" button per entry (prototype-era, untouched by Part 54), and the
+Assessments overview's action icons route to Calibrate & Results — "there
+was already a sign off button in the original mvp, this one is dedicated to
+the person who needs to sign off the IROs, as well as the sign off of the
+final material topics... these are the go to spots for the sign-off
+responsible, they just require a bit of guidance."
+
+So Part 54 built the right permission against the wrong surface:
+`can_signoff_topics` should gate the existing per-entry sign-off on the
+**Topics** screen (`topic_library` — one master list, read once and signed
+off entry by entry, independent of any assessment), not
+`assessments.iro_list_signed_off` on Review Hub (which only exists once an
+assessment has already been created, and only covers that one assessment's
+snapshot). `can_signoff_results` on Calibrate & Results was already the
+correct surface — unchanged this part.
+
+**Reverted**: `AssessmentReviewHub.jsx`'s "Sign off topic list" status/action
+block and its new props (`iroListSignedOff(At)`, `canSignOffTopics`,
+`onSignOffTopics`); `AssessmentsTab.jsx`'s `handleSignOffTopics` and
+`canSignoffTopics` prop; `App.jsx`'s `canSignoffTopics` prop into
+`AssessmentsTab`. `sign_off_assessment_topics()`/`assessments.iro_list_signed_off`
+stay in the schema, unused — same treatment as `cycles.stage`.
+
+**Built instead** — Topics unlocked for Sign-off only (read + the existing
+per-entry sign-off, nothing else):
+- New migration `signoff_only_topic_library_access`: a `SELECT` policy on
+  `topic_library` for `access_level = 'signoff'` (previously zero access —
+  access-matrix.md records a 2026-09-24 builder resolution reading
+  user-stories.md's "sign off this round's topic selection" as excluding
+  `topic_library` entirely; this new, more specific instruction is the
+  correction overriding that), and two new `SECURITY DEFINER` functions,
+  `sign_off_topic_library_entry`/
+  `revoke_topic_library_entry_signoff`, each checking
+  `is_full_access() OR can_signoff_topics` and touching only
+  `signed_off_by`/`signed_off_at` — never a general `topic_library` UPDATE
+  grant, which would also let Sign-off only edit or delete topics. Mirrors
+  the `sign_off_assessment_topics`/`sign_off_cycle_results` pattern.
+- `data.js`: `signOffTopicLibraryEntry`/`revokeTopicLibraryEntrySignoff`
+  (thin RPC wrappers).
+- `App.jsx`: `topics` removed from `SIGNOFF_ONLY_LOCKED_TABS`; `TopicsTab`
+  now renders for Sign-off only too, with `readOnly`/`canSignoffTopics`.
+- `TopicsTab.jsx`: new `readOnly`/`canSignoffTopics` props, a guidance
+  banner when `readOnly` explaining the one-time-per-entry sign-off (or
+  "no sign-off rights" if `canSignoffTopics` is false), and
+  `handleSignOffEntry`/`handleRevokeSignOffEntry` that call the two new
+  RPCs and patch local state — kept entirely separate from the existing
+  `saveTopicLibraryForModule` bulk-upsert path (full-access-only, untouched).
+- `TopicsModule.jsx`/`TopicRow`: `readOnly` hides Add topic, Bulk upload,
+  the "Set up an assessment" CTA, and each entry's Edit/Delete; the
+  existing "Sign off this topic"/Revoke buttons stay, but when `readOnly`
+  they call the new scoped handlers instead of the generic `onUpdate`
+  (which would otherwise hit the full-access-only bulk save).
+- `CalibrateResultsTab.jsx`: added the same guidance banner for `readOnly`
+  viewers (the "bit of guidance" asked for on both spots), pointing at the
+  "Sign off results" control already built in Part 54.
+
+`npm run build`/`npx oxlint src` clean.
+
+**Part 54 (2026-10-01) — Sign-off only's two gated actions (IRO/topic list sign-off, results sign-off) had no UI anywhere, for any role — the permission was grantable (Admin & Roles) but completely unreachable. Built both.**
+
+Builder, from a screenshot of a test "Sign-off only" holder (Topics + Results
+both checked): "the access of for the sign-off functionality is not
+correct. the person that receives sign off access needs to be able to
+access IRO signoff functionality and Calibration sign off functionality,
+result view only."
+
+Investigated before building anything, since `App.jsx` locks Sign-off only
+out of the Topics *nav tab* (topic_library — confirmed correct,
+access-matrix.md's own per-table section says `topic_library`: read = no
+for Sign-off only, full stop) — a real gap turned out to be one level
+down: `assessments.iro_list_signed_off` (what Admin & Roles' "Topics"
+checkbox, `can_signoff_topics`, actually gates) and
+`cycles.results_signed_off` (the "Results" checkbox, `can_signoff_results`)
+had **zero references anywhere in `src/`** — confirmed by grep before
+assuming. The DB side was already fully built and live-verified back in
+the access stage (Part 23-26): two `SECURITY DEFINER` functions,
+`sign_off_assessment_topics(p_assessment_id)` and
+`sign_off_cycle_results(p_cycle_id)`, each checking
+`is_full_access() OR can_signoff_*()` internally (confirmed by reading the
+actual function bodies live, not just the docs) — but nothing in the
+frontend had ever called either one, for any role, including Owner/Admin.
+Revoke of a results sign-off deliberately has no function — it only ever
+goes through `cycles`' general `is_full_access()`-only UPDATE policy, so
+Sign-off only can never revoke, "by construction" per
+docs/supabase-setup.md; confirmed that policy's exact shape live too.
+
+**Real spec tension, flagged rather than silently resolved**: both
+`CalibrateResultsTab.jsx` and `CalibrationTab.jsx` carried a header comment
+quoting product-spec.md v2.0 amended 9 verbatim — "no global stage banner,
+no global sign-off... sign-off is per IRO, as in the prototype" — which
+is what Part 31 built *to*. That's still correct for the per-IRO
+`reviewed_with_owner` tick (untouched) and the retired `cycles.stage`
+column (still unused). But CLAUDE.md's own "RLS and roles" section and
+docs/access-matrix.md — both later and authoritative over a stale inline
+comment — separately and explicitly describe `cycles.results_signed_off`
+as "a real lock," fully built. The builder's own message here ("needs to
+be able to access... Calibration sign off functionality") is the direct
+confirmation needed to build it; updated both comments in place to say so
+rather than leaving the old "no cycle-level sign-off" line standing
+uncorrected next to new code that does exactly that.
+
+**Built**:
+- `data.js`: `signOffAssessmentTopics(assessmentId)`, `signOffCycleResults(cycleId)`
+  (both thin RPC wrappers), `revokeCycleResultsSignoff(cycleId)` (a direct
+  `cycles` update — intentionally not a function, matching the "by
+  construction" design). `fetchAssessmentsForOverview`/`fetchCycles` now
+  select the new columns (`iro_list_signed_off(_at)`,
+  `results_signed_off(_by)(_at)`) — previously not selected at all.
+- `AssessmentReviewHub.jsx`'s Topics panel: a status/action block —
+  "Sign off topic list" (advisory only, no block on anything), visible to
+  Owner/Admin/Full always and Sign-off only when `can_signoff_topics`.
+  Threaded through `AssessmentsTab.jsx` (new `canSignoffTopics` prop from
+  `App.jsx`'s `me.canSignoffTopics`) and a new `handleSignOffTopics`
+  handler.
+- `CalibrateResultsTab.jsx`'s `WorkspaceHeader`: "Sign off results" /
+  "Revoke" — Sign off visible to Owner/Admin/Full always and Sign-off only
+  when `can_signoff_results`; **Revoke visible only when `!readOnly`**
+  (Owner/Admin/Full), never to Sign-off only even with the permission,
+  matching the DB design exactly.
+- `CalibrationTab.jsx`: new `resultsLocked` prop (`!!cycle.resultsSignedOff`)
+  — disables "Adjust this topic"/"Reset to calculated" with an explanatory
+  title, so a locked cycle fails in the UI before it would fail at the DB
+  trigger (`enforce_results_signoff_lock()`), not after. Owner, moderator,
+  notes and the per-IRO `reviewed_with_owner` tick stay editable either
+  way, per CLAUDE.md ("never locked").
+- "Result view only" (the builder's third requirement) was already true —
+  Sign-off only's existing `readOnly` wiring across `ResultsScreen.jsx`/
+  `CalibrationTab.jsx` already blocks every other edit; these two sign-off
+  actions are the one correctly-scoped exception each.
+
+**Known gap, not built this round** (out of what was asked, flagged rather
+than silently skipped): access-matrix.md's `assessments` section says
+"editing the topic selection auto-clears `iro_list_signed_off` if set" —
+confirmed live via `information_schema.triggers` that no DB trigger
+implements this, and `updateIroOverrides`/`updateAssessment` don't do it
+app-side either. A signed-off topic list can currently go stale silently
+if topics are edited afterward. Worth a follow-up.
+
+`npm run build`/`npx oxlint src` clean. No schema/RLS/function change —
+everything on the DB side already existed and was already verified live;
+this pass is entirely new frontend code calling what was already there.
+
 **Part 53 (2026-09-25) — Profile screen: dropped Phone number, added a top ROLE/EMAIL/ADMIN summary block.**
 
 Builder, direct instruction: "remove phone number section but add role on

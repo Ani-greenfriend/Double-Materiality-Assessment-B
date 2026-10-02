@@ -8,10 +8,18 @@ function fmt(v) {
   return v === null || v === undefined ? '–' : v.toFixed(1);
 }
 
-// v2.0 amended 9: no global stage banner, no cycle-level sign-off — sign-off
-// is per IRO, as in the prototype, and calibration is always available (no
-// more stage-gated read-only state).
-export default function CalibrationTab({ iros, thresholds, cycleId, userId, onChanged, activeCats, showMaterial, showNotMaterial, readOnly }) {
+// v2.0 amended 9: no global stage banner — sign-off is per IRO, as in the
+// prototype, and calibration is always available (no stage-gated read-only
+// state). v2.1 access stage added a separate, cycle-level gate on top of
+// that — `cycles.results_signed_off` (CalibrateResultsTab.jsx's
+// WorkspaceHeader) — which is a real lock, not advisory: while true,
+// `calibrated_value`/`band_value` can't be updated by anyone except
+// through an explicit Revoke, enforced by a DB trigger regardless of what
+// this screen does. `resultsLocked` mirrors that here so the UI reflects
+// it proactively instead of letting someone hit a raw Postgres error —
+// owner/moderator/notes/reviewed_with_owner stay editable either way, per
+// CLAUDE.md ("never locked").
+export default function CalibrationTab({ iros, thresholds, cycleId, userId, onChanged, activeCats, showMaterial, showNotMaterial, readOnly, resultsLocked }) {
   const [openId, setOpenId] = useState(null);
 
   // The E/S/G and material/not-material filters are shared with Results
@@ -52,6 +60,13 @@ export default function CalibrationTab({ iros, thresholds, cycleId, userId, onCh
       <p className="text-[12px] text-text-secondary mb-1">{flagged.length} of {scopedIros.length} topics are flagged for a closer look — override triggered, or ratings diverged.</p>
       <p className="text-[12px] text-text-secondary mb-5">{signedOffCount} of {iros.length} IROs signed off.</p>
 
+      {resultsLocked && (
+        <div className="rounded-xl px-3.5 py-2.5 mb-4" style={{ background: 'rgba(94,217,150,0.1)', border: '1px solid rgba(94,217,150,0.3)' }}>
+          <p className="text-[11.5px] font-semibold" style={{ color: '#5ED996' }}>Results are signed off for this cycle</p>
+          <p className="text-[10.5px] text-text-secondary">Calibrated values are locked — Revoke the sign-off above (Results tab) to adjust one. Owner, moderator, notes and per-IRO sign-off stay editable.</p>
+        </div>
+      )}
+
       {scopedIros.length === 0 ? (
         <div className="bg-surface rounded-2xl p-10 text-center text-text-secondary text-[13px]">No topics match the current filters.</div>
       ) : (
@@ -67,6 +82,7 @@ export default function CalibrationTab({ iros, thresholds, cycleId, userId, onCh
             onToggle={() => setOpenId((id) => (id === iro.id ? null : iro.id))}
             onChanged={onChanged}
             readOnly={readOnly}
+            resultsLocked={resultsLocked}
           />
         ))}
       </div>
@@ -75,7 +91,7 @@ export default function CalibrationTab({ iros, thresholds, cycleId, userId, onCh
   );
 }
 
-function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, onChanged, readOnly }) {
+function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, onChanged, readOnly, resultsLocked }) {
   const agg = aggregateIro(iro, thresholds);
   const calculated = hasImpactAxis(iro.iroType) ? agg.impactScore : agg.financialScore;
   const cal = iro.calibration;
@@ -240,11 +256,11 @@ function CalibrationRow({ iro, thresholds, cycleId, userId, isOpen, onToggle, on
 
           {readOnly ? null : !adjusting ? (
             <div className="flex gap-2 flex-wrap">
-              <button onClick={openAdjust} disabled={busy} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40">
+              <button onClick={openAdjust} disabled={busy || resultsLocked} title={resultsLocked ? 'Results are signed off — revoke the sign-off (Results tab) to adjust' : undefined} className="text-[12px] border border-border-apus rounded-lg px-3 py-1.5 disabled:opacity-40">
                 {isCalibrated ? 'Edit calibration' : 'Adjust this topic'}
               </button>
               {isCalibrated && (
-                <button onClick={resetToCalculated} disabled={busy} className="text-[12px] text-text-secondary px-3 py-1.5 disabled:opacity-40">↺ Reset to calculated</button>
+                <button onClick={resetToCalculated} disabled={busy || resultsLocked} title={resultsLocked ? 'Results are signed off — revoke the sign-off (Results tab) to adjust' : undefined} className="text-[12px] text-text-secondary px-3 py-1.5 disabled:opacity-40">↺ Reset to calculated</button>
               )}
               {!isReviewedWithOwner && (
                 <button onClick={toggleReviewedWithOwner} disabled={busy} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 ml-auto disabled:opacity-40" style={{ background: '#5ED996', color: '#07070B' }}>✓ Sign off this result</button>
